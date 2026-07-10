@@ -1,9 +1,11 @@
 # dependencies
 node_modules/
+node/
 
 # next.js
 .next/
 out/
+
 
 # production
 build/
