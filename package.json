@@ -3,14 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run clean && next dev",
-    "dev:fast": "next dev",
-    "clean": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item -LiteralPath .next -Recurse -Force -ErrorAction SilentlyContinue\"",
-    "dev:fresh": "npm run dev",
-    "prebuild": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-build-safe.ps1",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "bunx tsc --noEmit && next lint",
+    "format": "bunx biome format --write",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
