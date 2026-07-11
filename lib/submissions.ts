@@ -1,4 +1,6 @@
-import { Niche } from "@/lib/influencers";
+import { getUserByEmail } from "@/lib/users";
+import { Niche, upsertInfluencerProfile } from "@/lib/influencers";
+import { dbQuery, ensureDatabase } from "@/lib/db";
 import { fetchTwitterProfile, inferNiches, TwitterProfile } from "@/lib/twitter-profile";
 
 export type SubmissionStatus = "pending" | "approved" | "rejected" | "needs_review";
@@ -17,61 +19,68 @@ export type InfluencerSubmission = {
   riskFlags: string[];
 };
 
-const initialSubmissions: InfluencerSubmission[] = [
-  {
-    id: "sub_1001",
-    profileUrl: "https://x.com/thedefinvestor",
-    submittedNiches: ["DeFi", "Yield", "Trading"],
-    suggestedNiches: ["DeFi", "Yield", "Trading"],
-    submitterEmail: "member@kwizerana.com",
-    note: "Strong DeFi research account for retail education and discovery.",
-    status: "pending",
-    createdAt: "2026-07-08T08:20:00.000Z",
-    profile: {
-      handle: "thedefinvestor",
-      name: "The DeFi Investor",
-      bio: "Curated DeFi research, narratives, airdrops, yield opportunities, and market notes.",
-      followers: 310000,
-      following: 1210,
-      location: "Global",
-      language: "English",
-      verified: true,
-      profileUrl: "https://x.com/thedefinvestor",
-      updatedAt: "2026-07-08T08:21:00.000Z",
-      recentSignal: "High-fit account for DeFi education, yield narratives, and market commentary."
-    },
-    riskFlags: []
-  },
-  {
-    id: "sub_1002",
-    profileUrl: "https://x.com/stani",
-    submittedNiches: ["DeFi", "Protocol Growth"],
-    suggestedNiches: ["DeFi", "Protocol Growth"],
-    submitterEmail: "bd@kwizerana.com",
-    note: "Founder/operator audience, useful for partnership mapping.",
-    status: "needs_review",
-    createdAt: "2026-07-08T09:10:00.000Z",
-    profile: {
-      handle: "stani",
-      name: "Stani",
-      bio: "Founder, builder, and contributor across DeFi, social, and open financial networks.",
-      followers: 260000,
-      following: 980,
-      location: "Europe",
-      language: "English",
-      verified: true,
-      profileUrl: "https://x.com/stani",
-      updatedAt: "2026-07-08T09:11:00.000Z",
-      recentSignal: "Founder-level account with high protocol relevance and strong ecosystem distribution."
-    },
-    riskFlags: ["Founder account: review positioning before public listing."]
-  }
-];
+type SubmissionRow = {
+  id: string;
+  profile_url: string;
+  submitted_niches: Niche[];
+  suggested_niches: Niche[];
+  submitter_email: string;
+  note: string;
+  status: SubmissionStatus;
+  created_at: string;
+  reviewed_at: string | null;
+  profile_handle: string;
+  profile_name: string;
+  profile_bio: string;
+  profile_followers: number;
+  profile_following: number | null;
+  profile_location: string;
+  profile_language: string;
+  profile_verified: boolean;
+  profile_image_url: string | null;
+  profile_updated_at: string;
+  recent_signal: string;
+  risk_flags: string[];
+};
 
-const submissions = [...initialSubmissions];
+function mapSubmission(row: SubmissionRow): InfluencerSubmission {
+  return {
+    id: row.id,
+    profileUrl: row.profile_url,
+    submittedNiches: (row.submitted_niches ?? []) as Niche[],
+    suggestedNiches: (row.suggested_niches ?? []) as Niche[],
+    submitterEmail: row.submitter_email,
+    note: row.note,
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    reviewedAt: row.reviewed_at ? new Date(row.reviewed_at).toISOString() : undefined,
+    riskFlags: row.risk_flags ?? [],
+    profile: {
+      handle: row.profile_handle,
+      name: row.profile_name,
+      bio: row.profile_bio,
+      followers: Number(row.profile_followers),
+      following: row.profile_following ?? undefined,
+      location: row.profile_location,
+      language: row.profile_language,
+      verified: Boolean(row.profile_verified),
+      profileImageUrl: row.profile_image_url ?? undefined,
+      profileUrl: row.profile_url,
+      updatedAt: new Date(row.profile_updated_at).toISOString(),
+      recentSignal: row.recent_signal
+    }
+  };
+}
 
-export function listSubmissions() {
-  return submissions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+export async function listSubmissions() {
+  await ensureDatabase();
+  const rows = await dbQuery<SubmissionRow>(
+    `SELECT *
+     FROM submissions
+     ORDER BY created_at DESC`
+  );
+
+  return rows.map(mapSubmission);
 }
 
 export async function createSubmission(input: {
@@ -80,6 +89,8 @@ export async function createSubmission(input: {
   submitterEmail: string;
   note: string;
 }) {
+  await ensureDatabase();
+
   const profile = await fetchTwitterProfile(input.profileUrl);
   const suggestedNiches = inferNiches(profile, input.niches);
   const riskFlags = [
@@ -88,28 +99,87 @@ export async function createSubmission(input: {
     suggestedNiches.length === 0 ? "No niche confidence generated." : ""
   ].filter(Boolean);
 
-  const submission: InfluencerSubmission = {
-    id: `sub_${Date.now()}`,
-    profileUrl: profile.profileUrl,
-    submittedNiches: input.niches,
-    suggestedNiches,
-    submitterEmail: input.submitterEmail,
-    note: input.note,
-    status: riskFlags.length ? "needs_review" : "pending",
-    createdAt: new Date().toISOString(),
-    profile,
-    riskFlags
-  };
+  const submitter = await getUserByEmail(input.submitterEmail);
+  const id = `sub_${crypto.randomUUID()}`;
 
-  submissions.unshift(submission);
-  return submission;
+  const [row] = await dbQuery<SubmissionRow>(
+    `INSERT INTO submissions (
+      id,
+      profile_url,
+      submitted_niches,
+      suggested_niches,
+      submitter_email,
+      submitter_user_id,
+      note,
+      status,
+      profile_handle,
+      profile_name,
+      profile_bio,
+      profile_followers,
+      profile_following,
+      profile_location,
+      profile_language,
+      profile_verified,
+      profile_image_url,
+      profile_updated_at,
+      recent_signal,
+      risk_flags
+    )
+    VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8,
+      $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+    )
+    RETURNING *`,
+    [
+      id,
+      profile.profileUrl,
+      input.niches,
+      suggestedNiches,
+      input.submitterEmail,
+      submitter?.id ?? null,
+      input.note,
+      riskFlags.length ? "needs_review" : "pending",
+      profile.handle,
+      profile.name,
+      profile.bio,
+      profile.followers,
+      profile.following ?? null,
+      profile.location,
+      profile.language,
+      profile.verified,
+      profile.profileImageUrl ?? null,
+      profile.updatedAt,
+      profile.recentSignal,
+      riskFlags
+    ]
+  );
+
+  return mapSubmission(row);
 }
 
-export function updateSubmissionStatus(id: string, status: SubmissionStatus) {
-  const submission = submissions.find((item) => item.id === id);
-  if (!submission) return null;
+export async function updateSubmissionStatus(id: string, status: SubmissionStatus) {
+  await ensureDatabase();
 
-  submission.status = status;
-  submission.reviewedAt = new Date().toISOString();
+  const [updated] = await dbQuery<SubmissionRow>(
+    `UPDATE submissions
+     SET status = $2,
+         reviewed_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [id, status]
+  );
+
+  if (!updated) return null;
+
+  const submission = mapSubmission(updated);
+
+  if (status === "approved") {
+    await upsertInfluencerProfile({
+      profile: submission.profile,
+      tags: submission.suggestedNiches,
+      sourceSubmissionId: submission.id
+    });
+  }
+
   return submission;
 }

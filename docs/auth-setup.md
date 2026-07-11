@@ -10,6 +10,8 @@ GOOGLE_CLIENT_ID=your-google-oauth-client-id
 GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
 
 ADMIN_EMAILS=your-admin-gmail@gmail.com
+
+DATABASE_URL=your-neon-connection-string
 ```
 
 In Google Cloud Console, create an OAuth web client and add this authorized redirect URI:
@@ -18,12 +20,18 @@ In Google Cloud Console, create an OAuth web client and add this authorized redi
 http://localhost:3000/api/auth/callback/google
 ```
 
-If you run the app on port `3001`, change both values:
+After adding the Neon connection string, run:
 
 ```bash
-NEXTAUTH_URL=http://localhost:3001
+npm run db:setup
+```
+
+If you run the app on port `3000`, change both values:
+
+```bash
+NEXTAUTH_URL=http://localhost:3000
 ```
 
 ```text
-http://localhost:3001/api/auth/callback/google
+http://localhost:3000/api/auth/callback/google
 ```

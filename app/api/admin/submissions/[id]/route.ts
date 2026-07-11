@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
-import { authOptions, isAdminEmail } from "@/lib/auth";
+import { authOptions } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/roles";
 import { SubmissionStatus, updateSubmissionStatus } from "@/lib/submissions";
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
@@ -18,7 +19,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return NextResponse.json({ error: "Invalid status." }, { status: 400 });
   }
 
-  const submission = updateSubmissionStatus(params.id, status);
+  const submission = await updateSubmissionStatus(params.id, status);
   if (!submission) {
     return NextResponse.json({ error: "Submission not found." }, { status: 404 });
   }

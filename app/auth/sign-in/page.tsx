@@ -8,13 +8,20 @@ import { ArrowLeft, Check, Database, LogIn, ShieldCheck } from "lucide-react";
 export default function SignInPage() {
   const { data: session, status } = useSession();
   const [googleAuthReady, setGoogleAuthReady] = useState(false);
+  const [databaseReady, setDatabaseReady] = useState(false);
   const [checkedConfig, setCheckedConfig] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/status")
       .then((response) => response.json())
-      .then((payload) => setGoogleAuthReady(Boolean(payload.google)))
-      .catch(() => setGoogleAuthReady(false))
+      .then((payload) => {
+        setGoogleAuthReady(Boolean(payload.google));
+        setDatabaseReady(Boolean(payload.database));
+      })
+      .catch(() => {
+        setGoogleAuthReady(false);
+        setDatabaseReady(false);
+      })
       .finally(() => setCheckedConfig(true));
   }, []);
 
@@ -83,8 +90,9 @@ export default function SignInPage() {
           )}
 
           <div className="mt-5 border border-line bg-panel p-4 text-sm leading-6 text-muted">
-            Signing in creates a user session now. Once the Postgres database is connected, this same flow will persist users,
-            roles, submissions, saved lists, and review history.
+            {databaseReady
+              ? "Signing in will write your user record to Neon and keep roles, submissions, and review history in the database."
+              : "Add your Neon DATABASE_URL so sign-ins can persist users, roles, submissions, and review history."}
           </div>
         </aside>
       </div>

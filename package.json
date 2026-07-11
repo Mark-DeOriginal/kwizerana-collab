@@ -6,12 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "bunx tsc --noEmit && next lint",
+    "lint": "tsc --noEmit && next lint",
     "format": "bunx biome format --write",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push"
+    "db:setup": "node scripts/setup-db.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "lucide-react": "^0.468.0",
     "next": "^14.2.5",
     "next-auth": "^4.24.14",

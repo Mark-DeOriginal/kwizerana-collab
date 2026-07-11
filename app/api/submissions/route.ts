@@ -5,7 +5,8 @@ import { niches, Niche } from "@/lib/influencers";
 import { createSubmission, listSubmissions } from "@/lib/submissions";
 
 export async function GET() {
-  return NextResponse.json({ data: listSubmissions() });
+  const submissions = await listSubmissions();
+  return NextResponse.json({ data: submissions });
 }
 
 export async function POST(request: Request) {

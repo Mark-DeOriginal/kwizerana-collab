@@ -2,42 +2,25 @@
 
 Use Neon Postgres for the production database.
 
-Why Neon fits this Vercel app:
+Why Neon fits this app:
 
-- It is available through the Vercel Marketplace.
-- Vercel can provision Marketplace databases and inject credentials into project environment variables.
-- Postgres is the right model for users, roles, submissions, influencer profiles, tags, audit logs, saved lists, and refresh logs.
+- It is the actively maintained Vercel-native Postgres path.
+- Postgres is the right model for users, roles, submissions, influencer profiles, and niche mappings.
 - It works well with serverless Next.js deployments.
 - It keeps the project portable because the app depends on standard Postgres, not a proprietary document model.
 
-Recommended stack:
-
-- Vercel for hosting
-- Neon Postgres for database
-- NextAuth Google provider for sign up and login
-- Prisma or Drizzle for schema and migrations
-- Optional Upstash Redis later for rate limiting, caching, and background queues
-
-Core tables to add next:
+Current tables in this project:
 
 - `users`
-- `accounts`
-- `sessions`
-- `verification_tokens`
-- `profiles`
 - `influencers`
-- `niches`
 - `influencer_niches`
 - `submissions`
-- `saved_lists`
-- `saved_list_items`
-- `refresh_logs`
-- `admin_audit_logs`
 
-Provisioning command:
+Setup flow:
 
-```bash
-vercel install neon
-```
+1. Create a Neon database from the Vercel Marketplace or Neon directly.
+2. Add the connection string to `.env.local` as `DATABASE_URL`.
+3. Run `npm run db:setup`.
+4. Start the app and sign in with Google.
 
-After provisioning, set `DATABASE_URL` in `.env.local` locally and in Vercel project environment variables.
+On Vercel, add the same `DATABASE_URL` value to the project environment variables.

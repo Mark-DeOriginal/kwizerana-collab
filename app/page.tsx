@@ -27,12 +27,13 @@ import {
   Users,
   X
 } from "lucide-react";
-import { Influencer, influencers, Niche, niches } from "@/lib/influencers";
+import { type ArchiveStats, type Influencer, niches, type Niche } from "@/lib/influencers";
 import type { InfluencerSubmission } from "@/lib/submissions";
 import type { TwitterProfile } from "@/lib/twitter-profile";
 
 type SortKey = "match" | "followers" | "updated";
 type ViewKey = "archive" | "submit" | "admin";
+
 const pageSize = 30;
 
 const followerTiers = [
@@ -48,6 +49,13 @@ const sortOptions: Array<{ label: string; description: string; value: SortKey }>
   { label: "Recently refreshed", description: "Freshest profile data first", value: "updated" }
 ];
 
+const emptyStats: ArchiveStats = {
+  totalInfluencers: 0,
+  pendingSubmissions: 0,
+  totalUsers: 0,
+  avgConfidence: 0
+};
+
 const formatFollowers = (value: number) => {
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `${(value / 1000).toFixed(value >= 100000 ? 0 : 1)}k`;
@@ -62,17 +70,22 @@ export default function Home() {
   const [minFollowers, setMinFollowers] = useState(10000);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("match");
-  const [selectedId, setSelectedId] = useState(influencers[0].id);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [submissions, setSubmissions] = useState<InfluencerSubmission[]>([]);
   const [submissionMessage, setSubmissionMessage] = useState("");
+  const [archiveInfluencers, setArchiveInfluencers] = useState<Influencer[]>([]);
+  const [archiveStats, setArchiveStats] = useState<ArchiveStats>(emptyStats);
+  const [isArchiveLoading, setIsArchiveLoading] = useState(true);
+  const [archiveError, setArchiveError] = useState("");
 
   const isAdmin = session?.user?.role === "admin";
   const visibleView = view === "admin" && !isAdmin ? "archive" : view;
+
   const filteredInfluencers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return influencers
+    return archiveInfluencers
       .filter((influencer) => influencer.followers >= minFollowers)
       .filter((influencer) => !verifiedOnly || influencer.verified)
       .filter((influencer) => selectedNiches.length === 0 || selectedNiches.some((niche) => influencer.tags.includes(niche)))
@@ -88,17 +101,58 @@ export default function Home() {
         if (sortKey === "updated") return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
         return b.confidence - a.confidence;
       });
-  }, [minFollowers, query, selectedNiches, sortKey, verifiedOnly]);
+  }, [archiveInfluencers, minFollowers, query, selectedNiches, sortKey, verifiedOnly]);
 
   const totalPages = Math.max(1, Math.ceil(filteredInfluencers.length / pageSize));
   const safePage = Math.min(currentPage, totalPages);
   const pageStart = (safePage - 1) * pageSize;
   const paginatedInfluencers = filteredInfluencers.slice(pageStart, pageStart + pageSize);
-  const selectedInfluencer = paginatedInfluencers.find((item) => item.id === selectedId) ?? paginatedInfluencers[0] ?? filteredInfluencers[0] ?? influencers[0];
+  const selectedInfluencer =
+    paginatedInfluencers.find((item) => item.id === selectedId) ??
+    filteredInfluencers.find((item) => item.id === selectedId) ??
+    paginatedInfluencers[0] ??
+    filteredInfluencers[0] ??
+    null;
+
+  useEffect(() => {
+    void loadArchive();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedInfluencer) {
+      if (selectedId !== null) setSelectedId(null);
+      return;
+    }
+
+    if (selectedInfluencer.id !== selectedId) {
+      setSelectedId(selectedInfluencer.id);
+    }
+  }, [selectedId, selectedInfluencer]);
 
   const toggleNiche = (niche: Niche) => {
     setCurrentPage(1);
     setSelectedNiches((current) => (current.includes(niche) ? current.filter((item) => item !== niche) : [...current, niche]));
+  };
+
+  const loadArchive = async () => {
+    setIsArchiveLoading(true);
+
+    try {
+      const response = await fetch("/api/archive");
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load archive.");
+      }
+
+      setArchiveInfluencers(payload.data?.influencers ?? []);
+      setArchiveStats(payload.data?.stats ?? emptyStats);
+      setArchiveError("");
+    } catch (error) {
+      setArchiveError(error instanceof Error ? error.message : "Failed to load archive.");
+    } finally {
+      setIsArchiveLoading(false);
+    }
   };
 
   const loadSubmissions = async () => {
@@ -117,8 +171,11 @@ export default function Home() {
 
     if (response.ok) {
       setSubmissions((current) => current.map((item) => (item.id === id ? payload.data : item)));
+      await loadArchive();
     }
   };
+
+  const storageStatus = archiveError ? "Neon setup needed" : isArchiveLoading ? "Loading Neon data" : "Neon database active";
 
   return (
     <main className="min-h-screen px-4 py-4 text-ink sm:px-6 lg:px-8">
@@ -158,6 +215,7 @@ export default function Home() {
               setVerifiedOnly(value);
               setCurrentPage(1);
             }}
+            storageStatus={storageStatus}
           />
 
           <div className="min-w-0">
@@ -176,6 +234,11 @@ export default function Home() {
                 totalPages={totalPages}
                 pageStart={pageStart}
                 onPageChange={setCurrentPage}
+                stats={archiveStats}
+                isLoading={isArchiveLoading}
+                error={archiveError}
+                onRefresh={loadArchive}
+                onOpenSubmit={() => setView("submit")}
               />
             )}
 
@@ -185,18 +248,13 @@ export default function Home() {
                 onSubmitted={(message) => {
                   setSubmissionMessage(message);
                   void loadSubmissions();
+                  void loadArchive();
                 }}
                 submissionMessage={submissionMessage}
               />
             )}
 
-            {visibleView === "admin" && (
-              <AdminView
-                submissions={submissions}
-                onRefresh={loadSubmissions}
-                onAction={handleAdminAction}
-              />
-            )}
+            {visibleView === "admin" && <AdminView submissions={submissions} onRefresh={loadSubmissions} onAction={handleAdminAction} />}
           </div>
         </section>
       </div>
@@ -287,7 +345,8 @@ function ControlRail({
   minFollowers,
   setMinFollowers,
   verifiedOnly,
-  setVerifiedOnly
+  setVerifiedOnly,
+  storageStatus
 }: {
   query: string;
   setQuery: (value: string) => void;
@@ -298,6 +357,7 @@ function ControlRail({
   setMinFollowers: (value: number) => void;
   verifiedOnly: boolean;
   setVerifiedOnly: (value: boolean) => void;
+  storageStatus: string;
 }) {
   return (
     <aside className="h-fit border border-line bg-white/92 p-4 shadow-tight backdrop-blur xl:sticky xl:top-4">
@@ -392,9 +452,9 @@ function ControlRail({
       <div className="mt-5 border border-line bg-panel p-3">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Integration state</p>
         <div className="mt-3 space-y-2 text-sm">
-          <StatusLine label="Authentication" value="Google OAuth ready" />
+          <StatusLine label="Authentication" value="Google OAuth flow" />
           <StatusLine label="Profile data" value="twitterapi.io adapter" />
-          <StatusLine label="Storage" value="Database boundary ready" />
+          <StatusLine label="Storage" value={storageStatus} />
         </div>
       </div>
     </aside>
@@ -411,18 +471,28 @@ function ArchiveView({
   currentPage,
   totalPages,
   pageStart,
-  onPageChange
+  onPageChange,
+  stats,
+  isLoading,
+  error,
+  onRefresh,
+  onOpenSubmit
 }: {
   sortKey: SortKey;
   setSortKey: (value: SortKey) => void;
   filteredInfluencers: Influencer[];
   paginatedInfluencers: Influencer[];
-  selectedInfluencer: Influencer;
+  selectedInfluencer: Influencer | null;
   setSelectedId: (id: number) => void;
   currentPage: number;
   totalPages: number;
   pageStart: number;
   onPageChange: (page: number) => void;
+  stats: ArchiveStats;
+  isLoading: boolean;
+  error: string;
+  onRefresh: () => void;
+  onOpenSubmit: () => void;
 }) {
   return (
     <section className="grid min-h-[calc(100vh-116px)] gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
@@ -434,17 +504,17 @@ function ArchiveView({
               <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Find DeFi voices worth partnering with</h1>
             </div>
             <div className="flex flex-wrap gap-2">
-              <ToolbarButton icon={<RefreshCcw className="h-4 w-4" />} label="Refresh" />
+              <ToolbarButton icon={<RefreshCcw className="h-4 w-4" />} label="Refresh" onClick={onRefresh} />
               <ToolbarButton icon={<Download className="h-4 w-4" />} label="Export CSV" />
-              <ToolbarButton icon={<UserPlus className="h-4 w-4" />} label="Suggest profile" primary />
+              <ToolbarButton icon={<UserPlus className="h-4 w-4" />} label="Suggest profile" primary onClick={onOpenSubmit} />
             </div>
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
-            <Metric label="Curated accounts" value="1,248" icon={<ShieldCheck className="h-5 w-5" />} />
-            <Metric label="Pending review" value="37" icon={<Sparkles className="h-5 w-5" />} />
-            <Metric label="Saved lists" value="12" icon={<Bookmark className="h-5 w-5" />} />
-            <Metric label="Avg. confidence" value="89%" icon={<Gauge className="h-5 w-5" />} />
+            <Metric label="Curated accounts" value={stats.totalInfluencers.toLocaleString()} icon={<ShieldCheck className="h-5 w-5" />} />
+            <Metric label="Pending review" value={stats.pendingSubmissions.toLocaleString()} icon={<Sparkles className="h-5 w-5" />} />
+            <Metric label="Signed-in users" value={stats.totalUsers.toLocaleString()} icon={<Users className="h-5 w-5" />} />
+            <Metric label="Avg. confidence" value={`${stats.avgConfidence}%`} icon={<Gauge className="h-5 w-5" />} />
           </div>
         </div>
 
@@ -460,7 +530,9 @@ function ArchiveView({
         </div>
 
         <div className="thin-scrollbar grid max-h-none gap-3 overflow-auto p-4 xl:max-h-[calc(100vh-354px)]">
-          {paginatedInfluencers.length === 0 && (
+          {error && <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium">{error}</div>}
+          {isLoading && <div className="border border-line bg-panel p-6 text-sm text-muted">Loading archive from Neon...</div>}
+          {!isLoading && paginatedInfluencers.length === 0 && !error && (
             <div className="border border-line bg-panel p-6">
               <p className="font-semibold">No profiles match these filters.</p>
               <p className="mt-2 text-sm text-muted">Clear a niche, lower the follower threshold, or search a broader term.</p>
@@ -470,7 +542,7 @@ function ArchiveView({
             <InfluencerCard
               key={influencer.id}
               influencer={influencer}
-              active={selectedInfluencer.id === influencer.id}
+              active={selectedInfluencer?.id === influencer.id}
               onSelect={() => setSelectedId(influencer.id)}
             />
           ))}
@@ -824,9 +896,20 @@ function Pagination({
   );
 }
 
-function ToolbarButton({ icon, label, primary = false }: { icon: ReactNode; label: string; primary?: boolean }) {
+function ToolbarButton({
+  icon,
+  label,
+  primary = false,
+  onClick
+}: {
+  icon: ReactNode;
+  label: string;
+  primary?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <button
+      onClick={onClick}
       className={`flex h-10 items-center gap-2 border px-3 text-sm font-semibold transition ${
         primary ? "border-ink bg-ink text-white hover:bg-ocean" : "border-line bg-white text-ink hover:border-ocean"
       }`}
@@ -886,7 +969,16 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
   );
 }
 
-function ProfilePanel({ influencer }: { influencer: Influencer }) {
+function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
+  if (!influencer) {
+    return (
+      <aside className="h-fit border border-line bg-white/95 p-4 shadow-tight backdrop-blur lg:sticky lg:top-4">
+        <p className="font-semibold">No profile selected.</p>
+        <p className="mt-2 text-sm text-muted">Once the database is connected and profiles load, details will appear here.</p>
+      </aside>
+    );
+  }
+
   return (
     <aside className="h-fit border border-line bg-white/95 shadow-tight backdrop-blur lg:sticky lg:top-4">
       <div className="border-b border-line p-4">
@@ -941,11 +1033,7 @@ function ProfilePanel({ influencer }: { influencer: Influencer }) {
           <StatusLine label="Audience fit" value={influencer.audience} />
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <a
-            href={influencer.profileUrl ?? `https://x.com/${influencer.handle}`}
-            target="_blank"
-            className="flex h-10 items-center justify-center gap-2 border border-line bg-white text-sm font-semibold"
-          >
+          <a href={influencer.profileUrl ?? `https://x.com/${influencer.handle}`} target="_blank" className="flex h-10 items-center justify-center gap-2 border border-line bg-white text-sm font-semibold">
             <ExternalLink className="h-4 w-4" />
             Open X
           </a>

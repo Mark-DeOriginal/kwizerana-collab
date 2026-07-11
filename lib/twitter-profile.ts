@@ -1,4 +1,4 @@
-import { Influencer, Niche } from "@/lib/influencers";
+import type { Influencer, Niche } from "@/lib/influencers";
 
 export type TwitterProfile = {
   handle: string;
