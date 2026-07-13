@@ -15,20 +15,17 @@ import {
   ExternalLink,
   FileCheck2,
   Filter,
-  Gauge,
   LogIn,
   LogOut,
   Plus,
   RefreshCcw,
   Search,
-  ShieldCheck,
   Sparkles,
   UserPlus,
-  Users,
   X
 } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
-import { type ArchiveStats, type Influencer, niches, type Niche } from "@/lib/influencers";
+import { type Influencer, niches, type Niche } from "@/lib/influencers";
 
 type SortKey = "match" | "followers" | "updated";
 
@@ -47,13 +44,6 @@ const sortOptions: Array<{ label: string; description: string; value: SortKey }>
   { label: "Recently refreshed", description: "Freshest profile data first", value: "updated" }
 ];
 
-const emptyStats: ArchiveStats = {
-  totalInfluencers: 0,
-  pendingSubmissions: 0,
-  totalUsers: 0,
-  avgConfidence: 0
-};
-
 const formatFollowers = (value: number) => {
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `${(value / 1000).toFixed(value >= 100000 ? 0 : 1)}k`;
@@ -70,7 +60,6 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [archiveInfluencers, setArchiveInfluencers] = useState<Influencer[]>([]);
-  const [archiveStats, setArchiveStats] = useState<ArchiveStats>(emptyStats);
   const [isArchiveLoading, setIsArchiveLoading] = useState(true);
   const [archiveError, setArchiveError] = useState("");
 
@@ -140,7 +129,6 @@ export default function Home() {
       }
 
       setArchiveInfluencers(payload.data?.influencers ?? []);
-      setArchiveStats(payload.data?.stats ?? emptyStats);
       setArchiveError("");
     } catch (error) {
       setArchiveError(error instanceof Error ? error.message : "Failed to load archive.");
@@ -149,7 +137,7 @@ export default function Home() {
     }
   };
 
-  const storageStatus = archiveError ? "Neon setup needed" : isArchiveLoading ? "Loading Neon data" : "Neon database active";
+  const storageStatus = archiveError ? "Data connection unavailable" : isArchiveLoading ? "Loading live data" : "Data connection active";
 
   return (
     <main className="min-h-screen px-4 py-4 text-ink sm:px-6 lg:px-8">
@@ -202,7 +190,6 @@ export default function Home() {
               totalPages={totalPages}
               pageStart={pageStart}
               onPageChange={setCurrentPage}
-              stats={archiveStats}
               isLoading={isArchiveLoading}
               error={archiveError}
               onRefresh={loadArchive}
@@ -396,10 +383,10 @@ function ControlRail({
       </label>
 
       <div className="mt-5 border border-line bg-panel p-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Integration state</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Platform status</p>
         <div className="mt-3 space-y-2 text-sm">
-          <StatusLine label="Authentication" value="Google OAuth flow" />
-          <StatusLine label="Profile data" value="twitterapi.io adapter" />
+          <StatusLine label="Authentication" value="Google sign-in" />
+          <StatusLine label="Profile data" value="Live profile API" />
           <StatusLine label="Storage" value={storageStatus} />
         </div>
       </div>
@@ -418,7 +405,6 @@ function ArchiveView({
   totalPages,
   pageStart,
   onPageChange,
-  stats,
   isLoading,
   error,
   onRefresh,
@@ -434,7 +420,6 @@ function ArchiveView({
   totalPages: number;
   pageStart: number;
   onPageChange: (page: number) => void;
-  stats: ArchiveStats;
   isLoading: boolean;
   error: string;
   onRefresh: () => void;
@@ -444,23 +429,18 @@ function ArchiveView({
     <section className="grid min-h-[calc(100vh-116px)] gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
       <div className="min-w-0 border border-line bg-white/94 shadow-tight backdrop-blur">
         <div className="border-b border-line p-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">Kwizerana relationship archive</p>
-              <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Find DeFi voices worth partnering with</h1>
+          <div className="flex flex-col gap-4">
+            <div className="max-w-3xl">
+              <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Discover notable X accounts with verified profile data</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Search, filter, and review profiles from a central archive designed for public discovery and internal moderation workflows.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <ToolbarButton icon={<RefreshCcw className="h-4 w-4" />} label="Refresh" onClick={onRefresh} />
+                <ToolbarButton icon={<Download className="h-4 w-4" />} label="Export CSV" />
+                <ToolbarButton icon={<UserPlus className="h-4 w-4" />} label="Submit profile" primary onClick={onOpenSubmit} />
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <ToolbarButton icon={<RefreshCcw className="h-4 w-4" />} label="Refresh" onClick={onRefresh} />
-              <ToolbarButton icon={<Download className="h-4 w-4" />} label="Export CSV" />
-              <ToolbarButton icon={<UserPlus className="h-4 w-4" />} label="Suggest profile" primary onClick={onOpenSubmit} />
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-4">
-            <Metric label="Curated accounts" value={stats.totalInfluencers.toLocaleString()} icon={<ShieldCheck className="h-5 w-5" />} />
-            <Metric label="Pending review" value={stats.pendingSubmissions.toLocaleString()} icon={<Sparkles className="h-5 w-5" />} />
-            <Metric label="Signed-in users" value={stats.totalUsers.toLocaleString()} icon={<Users className="h-5 w-5" />} />
-            <Metric label="Avg. confidence" value={`${stats.avgConfidence}%`} icon={<Gauge className="h-5 w-5" />} />
           </div>
         </div>
 
@@ -645,18 +625,6 @@ function ToolbarButton({
   );
 }
 
-function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-3 border border-line bg-panel p-3">
-      <div className="grid h-10 w-10 place-items-center bg-mint text-ocean">{icon}</div>
-      <div>
-        <p className="text-xs font-medium text-muted">{label}</p>
-        <p className="text-lg font-semibold">{value}</p>
-      </div>
-    </div>
-  );
-}
-
 function InfluencerCard({ influencer, active, onSelect }: { influencer: Influencer; active: boolean; onSelect: () => void }) {
   return (
     <button
@@ -699,7 +667,7 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
     return (
       <aside className="h-fit border border-line bg-white/95 p-4 shadow-tight backdrop-blur lg:sticky lg:top-4">
         <p className="font-semibold">No profile selected.</p>
-        <p className="mt-2 text-sm text-muted">Once the database is connected and profiles load, details will appear here.</p>
+        <p className="mt-2 text-sm text-muted">Select a profile from the archive to view its full details.</p>
       </aside>
     );
   }
@@ -735,7 +703,7 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
       <div className="border-y border-line p-4">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-coral" aria-hidden="true" />
-          <h3 className="font-semibold">AI niche read</h3>
+          <h3 className="font-semibold">Profile signals</h3>
         </div>
         <p className="mt-3 text-sm leading-6 text-muted">{influencer.recentSignal}</p>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -749,8 +717,8 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
 
       <div className="p-4">
         <div className="mb-3 flex items-center gap-2">
-          <Users className="h-4 w-4 text-ocean" aria-hidden="true" />
-          <h3 className="font-semibold">Relationship fit</h3>
+          <Sparkles className="h-4 w-4 text-ocean" aria-hidden="true" />
+          <h3 className="font-semibold">Audience fit</h3>
         </div>
         <div className="space-y-2 text-sm">
           <StatusLine label="Profile refreshed" value={influencer.updatedAt} />
