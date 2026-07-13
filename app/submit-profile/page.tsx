@@ -5,6 +5,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { Check, Database, FileCheck2, LogIn, LogOut, Plus, RefreshCcw, Search, Sparkles, UserPlus } from "lucide-react";
+import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { niches, type Niche } from "@/lib/influencers";
 import type { TwitterProfile } from "@/lib/twitter-profile";
 
@@ -74,6 +75,7 @@ function normalizePreviewError(error: PreviewErrorPayload) {
 
 export default function SubmitProfilePage() {
   const { data: session, status } = useSession();
+  const canReviewAdminQueue = canAccessAdminReview(session?.user?.role);
   const [profileUrl, setProfileUrl] = useState("https://x.com/thedefinvestor");
   const [selectedNiches, setSelectedNiches] = useState<Niche[]>(["DeFi"]);
   const [note, setNote] = useState("");
@@ -181,10 +183,10 @@ export default function SubmitProfilePage() {
                 <Plus className="h-4 w-4" />
                 Submit profile
               </Link>
-              {session?.user?.role === "admin" && (
-                <Link href="/" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
+              {canReviewAdminQueue && (
+                <Link href="/review-profiles" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
                   <FileCheck2 className="h-4 w-4" />
-                  Admin review
+                  Review profiles
                 </Link>
               )}
             </nav>

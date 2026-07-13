@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -27,12 +27,10 @@ import {
   Users,
   X
 } from "lucide-react";
+import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { type ArchiveStats, type Influencer, niches, type Niche } from "@/lib/influencers";
-import type { InfluencerSubmission } from "@/lib/submissions";
-import type { TwitterProfile } from "@/lib/twitter-profile";
 
 type SortKey = "match" | "followers" | "updated";
-type ViewKey = "archive" | "submit" | "admin";
 
 const pageSize = 30;
 
@@ -64,7 +62,6 @@ const formatFollowers = (value: number) => {
 
 export default function Home() {
   const { data: session, status } = useSession();
-  const [view, setView] = useState<ViewKey>("archive");
   const [query, setQuery] = useState("");
   const [selectedNiches, setSelectedNiches] = useState<Niche[]>(["DeFi"]);
   const [minFollowers, setMinFollowers] = useState(10000);
@@ -72,15 +69,12 @@ export default function Home() {
   const [sortKey, setSortKey] = useState<SortKey>("match");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [submissions, setSubmissions] = useState<InfluencerSubmission[]>([]);
-  const [submissionMessage, setSubmissionMessage] = useState("");
   const [archiveInfluencers, setArchiveInfluencers] = useState<Influencer[]>([]);
   const [archiveStats, setArchiveStats] = useState<ArchiveStats>(emptyStats);
   const [isArchiveLoading, setIsArchiveLoading] = useState(true);
   const [archiveError, setArchiveError] = useState("");
 
-  const isAdmin = session?.user?.role === "admin";
-  const visibleView = view === "admin" && !isAdmin ? "archive" : view;
+  const canReviewAdminQueue = canAccessAdminReview(session?.user?.role);
 
   const filteredInfluencers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -155,41 +149,16 @@ export default function Home() {
     }
   };
 
-  const loadSubmissions = async () => {
-    const response = await fetch("/api/submissions");
-    const payload = await response.json();
-    setSubmissions(payload.data ?? []);
-  };
-
-  const handleAdminAction = async (id: string, statusValue: InfluencerSubmission["status"]) => {
-    const response = await fetch(`/api/admin/submissions/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: statusValue })
-    });
-    const payload = await response.json();
-
-    if (response.ok) {
-      setSubmissions((current) => current.map((item) => (item.id === id ? payload.data : item)));
-      await loadArchive();
-    }
-  };
-
   const storageStatus = archiveError ? "Neon setup needed" : isArchiveLoading ? "Loading Neon data" : "Neon database active";
 
   return (
     <main className="min-h-screen px-4 py-4 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
         <TopBar
-          activeView={visibleView}
-          onViewChange={(nextView) => {
-            setView(nextView);
-            if (nextView === "admin") void loadSubmissions();
-          }}
+          canReviewAdminQueue={canReviewAdminQueue}
           sessionName={session?.user?.name}
           sessionEmail={session?.user?.email}
           isLoadingSession={status === "loading"}
-          isAdmin={isAdmin}
         />
 
         <section className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
@@ -219,30 +188,26 @@ export default function Home() {
           />
 
           <div className="min-w-0">
-            {visibleView === "archive" && (
-              <ArchiveView
-                sortKey={sortKey}
-                setSortKey={(value) => {
-                  setSortKey(value);
-                  setCurrentPage(1);
-                }}
-                filteredInfluencers={filteredInfluencers}
-                paginatedInfluencers={paginatedInfluencers}
-                selectedInfluencer={selectedInfluencer}
-                setSelectedId={setSelectedId}
-                currentPage={safePage}
-                totalPages={totalPages}
-                pageStart={pageStart}
-                onPageChange={setCurrentPage}
-                stats={archiveStats}
-                isLoading={isArchiveLoading}
-                error={archiveError}
-                onRefresh={loadArchive}
-                onOpenSubmit={() => window.location.assign("/submit-profile")}
-              />
-            )}
-
-            {visibleView === "admin" && <AdminView submissions={submissions} onRefresh={loadSubmissions} onAction={handleAdminAction} />}
+            <ArchiveView
+              sortKey={sortKey}
+              setSortKey={(value) => {
+                setSortKey(value);
+                setCurrentPage(1);
+              }}
+              filteredInfluencers={filteredInfluencers}
+              paginatedInfluencers={paginatedInfluencers}
+              selectedInfluencer={selectedInfluencer}
+              setSelectedId={setSelectedId}
+              currentPage={safePage}
+              totalPages={totalPages}
+              pageStart={pageStart}
+              onPageChange={setCurrentPage}
+              stats={archiveStats}
+              isLoading={isArchiveLoading}
+              error={archiveError}
+              onRefresh={loadArchive}
+              onOpenSubmit={() => window.location.assign("/submit-profile")}
+            />
           </div>
         </section>
       </div>
@@ -251,19 +216,15 @@ export default function Home() {
 }
 
 function TopBar({
-  activeView,
-  onViewChange,
+  canReviewAdminQueue,
   sessionName,
   sessionEmail,
-  isLoadingSession,
-  isAdmin
+  isLoadingSession
 }: {
-  activeView: ViewKey;
-  onViewChange: (view: ViewKey) => void;
+  canReviewAdminQueue: boolean;
   sessionName?: string | null;
   sessionEmail?: string | null;
   isLoadingSession: boolean;
-  isAdmin: boolean;
 }) {
   return (
     <header className="border border-line bg-white/96 shadow-tight backdrop-blur">
@@ -277,12 +238,20 @@ function TopBar({
         </div>
 
         <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Primary navigation">
-          <NavButton active={activeView === "archive"} icon={<Database className="h-4 w-4" />} label="Archive" onClick={() => onViewChange("archive")} />
+          <Link href="/" className="flex h-10 items-center gap-2 border border-ink bg-ink px-3 font-semibold text-white">
+            <Database className="h-4 w-4" />
+            Archive
+          </Link>
           <Link href="/submit-profile" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
             <Plus className="h-4 w-4" />
             Submit profile
           </Link>
-          {isAdmin && <NavButton active={activeView === "admin"} icon={<FileCheck2 className="h-4 w-4" />} label="Admin review" onClick={() => onViewChange("admin")} />}
+          {canReviewAdminQueue && (
+            <Link href="/review-profiles" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
+              <FileCheck2 className="h-4 w-4" />
+              Review profiles
+            </Link>
+          )}
         </nav>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -310,20 +279,6 @@ function TopBar({
         </div>
       </div>
     </header>
-  );
-}
-
-function NavButton({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex h-10 items-center gap-2 border px-3 font-semibold transition ${
-        active ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:border-ocean hover:text-ink"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 
@@ -522,7 +477,7 @@ function ArchiveView({
 
         <div className="thin-scrollbar grid max-h-none gap-3 overflow-auto p-4 xl:max-h-[calc(100vh-354px)]">
           {error && <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium">{error}</div>}
-          {isLoading && <div className="border border-line bg-panel p-6 text-sm text-muted">Loading archive from Neon...</div>}
+          {isLoading && <div className="border border-line bg-panel p-6 text-sm text-muted">Loading...</div>}
           {!isLoading && paginatedInfluencers.length === 0 && !error && (
             <div className="border border-line bg-panel p-6">
               <p className="font-semibold">No profiles match these filters.</p>
@@ -616,227 +571,6 @@ function SortMenu({ value, onChange }: { value: SortKey; onChange: (value: SortK
         </div>
       )}
     </div>
-  );
-}
-
-function SubmissionView({
-  sessionEmail,
-  onSubmitted,
-  submissionMessage
-}: {
-  sessionEmail?: string | null;
-  onSubmitted: (message: string) => void;
-  submissionMessage: string;
-}) {
-  const [profileUrl, setProfileUrl] = useState("https://x.com/thedefinvestor");
-  const [selectedNiches, setSelectedNiches] = useState<Niche[]>(["DeFi"]);
-  const [note, setNote] = useState("");
-  const [preview, setPreview] = useState<TwitterProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const toggleNiche = (niche: Niche) => {
-    setSelectedNiches((current) => (current.includes(niche) ? current.filter((item) => item !== niche) : [...current, niche]));
-  };
-
-  const previewProfile = async () => {
-    setIsLoading(true);
-    const response = await fetch(`/api/twitter/profile?profile=${encodeURIComponent(profileUrl)}`);
-    const payload = await response.json();
-    setPreview(payload.data ?? null);
-    setIsLoading(false);
-  };
-
-  const submitProfile = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsLoading(true);
-    const response = await fetch("/api/submissions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        profileUrl,
-        niches: selectedNiches,
-        note,
-        email: sessionEmail
-      })
-    });
-    const payload = await response.json();
-    setIsLoading(false);
-    onSubmitted(response.ok ? `Submitted @${payload.data.profile.handle} for admin review.` : payload.error ?? "Submission failed.");
-  };
-
-  return (
-    <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <form onSubmit={submitProfile} className="border border-line bg-white/94 p-4 shadow-tight backdrop-blur">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">Community submissions</p>
-        <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Submit an X profile for review</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-          Users submit a profile link and niche context. The backend previews the profile through the twitterapi.io abstraction, runs basic checks, and places it in the admin queue.
-        </p>
-
-        <div className="mt-5 grid gap-4">
-          <label className="grid gap-2 text-sm font-medium">
-            X/Twitter profile link
-            <input
-              value={profileUrl}
-              onChange={(event) => setProfileUrl(event.target.value)}
-              className="h-12 border border-line bg-panel px-3 outline-none"
-              placeholder="https://x.com/example"
-            />
-          </label>
-
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm font-medium">Submitted niches</span>
-              <span className="text-xs text-muted">Choose at least one</span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {niches.map((niche) => {
-                const active = selectedNiches.includes(niche);
-                return (
-                  <button
-                    type="button"
-                    key={niche}
-                    onClick={() => toggleNiche(niche)}
-                    className={`flex min-h-10 items-center justify-between border px-3 text-left text-xs font-semibold transition ${
-                      active ? "border-moss bg-mint text-ink" : "border-line bg-white text-muted hover:border-moss"
-                    }`}
-                  >
-                    <span>{niche}</span>
-                    {active && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <label className="grid gap-2 text-sm font-medium">
-            Review note
-            <textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              className="min-h-28 border border-line bg-panel p-3 outline-none"
-              placeholder="Why should this account be listed?"
-            />
-          </label>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button type="button" onClick={previewProfile} className="flex h-11 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold">
-            <Search className="h-4 w-4" />
-            Preview profile
-          </button>
-          <button disabled={isLoading || selectedNiches.length === 0} className="flex h-11 items-center gap-2 border border-ink bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50">
-            <UserPlus className="h-4 w-4" />
-            Submit for review
-          </button>
-        </div>
-
-        {submissionMessage && <p className="mt-4 border border-line bg-mint p-3 text-sm font-semibold">{submissionMessage}</p>}
-      </form>
-
-      <SubmissionPreview preview={preview} isLoading={isLoading} />
-    </section>
-  );
-}
-
-function SubmissionPreview({ preview, isLoading }: { preview: TwitterProfile | null; isLoading: boolean }) {
-  return (
-    <aside className="h-fit border border-line bg-white/95 p-4 shadow-tight backdrop-blur lg:sticky lg:top-4">
-      <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-coral" aria-hidden="true" />
-        <h2 className="font-semibold">Provider preview</h2>
-      </div>
-      {!preview && (
-        <div className="mt-4 border border-line bg-panel p-4 text-sm leading-6 text-muted">
-          {isLoading ? "Fetching profile preview..." : "Preview a profile to see the data admins will use before approval."}
-        </div>
-      )}
-      {preview && (
-        <div className="mt-4 space-y-3">
-          <div>
-            <p className="text-lg font-semibold">{preview.name}</p>
-            <p className="text-sm font-medium text-ocean">@{preview.handle}</p>
-          </div>
-          <p className="text-sm leading-6 text-muted">{preview.bio}</p>
-          <div className="grid grid-cols-2 gap-2">
-            <DataPoint label="Followers" value={formatFollowers(preview.followers)} />
-            <DataPoint label="Verified" value={preview.verified ? "Yes" : "No"} />
-            <DataPoint label="Location" value={preview.location} />
-            <DataPoint label="Language" value={preview.language} />
-          </div>
-          <p className="border border-line bg-panel p-3 text-sm leading-6 text-muted">{preview.recentSignal}</p>
-        </div>
-      )}
-    </aside>
-  );
-}
-
-function AdminView({
-  submissions,
-  onRefresh,
-  onAction
-}: {
-  submissions: InfluencerSubmission[];
-  onRefresh: () => void;
-  onAction: (id: string, status: InfluencerSubmission["status"]) => void;
-}) {
-  return (
-    <section className="border border-line bg-white/94 shadow-tight backdrop-blur">
-      <div className="flex flex-col gap-3 border-b border-line p-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">Admin queue</p>
-          <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Review submitted profiles</h1>
-        </div>
-        <button onClick={onRefresh} className="flex h-10 items-center gap-2 border border-line bg-white px-3 text-sm font-semibold">
-          <RefreshCcw className="h-4 w-4" />
-          Refresh queue
-        </button>
-      </div>
-
-      <div className="grid gap-3 p-4">
-        {submissions.length === 0 && <p className="border border-line bg-panel p-4 text-sm text-muted">No submissions loaded yet. Click refresh queue.</p>}
-        {submissions.map((submission) => (
-          <article key={submission.id} className="grid gap-4 border border-line bg-white p-4 lg:grid-cols-[minmax(0,1fr)_260px]">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-semibold">{submission.profile.name}</h2>
-                <span className="border border-line bg-panel px-2 py-1 text-xs font-semibold text-muted">{submission.status.replace("_", " ")}</span>
-                {submission.profile.verified && <BadgeCheck className="h-4 w-4 text-ocean" aria-hidden="true" />}
-              </div>
-              <a href={submission.profile.profileUrl} target="_blank" className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-ocean">
-                @{submission.profile.handle}
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-              <p className="mt-3 text-sm leading-6 text-muted">{submission.profile.bio}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {submission.suggestedNiches.map((niche) => (
-                  <span key={niche} className="bg-mint px-2 py-1 text-xs font-semibold">
-                    {niche}
-                  </span>
-                ))}
-              </div>
-              {submission.riskFlags.length > 0 && (
-                <div className="mt-3 border border-coral/40 bg-coral/10 p-3 text-sm font-medium text-ink">{submission.riskFlags.join(" ")}</div>
-              )}
-            </div>
-
-            <div className="grid gap-2">
-              <DataPoint label="Followers" value={formatFollowers(submission.profile.followers)} />
-              <DataPoint label="Submitted by" value={submission.submitterEmail} />
-              <button onClick={() => onAction(submission.id, "approved")} className="h-10 border border-moss bg-moss px-3 text-sm font-semibold text-white">
-                Approve
-              </button>
-              <button onClick={() => onAction(submission.id, "needs_review")} className="h-10 border border-line bg-panel px-3 text-sm font-semibold">
-                Needs review
-              </button>
-              <button onClick={() => onAction(submission.id, "rejected")} className="h-10 border border-coral bg-white px-3 text-sm font-semibold text-coral">
-                Reject
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
   );
 }
 
