@@ -238,19 +238,7 @@ export default function Home() {
                 isLoading={isArchiveLoading}
                 error={archiveError}
                 onRefresh={loadArchive}
-                onOpenSubmit={() => setView("submit")}
-              />
-            )}
-
-            {visibleView === "submit" && (
-              <SubmissionView
-                sessionEmail={session?.user?.email}
-                onSubmitted={(message) => {
-                  setSubmissionMessage(message);
-                  void loadSubmissions();
-                  void loadArchive();
-                }}
-                submissionMessage={submissionMessage}
+                onOpenSubmit={() => window.location.assign("/submit-profile")}
               />
             )}
 
@@ -290,7 +278,10 @@ function TopBar({
 
         <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Primary navigation">
           <NavButton active={activeView === "archive"} icon={<Database className="h-4 w-4" />} label="Archive" onClick={() => onViewChange("archive")} />
-          <NavButton active={activeView === "submit"} icon={<Plus className="h-4 w-4" />} label="Submit profile" onClick={() => onViewChange("submit")} />
+          <Link href="/submit-profile" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
+            <Plus className="h-4 w-4" />
+            Submit profile
+          </Link>
           {isAdmin && <NavButton active={activeView === "admin"} icon={<FileCheck2 className="h-4 w-4" />} label="Admin review" onClick={() => onViewChange("admin")} />}
         </nav>
 

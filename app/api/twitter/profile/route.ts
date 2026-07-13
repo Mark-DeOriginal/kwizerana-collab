@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchTwitterProfile } from "@/lib/twitter-profile";
+import { fetchTwitterProfile, TwitterProfileLookupError } from "@/lib/twitter-profile";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -13,6 +13,18 @@ export async function GET(request: Request) {
     const data = await fetchTwitterProfile(profile);
     return NextResponse.json({ data });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to fetch profile." }, { status: 400 });
+    if (error instanceof TwitterProfileLookupError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code,
+          hint: error.hint,
+          providerMessage: error.providerMessage
+        },
+        { status: error.status }
+      );
+    }
+
+    return NextResponse.json({ error: "Failed to fetch profile.", code: "UPSTREAM" }, { status: 502 });
   }
 }

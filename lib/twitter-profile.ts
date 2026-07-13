@@ -57,6 +57,39 @@ const fallbackProfiles: Record<string, TwitterProfile> = {
   }
 };
 
+type TwitterApiPayload = Record<string, unknown>;
+
+export type TwitterLookupErrorCode =
+  | "INVALID_INPUT"
+  | "NOT_FOUND"
+  | "AUTH"
+  | "RATE_LIMIT"
+  | "TIMEOUT"
+  | "UPSTREAM"
+  | "MISCONFIGURED";
+
+export class TwitterProfileLookupError extends Error {
+  code: TwitterLookupErrorCode;
+  status: number;
+  hint?: string;
+  providerMessage?: string;
+
+  constructor(input: {
+    message: string;
+    code: TwitterLookupErrorCode;
+    status: number;
+    hint?: string;
+    providerMessage?: string;
+  }) {
+    super(input.message);
+    this.name = "TwitterProfileLookupError";
+    this.code = input.code;
+    this.status = input.status;
+    this.hint = input.hint;
+    this.providerMessage = input.providerMessage;
+  }
+}
+
 export function extractTwitterHandle(input: string) {
   const cleanInput = input.trim();
   const directHandle = cleanInput.match(/^@?([A-Za-z0-9_]{1,15})$/);
@@ -94,10 +127,141 @@ export function inferNiches(profile: Pick<TwitterProfile, "bio" | "name">, submi
   return Array.from(inferred).slice(0, 5);
 }
 
+function normalizeLookupUrl(baseUrl: string, lookupPath: string, handle: string) {
+  const trimmedBaseUrl = baseUrl.trim();
+  const trimmedPath = lookupPath.trim();
+
+  const normalizedBaseUrl = (() => {
+    const url = new URL(trimmedBaseUrl);
+
+    // Accept `twitterapi.io` in env config but normalize to the documented API host.
+    if (url.hostname === "twitterapi.io") {
+      url.hostname = "api.twitterapi.io";
+    }
+
+    return url.toString();
+  })();
+
+  const rawUrl = /^https?:\/\//i.test(trimmedPath) ? trimmedPath : new URL(trimmedPath, normalizedBaseUrl).toString();
+  const url = new URL(rawUrl);
+
+  if (url.hostname === "twitterapi.io") {
+    url.hostname = "api.twitterapi.io";
+  }
+
+  url.searchParams.set("userName", handle);
+  return url;
+}
+
+function pickUser(payload: TwitterApiPayload): TwitterApiPayload | null {
+  const candidates = [
+    payload.data,
+    payload.user,
+    payload.result,
+    payload.profile,
+    payload.data && typeof payload.data === "object" ? (payload.data as TwitterApiPayload).user : null,
+    payload.data && typeof payload.data === "object" ? (payload.data as TwitterApiPayload).result : null,
+    payload.data && typeof payload.data === "object" ? (payload.data as TwitterApiPayload).profile : null
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      return candidate as TwitterApiPayload;
+    }
+  }
+
+  return payload;
+}
+
+function numberFrom(...values: unknown[]) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
+function stringFrom(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
+function booleanFrom(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "boolean") return value;
+  }
+
+  return false;
+}
+
+function buildTwitterApiError(status: number, body: string) {
+  const normalized = body.toLowerCase();
+
+  if (status === 404 || normalized.includes("not found") || normalized.includes("user not found")) {
+    return new TwitterProfileLookupError({
+      message: "We couldn't find that X profile. Check the handle or profile link and try again.",
+      code: "NOT_FOUND",
+      status: 404,
+      hint: "If the handle is correct, the provider may not have returned the profile yet.",
+      providerMessage: body || undefined
+    });
+  }
+
+  if (status === 401 || status === 403) {
+    return new TwitterProfileLookupError({
+      message: "twitterapi.io rejected the request.",
+      code: "AUTH",
+      status,
+      hint: "Recheck your API key, endpoint settings, or account permissions on the current plan.",
+      providerMessage: body || undefined
+    });
+  }
+
+  if (status === 429 || normalized.includes("rate limit")) {
+    return new TwitterProfileLookupError({
+      message: "twitterapi.io rate limited the request.",
+      code: "RATE_LIMIT",
+      status: 429,
+      hint: "This can happen when the plan limit is reached or too many requests are sent in a short time.",
+      providerMessage: body || undefined
+    });
+  }
+
+  if (status >= 500) {
+    return new TwitterProfileLookupError({
+      message: "twitterapi.io is temporarily unavailable.",
+      code: "UPSTREAM",
+      status,
+      hint: "The provider appears to be having trouble right now. Please try again shortly.",
+      providerMessage: body || undefined
+    });
+  }
+
+  return new TwitterProfileLookupError({
+    message: `twitterapi.io lookup failed with status ${status}.`,
+    code: "UPSTREAM",
+    status,
+    hint: "The provider responded unexpectedly. Please verify the endpoint and plan access.",
+    providerMessage: body || undefined
+  });
+}
+
 export async function fetchTwitterProfile(input: string): Promise<TwitterProfile> {
   const handle = extractTwitterHandle(input);
   if (!handle) {
-    throw new Error("Enter a valid X/Twitter profile link or handle.");
+    throw new TwitterProfileLookupError({
+      message: "Enter a valid X/Twitter profile link or handle.",
+      code: "INVALID_INPUT",
+      status: 400
+    });
   }
 
   const apiKey = process.env.TWITTERAPI_IO_API_KEY;
@@ -107,38 +271,81 @@ export async function fetchTwitterProfile(input: string): Promise<TwitterProfile
   if (!apiKey || !baseUrl || !lookupPath) {
     return fallbackProfiles[handle] ?? buildFallbackProfile(handle);
   }
+  try {
+    const url = normalizeLookupUrl(baseUrl, lookupPath, handle);
+    const response = await fetch(url, {
+      headers: {
+        "X-API-Key": apiKey,
+        apikey: apiKey,
+        Authorization: `Bearer ${apiKey}`
+      },
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(25000)
+    });
 
-  const url = new URL(lookupPath, baseUrl);
-  url.searchParams.set("userName", handle);
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw buildTwitterApiError(response.status, errorBody);
+    }
 
-  const response = await fetch(url, {
-    headers: {
-      "X-API-Key": apiKey
-    },
-    next: { revalidate: 3600 }
-  });
+    const payload = (await response.json()) as TwitterApiPayload;
+    const user = pickUser(payload);
 
-  if (!response.ok) {
-    throw new Error(`twitterapi.io lookup failed with status ${response.status}.`);
+    if (!user) {
+      throw new TwitterProfileLookupError({
+        message: "twitterapi.io returned an unexpected response shape.",
+        code: "UPSTREAM",
+        status: 502,
+        hint: "The provider responded, but not in the format this app expected."
+      });
+    }
+
+    const resolvedHandle = stringFrom(user.userName, user.username, user.screen_name, handle) || handle;
+
+    return {
+      handle: resolvedHandle,
+      name: stringFrom(user.name, user.displayName, resolvedHandle) || resolvedHandle,
+      bio: stringFrom(user.description, user.bio),
+      followers: numberFrom(user.followers, user.followers_count, user.followersCount),
+      following: numberFrom(user.following, user.friends_count, user.followingCount) || undefined,
+      location: stringFrom(user.location) || "Unknown",
+      language: stringFrom(user.lang, user.language) || "Unknown",
+      verified: booleanFrom(user.verified, user.isBlueVerified, user.blue_verified),
+      profileImageUrl: stringFrom(user.profilePicture, user.profile_image_url_https, user.avatar) || undefined,
+      profileUrl: `https://x.com/${resolvedHandle}`,
+      updatedAt: new Date().toISOString(),
+      recentSignal: "Profile details were pulled from twitterapi.io provider."
+    };
+  } catch (error) {
+    if (error instanceof TwitterProfileLookupError) {
+      throw error;
+    }
+
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new TwitterProfileLookupError({
+        message: "twitterapi.io took too long to respond.",
+        code: "TIMEOUT",
+        status: 504,
+        hint: "The provider may be slow right now. Please try again."
+      });
+    }
+
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new TwitterProfileLookupError({
+        message: "twitterapi.io request was interrupted.",
+        code: "TIMEOUT",
+        status: 504,
+        hint: "The request timed out before the provider responded. Please try again."
+      });
+    }
+
+    throw new TwitterProfileLookupError({
+      message: "We couldn't reach twitterapi.io right now.",
+      code: "UPSTREAM",
+      status: 502,
+      hint: "Please verify the provider settings and try again."
+    });
   }
-
-  const payload = await response.json();
-  const user = payload.data ?? payload.user ?? payload;
-
-  return {
-    handle: user.userName ?? user.username ?? user.screen_name ?? handle,
-    name: user.name ?? handle,
-    bio: user.description ?? user.bio ?? "",
-    followers: Number(user.followers ?? user.followers_count ?? user.followersCount ?? 0),
-    following: Number(user.following ?? user.friends_count ?? user.followingCount ?? 0),
-    location: user.location ?? "Unknown",
-    language: user.lang ?? "Unknown",
-    verified: Boolean(user.verified ?? user.isBlueVerified ?? user.blue_verified),
-    profileImageUrl: user.profilePicture ?? user.profile_image_url_https ?? user.avatar,
-    profileUrl: `https://x.com/${user.userName ?? user.username ?? handle}`,
-    updatedAt: new Date().toISOString(),
-    recentSignal: "Profile details were pulled from the configured twitterapi.io provider."
-  };
 }
 
 export function profileToInfluencer(profile: TwitterProfile, tags: Niche[], id: number): Influencer {

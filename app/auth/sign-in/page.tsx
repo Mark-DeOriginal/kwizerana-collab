@@ -37,34 +37,34 @@ export default function SignInPage() {
           </Link>
 
           <div className="mt-12 max-w-2xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">Kwizerana access</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">Welcome to Kwizerana</p>
             <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-5xl">Sign up or log in with Google</h1>
             <p className="mt-4 text-base leading-7 text-muted">
-              Use one Google account to submit profiles, save lists, and access admin review when your email is approved.
+              Sign in with your Google account to explore the archive, submit profiles for review, and access additional tools.
             </p>
           </div>
 
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            <Feature icon={<ShieldCheck className="h-5 w-5" />} label="Verified identity" />
-            <Feature icon={<Database className="h-5 w-5" />} label="Database-ready user records" />
-            <Feature icon={<Check className="h-5 w-5" />} label="Role-based admin access" />
-          </div>
+          {/* <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            <Feature icon={<ShieldCheck className="h-5 w-5" />} label="Trusted sign-in" />
+            <Feature icon={<Database className="h-5 w-5" />} label="Secure account access" />
+            <Feature icon={<Check className="h-5 w-5" />} label="Admin permissions" />
+          </div> */}
         </section>
 
         <aside className="border border-line bg-white/95 p-5 shadow-tight backdrop-blur">
           <div className="border-b border-line pb-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">Account</p>
-            <h2 className="mt-1 text-xl font-semibold">{isSignedIn ? "You are signed in" : "Continue securely"}</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">Account Access</p>
+            <h2 className="mt-1 text-xl font-semibold">{isSignedIn ? "You're signed in" : "Continue with Google"}</h2>
           </div>
 
           {isSignedIn ? (
             <div className="mt-5">
               <div className="border border-line bg-panel p-4">
-                <p className="font-semibold">{session?.user?.name ?? "Signed in user"}</p>
+                <p className="font-semibold">{session?.user?.name ?? "Signed-in account"}</p>
                 <p className="mt-1 text-sm text-muted">{session?.user?.email}</p>
               </div>
               <Link href="/" className="mt-4 flex h-11 items-center justify-center border border-ink bg-ink px-4 text-sm font-semibold text-white">
-                Continue to archive
+                Go to archive
               </Link>
             </div>
           ) : (
@@ -80,9 +80,9 @@ export default function SignInPage() {
 
               {checkedConfig && !googleAuthReady && (
                 <div className="mt-4 border border-coral/40 bg-coral/10 p-4 text-sm leading-6">
-                  <p className="font-semibold">Google OAuth is not configured yet.</p>
+                  <p className="font-semibold">Google sign-in is not available yet.</p>
                   <p className="mt-2 text-muted">
-                    Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_URL`, and `NEXTAUTH_SECRET` to `.env.local`, then restart the dev server.
+                    Complete the Google authentication setup and restart the application to enable sign-in.
                   </p>
                 </div>
               )}
@@ -91,8 +91,8 @@ export default function SignInPage() {
 
           <div className="mt-5 border border-line bg-panel p-4 text-sm leading-6 text-muted">
             {databaseReady
-              ? "Signing in will write your user record to Neon and keep roles, submissions, and review history in the database."
-              : "Add your Neon DATABASE_URL so sign-ins can persist users, roles, submissions, and review history."}
+              ? "Continue with your Google account to access the archive, submit profiles for review, and manage your activity securely."
+              : "Complete the application setup to enable secure sign-in, profile submissions, and account access."}
           </div>
         </aside>
       </div>
