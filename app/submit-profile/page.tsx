@@ -215,12 +215,7 @@ export default function SubmitProfilePage() {
 
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
           <form onSubmit={submitProfile} className="border border-line bg-white/94 p-4 shadow-tight backdrop-blur">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">Community submissions</p>
             <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Submit an X profile for review</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Enter an X/Twitter profile and preview live account data from `twitterapi.io` before you submit it into the review queue.
-            </p>
-
             <div className="mt-5 grid gap-4">
               <label className="grid gap-2 text-sm font-medium">
                 X/Twitter profile link or handle

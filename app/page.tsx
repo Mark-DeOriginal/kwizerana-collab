@@ -137,8 +137,6 @@ export default function Home() {
     }
   };
 
-  const storageStatus = archiveError ? "Data connection unavailable" : isArchiveLoading ? "Loading live data" : "Data connection active";
-
   return (
     <main className="min-h-screen px-4 py-4 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
@@ -172,7 +170,6 @@ export default function Home() {
               setVerifiedOnly(value);
               setCurrentPage(1);
             }}
-            storageStatus={storageStatus}
           />
 
           <div className="min-w-0">
@@ -278,8 +275,7 @@ function ControlRail({
   minFollowers,
   setMinFollowers,
   verifiedOnly,
-  setVerifiedOnly,
-  storageStatus
+  setVerifiedOnly
 }: {
   query: string;
   setQuery: (value: string) => void;
@@ -290,7 +286,6 @@ function ControlRail({
   setMinFollowers: (value: number) => void;
   verifiedOnly: boolean;
   setVerifiedOnly: (value: boolean) => void;
-  storageStatus: string;
 }) {
   return (
     <aside className="h-fit border border-line bg-white/92 p-4 shadow-tight backdrop-blur xl:sticky xl:top-4">
@@ -382,14 +377,6 @@ function ControlRail({
         <input type="checkbox" checked={verifiedOnly} onChange={(event) => setVerifiedOnly(event.target.checked)} className="h-4 w-4 accent-ocean" />
       </label>
 
-      <div className="mt-5 border border-line bg-panel p-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Platform status</p>
-        <div className="mt-3 space-y-2 text-sm">
-          <StatusLine label="Authentication" value="Google sign-in" />
-          <StatusLine label="Profile data" value="Live profile API" />
-          <StatusLine label="Storage" value={storageStatus} />
-        </div>
-      </div>
     </aside>
   );
 }
@@ -431,9 +418,9 @@ function ArchiveView({
         <div className="border-b border-line p-4">
           <div className="flex flex-col gap-4">
             <div className="max-w-3xl">
-              <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Discover notable X accounts with verified profile data</h1>
+              <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Discover notable accounts to collaborate with on X/Twitter</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-                Search, filter, and review profiles from a central archive designed for public discovery and internal moderation workflows.
+                Explore a searchable database of influential X/Twitter profiles. Filter by followers, niche, and activity to identify collaboration opportunities that match your goals.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <ToolbarButton icon={<RefreshCcw className="h-4 w-4" />} label="Refresh" onClick={onRefresh} />

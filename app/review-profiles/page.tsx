@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
-import { BadgeCheck, Database, ExternalLink, FileCheck2, LogIn, LogOut, Plus, RefreshCcw, Sparkles } from "lucide-react";
+import { BadgeCheck, Database, ExternalLink, FileCheck2, LogIn, LogOut, Loader2, Plus, RefreshCcw, Sparkles } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import type { InfluencerSubmission } from "@/lib/submissions";
 
@@ -18,6 +18,7 @@ export default function AdminReviewPage() {
   const [submissions, setSubmissions] = useState<InfluencerSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
   const canReviewAdminQueue = canAccessAdminReview(session?.user?.role);
 
@@ -50,17 +51,29 @@ export default function AdminReviewPage() {
   };
 
   const handleAdminAction = async (id: string, statusValue: InfluencerSubmission["status"]) => {
-    const response = await fetch(`/api/admin/submissions/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: statusValue })
-    });
-    const payload = await response.json();
+    setProcessingIds((prev) => new Set(prev).add(id));
 
-    if (response.ok) {
-      setSubmissions((current) => current.map((item) => (item.id === id ? payload.data : item)));
-    } else {
-      setErrorMessage(payload.error ?? "Failed to update submission.");
+    try {
+      const response = await fetch(`/api/admin/submissions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: statusValue })
+      });
+      const payload = await response.json();
+
+      if (response.ok) {
+        setSubmissions((current) => current.map((item) => (item.id === id ? payload.data : item)));
+      } else {
+        setErrorMessage(payload.error ?? "Failed to update submission.");
+      }
+    } catch {
+      setErrorMessage("Failed to update submission.");
+    } finally {
+      setProcessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -163,12 +176,36 @@ export default function AdminReviewPage() {
                       <DataPoint label="Submitted by" value={submission.submitterEmail} />
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-[260px]">
-                      <button onClick={() => void handleAdminAction(submission.id, "approved")} className="h-10 border border-moss bg-moss px-3 text-sm font-semibold text-white">
-                        Accept
-                      </button>
-                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} className="h-10 border border-coral bg-white px-3 text-sm font-semibold text-coral">
-                        Reject
-                      </button>
+                      {submission.status === "approved" ? (
+                        <>
+                          <button disabled className="h-10 border border-moss bg-moss/20 px-3 text-sm font-semibold text-moss">
+                            Approved
+                          </button>
+                          <button onClick={() => void handleAdminAction(submission.id, "rejected")} className="h-10 border border-coral bg-white px-3 text-sm font-semibold text-coral">
+                            Remove profile
+                          </button>
+                        </>
+                      ) : submission.status === "rejected" ? (
+                        <>
+                          <button onClick={() => void handleAdminAction(submission.id, "approved")} className="h-10 border border-moss bg-white px-3 text-sm font-semibold text-moss">
+                            Approve
+                          </button>
+                          <button disabled className="h-10 border border-coral bg-coral/20 px-3 text-sm font-semibold text-coral">
+                            Rejected
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => void handleAdminAction(submission.id, "approved")} disabled={processingIds.has(submission.id)} className="flex h-10 items-center justify-center gap-2 border border-moss bg-moss px-3 text-sm font-semibold text-white disabled:opacity-60">
+                            {processingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            Approve
+                          </button>
+                          <button onClick={() => void handleAdminAction(submission.id, "rejected")} disabled={processingIds.has(submission.id)} className="flex h-10 items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral disabled:opacity-60">
+                            {processingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            Reject
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </article>

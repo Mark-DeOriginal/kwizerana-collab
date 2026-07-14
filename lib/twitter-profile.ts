@@ -314,7 +314,7 @@ export async function fetchTwitterProfile(input: string): Promise<TwitterProfile
       profileImageUrl: stringFrom(user.profilePicture, user.profile_image_url_https, user.avatar) || undefined,
       profileUrl: `https://x.com/${resolvedHandle}`,
       updatedAt: new Date().toISOString(),
-      recentSignal: "Profile details were pulled from twitterapi.io provider."
+      recentSignal: ""
     };
   } catch (error) {
     if (error instanceof TwitterProfileLookupError) {
