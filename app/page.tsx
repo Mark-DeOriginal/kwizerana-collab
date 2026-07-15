@@ -3,29 +3,24 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { signOut, useSession } from "next-auth/react";
 import {
   ArrowUpDown,
   BadgeCheck,
   Bookmark,
   Check,
   ChevronDown,
-  Database,
   Download,
   ExternalLink,
-  FileCheck2,
   Filter,
-  LogIn,
-  LogOut,
-  Plus,
   RefreshCcw,
   Search,
   Sparkles,
   UserPlus,
   X
 } from "lucide-react";
-import { canAccessAdminReview } from "@/lib/admin-review-access";
+import { DataPoint } from "@/components/DataPoint";
 import { type Influencer, niches, type Niche } from "@/lib/influencers";
+import { formatFollowers } from "@/lib/format";
 
 type SortKey = "match" | "followers" | "updated";
 
@@ -44,14 +39,7 @@ const sortOptions: Array<{ label: string; description: string; value: SortKey }>
   { label: "Recently refreshed", description: "Freshest profile data first", value: "updated" }
 ];
 
-const formatFollowers = (value: number) => {
-  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
-  if (value >= 1000) return `${(value / 1000).toFixed(value >= 100000 ? 0 : 1)}k`;
-  return value.toLocaleString();
-};
-
 export default function Home() {
-  const { data: session, status } = useSession();
   const [query, setQuery] = useState("");
   const [selectedNiches, setSelectedNiches] = useState<Niche[]>(["DeFi"]);
   const [minFollowers, setMinFollowers] = useState(10000);
@@ -62,8 +50,6 @@ export default function Home() {
   const [archiveInfluencers, setArchiveInfluencers] = useState<Influencer[]>([]);
   const [isArchiveLoading, setIsArchiveLoading] = useState(true);
   const [archiveError, setArchiveError] = useState("");
-
-  const canReviewAdminQueue = canAccessAdminReview(session?.user?.role);
 
   const filteredInfluencers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -137,16 +123,35 @@ export default function Home() {
     }
   };
 
-  return (
-    <main className="min-h-screen px-4 py-4 text-ink sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
-        <TopBar
-          canReviewAdminQueue={canReviewAdminQueue}
-          sessionName={session?.user?.name}
-          sessionEmail={session?.user?.email}
-          isLoadingSession={status === "loading"}
-        />
+  const exportCsv = () => {
+    const headers = ["Name", "Handle", "Followers", "Verified", "Location", "Language", "Tags", "Engagement", "Audience", "Last Active", "Profile URL"];
+    const rows = filteredInfluencers.map((influencer) => [
+      influencer.name,
+      influencer.handle,
+      String(influencer.followers),
+      influencer.verified ? "Yes" : "No",
+      influencer.location,
+      influencer.language,
+      influencer.tags.join("; "),
+      influencer.engagement,
+      influencer.audience,
+      influencer.lastActive,
+      influencer.profileUrl ?? `https://x.com/${influencer.handle}`
+    ]);
 
+    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `kwizerana-archive-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="px-4 py-6 text-ink sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1580px]">
         <section className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
           <ControlRail
             query={query}
@@ -191,78 +196,12 @@ export default function Home() {
               error={archiveError}
               onRefresh={loadArchive}
               onOpenSubmit={() => window.location.assign("/submit-profile")}
+              onExportCsv={exportCsv}
             />
           </div>
         </section>
       </div>
-    </main>
-  );
-}
-
-function TopBar({
-  canReviewAdminQueue,
-  sessionName,
-  sessionEmail,
-  isLoadingSession
-}: {
-  canReviewAdminQueue: boolean;
-  sessionName?: string | null;
-  sessionEmail?: string | null;
-  isLoadingSession: boolean;
-}) {
-  return (
-    <header className="border border-line bg-white/96 shadow-tight backdrop-blur">
-      <div className="flex flex-col gap-4 border-b border-line px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center bg-ink text-sm font-bold text-white">KW</div>
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-moss">Kwizerana</p>
-            <p className="text-lg font-semibold leading-tight">Influencer Archive</p>
-          </div>
-        </div>
-
-        <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Primary navigation">
-          <Link href="/" className="flex h-10 items-center gap-2 border border-ink bg-ink px-3 font-semibold text-white">
-            <Database className="h-4 w-4" />
-            Archive
-          </Link>
-          <Link href="/submit-profile" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
-            <Plus className="h-4 w-4" />
-            Submit profile
-          </Link>
-          {canReviewAdminQueue && (
-            <Link href="/review-profiles" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
-              <FileCheck2 className="h-4 w-4" />
-              Review profiles
-            </Link>
-          )}
-        </nav>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {sessionEmail ? (
-            <>
-              <div className="border border-line bg-panel px-3 py-2 text-xs">
-                <p className="font-semibold">{sessionName ?? "Signed in"}</p>
-                <p className="text-muted">{sessionEmail}</p>
-              </div>
-              <button onClick={() => signOut()} className="flex h-10 items-center gap-2 border border-line bg-white px-3 text-sm font-semibold">
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </button>
-            </>
-          ) : (
-            <Link
-              href="/auth/sign-in"
-              aria-disabled={isLoadingSession}
-              className="flex h-10 items-center gap-2 border border-ink bg-ink px-3 text-sm font-semibold text-white"
-            >
-              <LogIn className="h-4 w-4" />
-              {isLoadingSession ? "Checking session" : "Sign up / log in"}
-            </Link>
-          )}
-        </div>
-      </div>
-    </header>
+    </div>
   );
 }
 
@@ -288,11 +227,11 @@ function ControlRail({
   setVerifiedOnly: (value: boolean) => void;
 }) {
   return (
-    <aside className="h-fit border border-line bg-white/92 p-4 shadow-tight backdrop-blur xl:sticky xl:top-4">
+    <aside className="h-fit border border-line bg-white/92 p-4 shadow-tight backdrop-blur xl:sticky xl:top-20">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">Operating controls</p>
-          <h2 className="mt-1 text-lg font-semibold">Discovery filters</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Filters</p>
+          <h2 className="mt-1 text-lg font-semibold">Discovery controls</h2>
         </div>
         <Filter className="h-5 w-5 text-ocean" aria-hidden="true" />
       </div>
@@ -300,17 +239,17 @@ function ControlRail({
       <label className="block text-sm font-medium" htmlFor="search">
         Search archive
       </label>
-      <div className="mt-2 flex items-center border border-line bg-panel px-3">
+      <div className="mt-2 flex items-center border border-line bg-panel px-3 transition-colors focus-within:border-ocean">
         <Search className="h-4 w-4 text-muted" aria-hidden="true" />
         <input
           id="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Handle, niche, bio, region"
-          className="h-11 w-full bg-transparent px-2 text-sm outline-none placeholder:text-muted"
+          className="h-10 w-full bg-transparent px-2 text-sm outline-none placeholder:text-muted"
         />
         {query && (
-          <button className="text-muted" onClick={() => setQuery("")} aria-label="Clear search">
+          <button className="text-muted transition-colors hover:text-ink" onClick={() => setQuery("")} aria-label="Clear search">
             <X className="h-4 w-4" />
           </button>
         )}
@@ -338,7 +277,9 @@ function ControlRail({
             <button
               key={tier.label}
               onClick={() => setMinFollowers(tier.min)}
-              className={`h-9 border text-xs font-semibold transition ${minFollowers === tier.min ? "border-ocean bg-ocean text-white" : "border-line bg-white text-muted hover:border-ocean"}`}
+              className={`h-9 border text-xs font-semibold transition-colors ${
+                minFollowers === tier.min ? "border-ocean bg-ocean text-white" : "border-line bg-white text-muted hover:border-ocean"
+              }`}
             >
               {tier.label}
             </button>
@@ -349,7 +290,7 @@ function ControlRail({
       <div className="mt-5">
         <div className="mb-3 flex items-center justify-between">
           <span className="text-sm font-medium">Niches</span>
-          <button className="text-xs font-semibold text-ocean" onClick={clearNiches}>
+          <button className="text-xs font-semibold text-ocean transition-colors hover:text-ink" onClick={clearNiches}>
             Clear
           </button>
         </div>
@@ -360,7 +301,7 @@ function ControlRail({
               <button
                 key={niche}
                 onClick={() => toggleNiche(niche)}
-                className={`flex min-h-10 items-center justify-between border px-3 text-left text-xs font-semibold transition ${
+                className={`flex min-h-10 items-center justify-between border px-3 text-left text-xs font-semibold transition-colors ${
                   active ? "border-moss bg-mint text-ink" : "border-line bg-white text-muted hover:border-moss"
                 }`}
               >
@@ -372,11 +313,10 @@ function ControlRail({
         </div>
       </div>
 
-      <label className="mt-5 flex items-center justify-between border border-line bg-panel px-3 py-3 text-sm">
+      <label className="mt-5 flex items-center justify-between border border-line bg-panel px-3 py-3 text-sm transition-colors hover:bg-white">
         <span className="font-medium">Verified only</span>
         <input type="checkbox" checked={verifiedOnly} onChange={(event) => setVerifiedOnly(event.target.checked)} className="h-4 w-4 accent-ocean" />
       </label>
-
     </aside>
   );
 }
@@ -395,7 +335,8 @@ function ArchiveView({
   isLoading,
   error,
   onRefresh,
-  onOpenSubmit
+  onOpenSubmit,
+  onExportCsv
 }: {
   sortKey: SortKey;
   setSortKey: (value: SortKey) => void;
@@ -411,20 +352,21 @@ function ArchiveView({
   error: string;
   onRefresh: () => void;
   onOpenSubmit: () => void;
+  onExportCsv: () => void;
 }) {
   return (
-    <section className="grid min-h-[calc(100vh-116px)] gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+    <section className="grid min-h-[calc(100vh-140px)] gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
       <div className="min-w-0 border border-line bg-white/94 shadow-tight backdrop-blur">
         <div className="border-b border-line p-4">
           <div className="flex flex-col gap-4">
             <div className="max-w-3xl">
-              <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Discover notable accounts to collaborate with on X/Twitter</h1>
+              <h1 className="text-2xl font-semibold sm:text-3xl">Discover notable accounts to collaborate with on X/Twitter</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
                 Explore a searchable database of influential X/Twitter profiles. Filter by followers, niche, and activity to identify collaboration opportunities that match your goals.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <ToolbarButton icon={<RefreshCcw className="h-4 w-4" />} label="Refresh" onClick={onRefresh} />
-                <ToolbarButton icon={<Download className="h-4 w-4" />} label="Export CSV" />
+                <ToolbarButton icon={<Download className="h-4 w-4" />} label="Export CSV" onClick={onExportCsv} />
                 <ToolbarButton icon={<UserPlus className="h-4 w-4" />} label="Submit profile" primary onClick={onOpenSubmit} />
               </div>
             </div>
@@ -442,13 +384,21 @@ function ArchiveView({
           <SortMenu value={sortKey} onChange={setSortKey} />
         </div>
 
-        <div className="thin-scrollbar grid max-h-none gap-3 overflow-auto p-4 xl:max-h-[calc(100vh-354px)]">
-          {error && <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium">{error}</div>}
-          {isLoading && <div className="border border-line bg-panel p-6 text-sm text-muted">Loading...</div>}
+        <div className="thin-scrollbar grid max-h-none gap-3 overflow-auto p-4 xl:max-h-[calc(100vh-380px)]">
+          {error && (
+            <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-ink">{error}</div>
+          )}
+          {isLoading && (
+            <div className="flex items-center gap-3 border border-line bg-panel p-6 text-sm text-muted">
+              <RefreshCcw className="h-4 w-4 animate-spin text-ocean" />
+              Loading profiles...
+            </div>
+          )}
           {!isLoading && paginatedInfluencers.length === 0 && !error && (
-            <div className="border border-line bg-panel p-6">
-              <p className="font-semibold">No profiles match these filters.</p>
-              <p className="mt-2 text-sm text-muted">Clear a niche, lower the follower threshold, or search a broader term.</p>
+            <div className="border border-line bg-panel p-6 text-center">
+              <Search className="mx-auto h-8 w-8 text-muted/40" />
+              <p className="mt-3 font-semibold">No profiles match these filters.</p>
+              <p className="mt-1 text-sm text-muted">Clear a niche, lower the follower threshold, or search a broader term.</p>
             </div>
           )}
           {paginatedInfluencers.map((influencer) => (
@@ -493,20 +443,20 @@ function SortMenu({ value, onChange }: { value: SortKey; onChange: (value: SortK
         onClick={() => setIsOpen((current) => !current)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
-        className={`flex h-12 w-full items-center justify-between border bg-panel px-3 text-left text-sm shadow-sm transition ${
+        className={`flex h-10 w-full items-center justify-between border bg-panel px-3 text-left text-sm transition-colors ${
           isOpen ? "border-ocean ring-2 ring-ocean/15" : "border-line hover:border-ocean"
         }`}
       >
         <span className="flex min-w-0 items-center gap-3">
-          <span className="grid h-8 w-8 shrink-0 place-items-center bg-white text-ocean">
-            <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
+          <span className="grid h-7 w-7 shrink-0 place-items-center bg-white text-ocean">
+            <ArrowUpDown className="h-3.5 w-3.5" aria-hidden="true" />
           </span>
           <span className="min-w-0">
             <span className="block truncate font-semibold text-ink">{selectedOption.label}</span>
             <span className="block truncate text-xs text-muted">{selectedOption.description}</span>
           </span>
         </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-muted transition ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
+        <ChevronDown className={`h-4 w-4 shrink-0 text-muted transition-transform ${isOpen ? "rotate-180" : ""}`} aria-hidden="true" />
       </button>
 
       {isOpen && (
@@ -523,7 +473,7 @@ function SortMenu({ value, onChange }: { value: SortKey; onChange: (value: SortK
                   onChange(option.value);
                   setIsOpen(false);
                 }}
-                className={`flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-sm transition ${
+                className={`flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-sm transition-colors ${
                   active ? "bg-mint text-ink" : "text-muted hover:bg-panel hover:text-ink"
                 }`}
               >
@@ -561,7 +511,7 @@ function Pagination({
         <button
           onClick={() => onPageChange(Math.max(1, currentPage - 1))}
           disabled={currentPage === 1}
-          className="h-9 border border-line bg-white px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+          className="h-9 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean disabled:cursor-not-allowed disabled:opacity-50"
         >
           Previous
         </button>
@@ -569,7 +519,7 @@ function Pagination({
           <button
             key={page}
             onClick={() => onPageChange(page)}
-            className={`h-9 min-w-9 border px-3 text-sm font-semibold ${
+            className={`h-9 min-w-9 border px-3 text-sm font-semibold transition-colors ${
               currentPage === page ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:border-ocean hover:text-ink"
             }`}
           >
@@ -579,7 +529,7 @@ function Pagination({
         <button
           onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
           disabled={currentPage === totalPages}
-          className="h-9 border border-line bg-white px-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45"
+          className="h-9 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean disabled:cursor-not-allowed disabled:opacity-50"
         >
           Next
         </button>
@@ -602,7 +552,7 @@ function ToolbarButton({
   return (
     <button
       onClick={onClick}
-      className={`flex h-10 items-center gap-2 border px-3 text-sm font-semibold transition ${
+      className={`flex h-10 items-center gap-2 border px-3 text-sm font-semibold transition-colors ${
         primary ? "border-ink bg-ink text-white hover:bg-ocean" : "border-line bg-white text-ink hover:border-ocean"
       }`}
     >
@@ -616,7 +566,7 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
   return (
     <button
       onClick={onSelect}
-      className={`grid gap-3 border p-3 text-left transition md:grid-cols-[minmax(0,1fr)_140px] ${
+      className={`grid gap-3 border p-3 text-left transition-colors md:grid-cols-[minmax(0,1fr)_140px] ${
         active ? "border-ocean bg-mint/65" : "border-line bg-white hover:border-ocean hover:bg-panel"
       }`}
     >
@@ -651,15 +601,16 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
 function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
   if (!influencer) {
     return (
-      <aside className="h-fit border border-line bg-white/95 p-4 shadow-tight backdrop-blur lg:sticky lg:top-4">
-        <p className="font-semibold">No profile selected.</p>
-        <p className="mt-2 text-sm text-muted">Select a profile from the archive to view its full details.</p>
+      <aside className="h-fit border border-line bg-white/95 p-6 shadow-tight backdrop-blur lg:sticky lg:top-20">
+        <Search className="h-8 w-8 text-muted/40" />
+        <p className="mt-3 font-semibold">No profile selected.</p>
+        <p className="mt-1 text-sm text-muted">Select a profile from the archive to view its full details.</p>
       </aside>
     );
   }
 
   return (
-    <aside className="h-fit border border-line bg-white/95 shadow-tight backdrop-blur lg:sticky lg:top-4">
+    <aside className="h-fit border border-line bg-white/95 shadow-tight backdrop-blur lg:sticky lg:top-20">
       <div className="border-b border-line p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -672,7 +623,7 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
               <p className="text-sm font-medium text-ocean">@{influencer.handle}</p>
             </div>
           </div>
-          <button className="grid h-10 w-10 place-items-center border border-line bg-panel text-ink" aria-label="Save profile">
+          <button className="grid h-10 w-10 place-items-center border border-line bg-panel text-ink transition-colors hover:bg-mint" aria-label="Save profile">
             <Bookmark className="h-4 w-4" />
           </button>
         </div>
@@ -686,20 +637,22 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
         <DataPoint label="Location" value={influencer.location} />
       </div>
 
-      <div className="border-y border-line p-4">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-coral" aria-hidden="true" />
-          <h3 className="font-semibold">Profile signals</h3>
+      {influencer.recentSignal && (
+        <div className="border-y border-line p-4">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-coral" aria-hidden="true" />
+            <h3 className="font-semibold">Profile signals</h3>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-muted">{influencer.recentSignal}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {influencer.tags.map((tag) => (
+              <span key={tag} className="border border-line bg-mint px-2 py-1 text-xs font-semibold text-ink">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
-        <p className="mt-3 text-sm leading-6 text-muted">{influencer.recentSignal}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {influencer.tags.map((tag) => (
-            <span key={tag} className="bg-mint px-2 py-1 text-xs font-semibold text-ink">
-              {tag}
-            </span>
-          ))}
-        </div>
-      </div>
+      )}
 
       <div className="p-4">
         <div className="mb-3 flex items-center gap-2">
@@ -712,11 +665,11 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
           <StatusLine label="Audience fit" value={influencer.audience} />
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <a href={influencer.profileUrl ?? `https://x.com/${influencer.handle}`} target="_blank" className="flex h-10 items-center justify-center gap-2 border border-line bg-white text-sm font-semibold">
+          <a href={influencer.profileUrl ?? `https://x.com/${influencer.handle}`} target="_blank" className="flex h-10 items-center justify-center gap-2 border border-line bg-white text-sm font-semibold transition-colors hover:border-ocean hover:text-ink">
             <ExternalLink className="h-4 w-4" />
             Open X
           </a>
-          <button className="h-10 border border-ink bg-ink px-3 text-sm font-semibold text-white">Add list</button>
+          <button className="h-10 border border-ink bg-ink px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean">Add list</button>
         </div>
       </div>
     </aside>
@@ -737,15 +690,6 @@ function Avatar({ influencer, size = "md" }: { influencer: Influencer; size?: "s
           .join("")
           .slice(0, 2)
       )}
-    </div>
-  );
-}
-
-function DataPoint({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-line bg-white/70 p-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{label}</p>
-      <p className="mt-1 break-words font-semibold text-ink">{value}</p>
     </div>
   );
 }

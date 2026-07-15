@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { Providers } from "@/app/providers";
+import { SiteShell } from "@/components/SiteShell";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Kwizerana Influencer Archive",
-  description: "A curated DeFi relationship map for discovering credible X voices."
+  description: "A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with."
 };
 
 export default function RootLayout({
@@ -15,7 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Providers>{children}</Providers>
+        <Providers>
+          <SiteShell>{children}</SiteShell>
+        </Providers>
       </body>
     </html>
   );

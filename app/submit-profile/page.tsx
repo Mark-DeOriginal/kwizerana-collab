@@ -2,11 +2,11 @@
 
 import type { FormEvent } from "react";
 import { useState } from "react";
-import Link from "next/link";
-import { signOut, useSession } from "next-auth/react";
-import { Check, Database, FileCheck2, LogIn, LogOut, Plus, RefreshCcw, Search, Sparkles, UserPlus } from "lucide-react";
-import { canAccessAdminReview } from "@/lib/admin-review-access";
+import { useSession } from "next-auth/react";
+import { Check, RefreshCcw, Search, Sparkles, UserPlus } from "lucide-react";
+import { DataPoint } from "@/components/DataPoint";
 import { niches, type Niche } from "@/lib/influencers";
+import { formatFollowers } from "@/lib/format";
 import type { TwitterProfile } from "@/lib/twitter-profile";
 
 const previewTimeoutMs = 30000;
@@ -17,12 +17,6 @@ type PreviewErrorPayload = {
   code?: string;
   hint?: string;
   providerMessage?: string;
-};
-
-const formatFollowers = (value: number) => {
-  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
-  if (value >= 1000) return `${(value / 1000).toFixed(value >= 100000 ? 0 : 1)}k`;
-  return value.toLocaleString();
 };
 
 function normalizePreviewError(error: PreviewErrorPayload) {
@@ -74,8 +68,7 @@ function normalizePreviewError(error: PreviewErrorPayload) {
 }
 
 export default function SubmitProfilePage() {
-  const { data: session, status } = useSession();
-  const canReviewAdminQueue = canAccessAdminReview(session?.user?.role);
+  const { data: session } = useSession();
   const [profileUrl, setProfileUrl] = useState("https://x.com/thedefinvestor");
   const [selectedNiches, setSelectedNiches] = useState<Niche[]>(["DeFi"]);
   const [note, setNote] = useState("");
@@ -162,61 +155,19 @@ export default function SubmitProfilePage() {
   };
 
   return (
-    <main className="min-h-screen px-4 py-4 text-ink sm:px-6 lg:px-8">
-      <div className="mx-auto flex max-w-[1580px] flex-col gap-4">
-        <header className="border border-line bg-white/96 shadow-tight backdrop-blur">
-          <div className="flex flex-col gap-4 border-b border-line px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center bg-ink text-sm font-bold text-white">KW</div>
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-moss">Kwizerana</p>
-                <p className="text-lg font-semibold leading-tight">Influencer Archive</p>
-              </div>
-            </div>
-
-            <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Primary navigation">
-              <Link href="/" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
-                <Database className="h-4 w-4" />
-                Archive
-              </Link>
-              <Link href="/submit-profile" className="flex h-10 items-center gap-2 border border-ink bg-ink px-3 font-semibold text-white">
-                <Plus className="h-4 w-4" />
-                Submit profile
-              </Link>
-              {canReviewAdminQueue && (
-                <Link href="/review-profiles" className="flex h-10 items-center gap-2 border border-line bg-white px-3 font-semibold text-muted hover:border-ocean hover:text-ink">
-                  <FileCheck2 className="h-4 w-4" />
-                  Review profiles
-                </Link>
-              )}
-            </nav>
-
-            <div className="flex flex-wrap items-center gap-2">
-              {session?.user?.email ? (
-                <>
-                  <div className="border border-line bg-panel px-3 py-2 text-xs">
-                    <p className="font-semibold">{session.user.name ?? "Signed in"}</p>
-                    <p className="text-muted">{session.user.email}</p>
-                  </div>
-                  <button onClick={() => signOut()} className="flex h-10 items-center gap-2 border border-line bg-white px-3 text-sm font-semibold">
-                    <LogOut className="h-4 w-4" />
-                    Sign out
-                  </button>
-                </>
-              ) : (
-                <Link href="/auth/sign-in" className="flex h-10 items-center gap-2 border border-ink bg-ink px-3 text-sm font-semibold text-white">
-                  <LogIn className="h-4 w-4" />
-                  {status === "loading" ? "Checking session" : "Sign up / log in"}
-                </Link>
-              )}
-            </div>
-          </div>
-        </header>
-
+    <div className="px-4 py-6 text-ink sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1580px]">
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <form onSubmit={submitProfile} className="border border-line bg-white/94 p-4 shadow-tight backdrop-blur">
-            <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Submit an X profile for review</h1>
-            <div className="mt-5 grid gap-4">
+          <form onSubmit={submitProfile} className="border border-line bg-white/94 p-5 shadow-tight backdrop-blur">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Submit a profile</p>
+              <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Submit an X profile for review</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
+                Enter a Twitter/X profile and preview live account data before submitting it for admin review.
+              </p>
+            </div>
+
+            <div className="mt-6 grid gap-4">
               <label className="grid gap-2 text-sm font-medium">
                 X/Twitter profile link or handle
                 <input
@@ -228,7 +179,7 @@ export default function SubmitProfilePage() {
                     setPreviewMessage("Preview a profile to see the data admins will use before approval.");
                     setPreviewTone("idle");
                   }}
-                  className="h-12 border border-line bg-panel px-3 outline-none"
+                  className="h-10 border border-line bg-panel px-3 outline-none transition-colors focus:border-ocean"
                   placeholder="https://x.com/example or @example"
                 />
               </label>
@@ -246,7 +197,7 @@ export default function SubmitProfilePage() {
                         type="button"
                         key={niche}
                         onClick={() => toggleNiche(niche)}
-                        className={`flex min-h-10 items-center justify-between border px-3 text-left text-xs font-semibold transition ${
+                        className={`flex min-h-10 items-center justify-between border px-3 text-left text-xs font-semibold transition-colors ${
                           active ? "border-moss bg-mint text-ink" : "border-line bg-white text-muted hover:border-moss"
                         }`}
                       >
@@ -263,7 +214,7 @@ export default function SubmitProfilePage() {
                 <textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
-                  className="min-h-28 border border-line bg-panel p-3 outline-none"
+                  className="min-h-28 border border-line bg-panel p-3 outline-none transition-colors focus:border-ocean"
                   placeholder="Why should this account be listed?"
                 />
               </label>
@@ -274,24 +225,26 @@ export default function SubmitProfilePage() {
                 type="button"
                 onClick={previewProfile}
                 disabled={isPreviewLoading}
-                className="flex h-11 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex h-10 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold transition-colors hover:border-ocean disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isPreviewLoading ? <RefreshCcw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                 {isPreviewLoading ? "Loading preview..." : "Preview profile"}
               </button>
               <button
                 disabled={isSubmitting || selectedNiches.length === 0}
-                className="flex h-11 items-center gap-2 border border-ink bg-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                className="flex h-10 items-center gap-2 border border-ink bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-50"
               >
                 <UserPlus className="h-4 w-4" />
                 {isSubmitting ? "Submitting..." : "Submit for review"}
               </button>
             </div>
 
-            {submissionMessage && <p className="mt-4 border border-line bg-mint p-3 text-sm font-semibold">{submissionMessage}</p>}
+            {submissionMessage && (
+              <p className="mt-4 border border-moss/40 bg-mint p-3 text-sm font-semibold text-ink">{submissionMessage}</p>
+            )}
           </form>
 
-          <aside className="h-fit border border-line bg-white/95 p-4 shadow-tight backdrop-blur lg:sticky lg:top-4">
+          <aside className="h-fit border border-line bg-white/95 p-4 shadow-tight backdrop-blur lg:sticky lg:top-20">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-coral" aria-hidden="true" />
               <h2 className="font-semibold">Provider preview</h2>
@@ -326,21 +279,14 @@ export default function SubmitProfilePage() {
                   <DataPoint label="Followers" value={formatFollowers(preview.followers)} />
                   <DataPoint label="Verified" value={preview.verified ? "Yes" : "No"} />
                 </div>
-                <p className="border border-line bg-panel p-3 text-sm leading-6 text-muted">{preview.recentSignal}</p>
+                {preview.recentSignal && (
+                  <p className="border border-line bg-panel p-3 text-sm leading-6 text-muted">{preview.recentSignal}</p>
+                )}
               </div>
             )}
           </aside>
         </section>
       </div>
-    </main>
-  );
-}
-
-function DataPoint({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-line bg-white/70 p-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{label}</p>
-      <p className="mt-1 break-words font-semibold text-ink">{value}</p>
     </div>
   );
 }
