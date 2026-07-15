@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { BadgeCheck, ExternalLink, FileCheck2, Loader2, LogIn, RefreshCcw, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { BadgeCheck, Check, ExternalLink, FileCheck2, Loader2, LogIn, RefreshCcw, Search, ShieldCheck, Sparkles } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { formatFollowers } from "@/lib/format";
@@ -16,17 +16,7 @@ export default function AdminReviewPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
-  const canReviewAdminQueue = canAccessAdminReview(session?.user?.role);
-
-  useEffect(() => {
-    if (status === "authenticated" && canReviewAdminQueue) {
-      void loadSubmissions();
-    } else if (status !== "loading") {
-      setIsLoading(false);
-    }
-  }, [canReviewAdminQueue, status]);
-
-  const loadSubmissions = async () => {
+  const loadSubmissions = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage("");
 
@@ -44,7 +34,19 @@ export default function AdminReviewPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (status === "loading") return;
+
+    const canReview = canAccessAdminReview(session?.user?.role);
+
+    if (canReview) {
+      void loadSubmissions();
+    } else {
+      setIsLoading(false);
+    }
+  }, [status, session?.user?.role, loadSubmissions]);
 
   const handleAdminAction = async (id: string, statusValue: InfluencerSubmission["status"]) => {
     setProcessingIds((prev) => new Set(prev).add(id));
@@ -73,7 +75,7 @@ export default function AdminReviewPage() {
     }
   };
 
-  if (!canReviewAdminQueue && status !== "loading") {
+  if (!canAccessAdminReview(session?.user?.role) && status !== "loading") {
     return (
       <div className="px-4 py-6 text-ink sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1580px]">
@@ -105,8 +107,7 @@ export default function AdminReviewPage() {
         <section className="border border-line bg-white/94 shadow-tight backdrop-blur">
           <div className="flex flex-col gap-3 border-b border-line p-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Admin queue</p>
-              <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Review submitted profiles</h1>
+              <h1 className="text-2xl font-semibold sm:text-3xl">Review submitted profiles</h1>
             </div>
             <button onClick={() => void loadSubmissions()} className="flex h-10 items-center gap-2 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean">
               <RefreshCcw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -153,32 +154,33 @@ export default function AdminReviewPage() {
                   <DataPoint label="Followers" value={formatFollowers(submission.profile.followers)} />
                   <DataPoint label="Submitted by" value={submission.submitterEmail} />
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:max-w-[260px]">
+                <div className="mt-4 flex flex-wrap gap-2">
                   {submission.status === "approved" ? (
                     <>
-                      <button disabled className="flex h-10 items-center justify-center gap-2 border border-moss bg-moss/20 px-3 text-sm font-semibold text-moss">
+                      <button disabled className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-white px-3 text-sm font-semibold text-moss">
+                        <Check className="h-4 w-4" />
                         Approved
                       </button>
-                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} className="flex h-10 items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10">
+                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10">
                         Remove profile
                       </button>
                     </>
                   ) : submission.status === "rejected" ? (
                     <>
-                      <button onClick={() => void handleAdminAction(submission.id, "approved")} className="flex h-10 items-center justify-center gap-2 border border-moss bg-white px-3 text-sm font-semibold text-moss transition-colors hover:bg-mint">
+                      <button onClick={() => void handleAdminAction(submission.id, "approved")} className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-white px-3 text-sm font-semibold text-moss transition-colors hover:bg-mint">
                         Approve
                       </button>
-                      <button disabled className="flex h-10 items-center justify-center gap-2 border border-coral bg-coral/20 px-3 text-sm font-semibold text-coral">
+                      <button disabled className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-coral/20 px-3 text-sm font-semibold text-coral">
                         Rejected
                       </button>
                     </>
                   ) : (
                     <>
-                      <button onClick={() => void handleAdminAction(submission.id, "approved")} disabled={processingIds.has(submission.id)} className="flex h-10 items-center justify-center gap-2 border border-moss bg-moss px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-50">
+                      <button onClick={() => void handleAdminAction(submission.id, "approved")} disabled={processingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-moss px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-50">
                         {processingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Approve
                       </button>
-                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} disabled={processingIds.has(submission.id)} className="flex h-10 items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50">
+                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} disabled={processingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50">
                         {processingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Reject
                       </button>

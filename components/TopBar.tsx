@@ -27,25 +27,24 @@ export function TopBar() {
           </div>
         </Link>
 
-        <nav className="flex items-center gap-1 text-sm" aria-label="Primary navigation">
+        <nav className="flex items-center gap-1 text-sm" aria-label="Primary navigation" />
+
+        <div className="flex items-center gap-2">
           {canReview && (
             <Link
               href="/review-profiles"
               className={`flex h-10 items-center gap-2 px-3 font-semibold transition-colors ${
-                isActive("/review-profiles") ? "bg-ink text-white" : "text-muted hover:bg-panel hover:text-ink"
+                isActive("/review-profiles") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
               }`}
             >
               <FileCheck2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Review</span>
+              <span>Review profile</span>
             </Link>
           )}
-        </nav>
-
-        <div className="flex items-center gap-2">
           <Link
             href="/submit-profile"
             className={`flex h-10 items-center gap-2 px-3 font-semibold transition-colors ${
-              isActive("/submit-profile") ? "bg-ink text-white" : "text-muted hover:bg-panel hover:text-ink"
+              isActive("/submit-profile") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
             }`}
           >
             <Plus className="h-4 w-4" />

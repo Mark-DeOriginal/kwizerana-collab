@@ -32,7 +32,7 @@ export default function SignInPage() {
       <div className="mx-auto max-w-2xl">
         <div className="mt-4">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Welcome to Kwizerana</p>
-          <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">Sign in to access the influencer archive</h1>
+          <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">Sign in to Kwizerana Influencer Archive</h1>
           <p className="mt-4 max-w-xl text-base leading-7 text-muted">
             Sign in to browse verified X/Twitter profiles, submit accounts for review, and manage your activity on the platform.
           </p>

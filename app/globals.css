@@ -36,6 +36,18 @@ textarea {
   font: inherit;
 }
 
+button,
+a[href] {
+  transition-property: transform, background-color, color, border-color, opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+button:active:not(:disabled),
+a[href]:active {
+  transform: scale(0.97);
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
