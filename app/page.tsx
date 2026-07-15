@@ -642,7 +642,6 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
       </div>
       <div className="grid grid-cols-3 gap-2 text-sm md:grid-cols-1">
         <DataPoint label="Followers" value={formatFollowers(influencer.followers)} />
-        <DataPoint label="Confidence" value={`${influencer.confidence}%`} />
         <DataPoint label="Active" value={influencer.lastActive} />
       </div>
     </button>
