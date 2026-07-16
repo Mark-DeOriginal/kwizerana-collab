@@ -27,10 +27,10 @@ type SortKey = "match" | "followers" | "updated";
 const pageSize = 30;
 
 const followerTiers = [
+  { label: "All", min: 0 },
   { label: "10k+", min: 10000 },
   { label: "50k+", min: 50000 },
-  { label: "100k+", min: 100000 },
-  { label: "500k+", min: 500000 }
+  { label: "100k+", min: 100000 }
 ];
 
 const sortOptions: Array<{ label: string; description: string; value: SortKey }> = [
@@ -41,8 +41,8 @@ const sortOptions: Array<{ label: string; description: string; value: SortKey }>
 
 export default function Home() {
   const [query, setQuery] = useState("");
-  const [selectedNiches, setSelectedNiches] = useState<Niche[]>(["DeFi"]);
-  const [minFollowers, setMinFollowers] = useState(10000);
+  const [selectedNiches, setSelectedNiches] = useState<Niche[]>([]);
+  const [minFollowers, setMinFollowers] = useState(0);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("match");
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -107,7 +107,7 @@ export default function Home() {
     setIsArchiveLoading(true);
 
     try {
-      const response = await fetch("/api/archive");
+      const response = await fetch("/api/archive", { cache: "no-store" });
       const payload = await response.json();
 
       if (!response.ok) {
@@ -260,12 +260,12 @@ function ControlRail({
           <label className="text-sm font-medium" htmlFor="followers">
             Minimum followers
           </label>
-          <span className="text-sm font-semibold text-ocean">{formatFollowers(minFollowers)}</span>
+          <span className="text-sm font-semibold text-ocean">{minFollowers === 0 ? "All" : formatFollowers(minFollowers)}</span>
         </div>
         <input
           id="followers"
           type="range"
-          min="10000"
+          min="0"
           max="500000"
           step="10000"
           value={minFollowers}

@@ -21,10 +21,15 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return NextResponse.json({ error: "Invalid status." }, { status: 400 });
   }
 
-  const submission = await updateSubmissionStatus(params.id, status);
-  if (!submission) {
-    return NextResponse.json({ error: "Submission not found." }, { status: 404 });
-  }
+  try {
+    const submission = await updateSubmissionStatus(params.id, status);
+    if (!submission) {
+      return NextResponse.json({ error: "Submission not found." }, { status: 404 });
+    }
 
-  return NextResponse.json({ data: submission });
+    return NextResponse.json({ data: submission });
+  } catch (error) {
+    console.error("Failed to update submission:", error);
+    return NextResponse.json({ error: "Failed to update submission." }, { status: 500 });
+  }
 }

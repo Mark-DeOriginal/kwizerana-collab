@@ -174,11 +174,15 @@ export async function updateSubmissionStatus(id: string, status: SubmissionStatu
   const submission = mapSubmission(updated);
 
   if (status === "approved") {
-    await upsertInfluencerProfile({
-      profile: submission.profile,
-      tags: submission.suggestedNiches,
-      sourceSubmissionId: submission.id
-    });
+    try {
+      await upsertInfluencerProfile({
+        profile: submission.profile,
+        tags: submission.suggestedNiches,
+        sourceSubmissionId: submission.id
+      });
+    } catch (error) {
+      console.error("Failed to upsert influencer profile:", error);
+    }
   }
 
   return submission;
