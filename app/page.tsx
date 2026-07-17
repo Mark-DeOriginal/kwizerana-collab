@@ -12,6 +12,7 @@ import {
   Download,
   ExternalLink,
   Filter,
+  MessageSquare,
   RefreshCcw,
   Search,
   Sparkles,
@@ -50,6 +51,38 @@ export default function Home() {
   const [archiveInfluencers, setArchiveInfluencers] = useState<Influencer[]>([]);
   const [isArchiveLoading, setIsArchiveLoading] = useState(true);
   const [archiveError, setArchiveError] = useState("");
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(() => {
+    if (typeof window === "undefined") return new Set<number>();
+    try {
+      const stored = localStorage.getItem("kwizerana-favorites");
+      if (stored) return new Set(JSON.parse(stored));
+    } catch {}
+    return new Set<number>();
+  });
+
+  useEffect(() => {
+    localStorage.setItem("kwizerana-favorites", JSON.stringify(Array.from(favoriteIds)));
+  }, [favoriteIds]);
+
+  const addFavorite = (id: number) => {
+    setFavoriteIds((prev) => {
+      if (prev.has(id)) return prev;
+      return new Set(prev).add(id);
+    });
+  };
+
+  const removeFavorite = (id: number) => {
+    setFavoriteIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const favoriteInfluencers = useMemo(
+    () => archiveInfluencers.filter((i) => favoriteIds.has(i.id)),
+    [archiveInfluencers, favoriteIds]
+  );
 
   const filteredInfluencers = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -116,15 +149,15 @@ export default function Home() {
 
       setArchiveInfluencers(payload.data?.influencers ?? []);
       setArchiveError("");
-    } catch (error) {
-      setArchiveError(error instanceof Error ? error.message : "Failed to load archive.");
+    } catch {
+      setArchiveError("Unable to load profiles. Please check your internet connection and try again.");
     } finally {
       setIsArchiveLoading(false);
     }
   };
 
   const exportCsv = () => {
-    const headers = ["Name", "Handle", "Followers", "Verified", "Location", "Language", "Tags", "Engagement", "Audience", "Last Active", "Profile URL"];
+    const headers = ["Name", "Handle", "Followers", "Verified", "Location", "Language", "Tags", "Engagement", "Commentary", "Last Active", "Profile URL"];
     const rows = filteredInfluencers.map((influencer) => [
       influencer.name,
       influencer.handle,
@@ -134,7 +167,7 @@ export default function Home() {
       influencer.language,
       influencer.tags.join("; "),
       influencer.engagement,
-      influencer.audience,
+      influencer.commentary ?? "",
       influencer.lastActive,
       influencer.profileUrl ?? `https://x.com/${influencer.handle}`
     ]);
@@ -197,6 +230,10 @@ export default function Home() {
               onRefresh={loadArchive}
               onOpenSubmit={() => window.location.assign("/submit-profile")}
               onExportCsv={exportCsv}
+              favoriteIds={favoriteIds}
+              addFavorite={addFavorite}
+              removeFavorite={removeFavorite}
+              favoriteInfluencers={favoriteInfluencers}
             />
           </div>
         </section>
@@ -336,7 +373,11 @@ function ArchiveView({
   error,
   onRefresh,
   onOpenSubmit,
-  onExportCsv
+  onExportCsv,
+  favoriteIds,
+  addFavorite,
+  removeFavorite,
+  favoriteInfluencers
 }: {
   sortKey: SortKey;
   setSortKey: (value: SortKey) => void;
@@ -353,6 +394,10 @@ function ArchiveView({
   onRefresh: () => void;
   onOpenSubmit: () => void;
   onExportCsv: () => void;
+  favoriteIds: Set<number>;
+  addFavorite: (id: number) => void;
+  removeFavorite: (id: number) => void;
+  favoriteInfluencers: Influencer[];
 }) {
   return (
     <section className="grid min-h-[calc(100vh-140px)] gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
@@ -413,7 +458,10 @@ function ArchiveView({
         <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={onPageChange} />
       </div>
 
-      <ProfilePanel influencer={selectedInfluencer} />
+      <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-fit">
+        <ProfilePanel influencer={selectedInfluencer} isFavorited={selectedInfluencer ? favoriteIds.has(selectedInfluencer.id) : false} onAddFavorite={selectedInfluencer ? () => addFavorite(selectedInfluencer.id) : undefined} />
+        <FavoritesPanel favorites={favoriteInfluencers} onRemove={removeFavorite} />
+      </div>
     </section>
   );
 }
@@ -592,16 +640,16 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
       </div>
       <div className="grid grid-cols-3 gap-2 text-sm md:grid-cols-1">
         <DataPoint label="Followers" value={formatFollowers(influencer.followers)} />
-        <DataPoint label="Active" value={influencer.lastActive} />
+        <DataPoint label="Location" value={influencer.location} />
       </div>
     </button>
   );
 }
 
-function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
+function ProfilePanel({ influencer, isFavorited, onAddFavorite }: { influencer: Influencer | null; isFavorited?: boolean; onAddFavorite?: () => void }) {
   if (!influencer) {
     return (
-      <aside className="h-fit border border-line bg-white/95 p-6 shadow-tight backdrop-blur lg:sticky lg:top-20">
+      <aside className="h-fit border border-line bg-white/95 p-6 shadow-tight backdrop-blur">
         <Search className="h-8 w-8 text-muted/40" />
         <p className="mt-3 font-semibold">No profile selected.</p>
         <p className="mt-1 text-sm text-muted">Select a profile from the archive to view its full details.</p>
@@ -610,7 +658,7 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
   }
 
   return (
-    <aside className="h-fit border border-line bg-white/95 shadow-tight backdrop-blur lg:sticky lg:top-20">
+    <aside className="h-fit border border-line bg-white/95 shadow-tight backdrop-blur">
       <div className="border-b border-line p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -623,9 +671,6 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
               <p className="text-sm font-medium text-ocean">@{influencer.handle}</p>
             </div>
           </div>
-          <button className="grid h-10 w-10 place-items-center border border-line bg-panel text-ink transition-colors hover:bg-mint" aria-label="Save profile">
-            <Bookmark className="h-4 w-4" />
-          </button>
         </div>
         <p className="mt-4 text-sm leading-6 text-muted">{influencer.bio}</p>
       </div>
@@ -656,30 +701,65 @@ function ProfilePanel({ influencer }: { influencer: Influencer | null }) {
 
       <div className="p-4">
         <div className="mb-3 flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-ocean" aria-hidden="true" />
-          <h3 className="font-semibold">Audience fit</h3>
+          <MessageSquare className="h-4 w-4 text-ocean" aria-hidden="true" />
+          <h3 className="font-semibold">Commentary</h3>
         </div>
-        <div className="space-y-2 text-sm">
-          <StatusLine label="Profile refreshed" value={influencer.updatedAt} />
-          <StatusLine label="Tag confidence" value={`${influencer.confidence}%`} />
-          <StatusLine label="Audience fit" value={influencer.audience} />
+        <div className="border border-line bg-panel px-3 py-2 text-sm text-ink">
+          {influencer.commentary || "No commentary yet"}
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2">
           <a href={influencer.profileUrl ?? `https://x.com/${influencer.handle}`} target="_blank" className="flex h-10 items-center justify-center gap-2 border border-line bg-white text-sm font-semibold transition-colors hover:border-ocean hover:text-ink">
             <ExternalLink className="h-4 w-4" />
             Open X
           </a>
-          <button className="h-10 border border-ink bg-ink px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean">Add list</button>
+          <button
+            onClick={onAddFavorite}
+            disabled={isFavorited}
+            className="h-10 border border-ink bg-ink px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:hover:bg-ink"
+          >
+            {isFavorited ? "Favorited" : "Add to favorite"}
+          </button>
         </div>
       </div>
     </aside>
   );
 }
 
+function FavoritesPanel({ favorites, onRemove }: { favorites: Influencer[]; onRemove: (id: number) => void }) {
+  if (favorites.length === 0) return null;
+
+  return (
+    <div className="border border-line bg-white/95 p-4 shadow-tight backdrop-blur">
+      <div className="mb-3 flex items-center gap-2">
+        <Bookmark className="h-4 w-4 text-ocean" aria-hidden="true" />
+        <h3 className="font-semibold">Favorites</h3>
+      </div>
+      <div className="space-y-2">
+        {favorites.map((influencer) => (
+          <div key={influencer.id} className="flex items-center gap-3 border border-line bg-panel px-3 py-2">
+            <Avatar influencer={influencer} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{influencer.name}</p>
+              <p className="truncate text-xs text-muted">@{influencer.handle}</p>
+            </div>
+            <button
+              onClick={() => onRemove(influencer.id)}
+              className="grid h-8 w-8 shrink-0 place-items-center text-muted transition-colors hover:bg-coral/10 hover:text-coral"
+              aria-label={`Remove ${influencer.name} from favorites`}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Avatar({ influencer, size = "md" }: { influencer: Influencer; size?: "sm" | "md" }) {
   const classes = size === "sm" ? "h-11 w-11" : "h-12 w-12";
   return (
-    <div className={`grid shrink-0 place-items-center overflow-hidden text-sm font-bold text-white ${classes}`} style={{ backgroundColor: influencer.avatarColor }}>
+    <div className={`grid shrink-0 place-items-center overflow-hidden rounded-full text-sm font-bold text-white ${classes}`} style={{ backgroundColor: influencer.avatarColor }}>
       {influencer.profileImageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={influencer.profileImageUrl} alt="" className="h-full w-full object-cover" />

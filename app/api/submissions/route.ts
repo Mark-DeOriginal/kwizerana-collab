@@ -1,8 +1,12 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 import { authOptions } from "@/lib/auth";
 import { niches, Niche } from "@/lib/influencers";
 import { createSubmission, listSubmissions } from "@/lib/submissions";
+
+const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL;
+const sql = connectionString ? neon(connectionString) : null;
 
 export async function GET() {
   const submissions = await listSubmissions();
@@ -16,6 +20,23 @@ export async function POST(request: Request) {
 
   if (!body.profileUrl || selectedNiches.length === 0) {
     return NextResponse.json({ error: "Profile link and at least one niche are required." }, { status: 400 });
+  }
+
+  if (sql) {
+    const handleMatch = String(body.profileUrl).match(/(?:x\.com|twitter\.com)\/@?([A-Za-z0-9_]+)/);
+    const extractedHandle = handleMatch?.[1]?.toLowerCase();
+
+    if (extractedHandle) {
+      const existingInfluencer = await sql`SELECT id FROM influencers WHERE LOWER(handle) = ${extractedHandle} LIMIT 1`;
+      if (existingInfluencer.length > 0) {
+        return NextResponse.json({ error: "This profile already exists in the archive." }, { status: 409 });
+      }
+
+      const existingSubmission = await sql`SELECT id FROM submissions WHERE LOWER(profile_handle) = ${extractedHandle} AND status IN ('pending', 'approved', 'needs_review') LIMIT 1`;
+      if (existingSubmission.length > 0) {
+        return NextResponse.json({ error: "This profile has already been submitted and is under review." }, { status: 409 });
+      }
+    }
   }
 
   const submission = await createSubmission({

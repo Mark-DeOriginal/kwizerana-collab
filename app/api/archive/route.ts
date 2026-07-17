@@ -11,6 +11,7 @@ export async function GET() {
       i.id, i.handle, i.name, i.bio, i.followers, i.location, i.language,
       i.verified, i.last_active, i.updated_at, i.confidence, i.engagement,
       i.audience, i.recent_signal, i.avatar_color, i.profile_image_url, i.profile_url,
+      i.commentary,
       COALESCE(array_agg(n.niche ORDER BY n.niche) FILTER (WHERE n.niche IS NOT NULL), ARRAY[]::TEXT[]) AS tags
     FROM influencers i
     LEFT JOIN influencer_niches n ON n.influencer_id = i.id
@@ -37,6 +38,7 @@ export async function GET() {
       avatarColor: r.avatar_color,
       profileImageUrl: r.profile_image_url ?? undefined,
       profileUrl: r.profile_url ?? undefined,
+      commentary: r.commentary || undefined,
     }));
 
     return NextResponse.json({
@@ -45,9 +47,9 @@ export async function GET() {
         stats: { totalInfluencers: influencers.length, pendingSubmissions: 0, totalUsers: 0, avgConfidence: 0 },
       },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to load archive data." },
+      { error: "Unable to load profiles. Please check your internet connection and try again." },
       { status: 500 }
     );
   }

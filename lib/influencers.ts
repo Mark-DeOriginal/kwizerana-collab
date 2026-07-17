@@ -34,6 +34,7 @@ export type Influencer = {
   avatarColor: string;
   profileImageUrl?: string;
   profileUrl?: string;
+  commentary?: string;
   saved?: boolean;
 };
 
@@ -63,6 +64,8 @@ export async function upsertInfluencerProfile(input: {
   profile: TwitterProfile;
   tags: Niche[];
   sourceSubmissionId?: string;
+  influencerLocation?: string;
+  commentary?: string;
 }) {
   await ensureDatabase();
 
@@ -73,9 +76,10 @@ export async function upsertInfluencerProfile(input: {
     `INSERT INTO influencers (
       handle, name, bio, followers, following, location, language, verified,
       last_active, updated_at, confidence, engagement, audience, recent_signal,
-      avatar_color, profile_image_url, profile_url, source_submission_id, status
+      avatar_color, profile_image_url, profile_url, source_submission_id, status,
+      commentary
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'active')
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'active', $19)
     ON CONFLICT (handle) DO UPDATE
     SET name = EXCLUDED.name,
         bio = EXCLUDED.bio,
@@ -94,7 +98,8 @@ export async function upsertInfluencerProfile(input: {
         profile_image_url = EXCLUDED.profile_image_url,
         profile_url = EXCLUDED.profile_url,
         source_submission_id = EXCLUDED.source_submission_id,
-        status = 'active'
+        status = 'active',
+        commentary = EXCLUDED.commentary
     RETURNING id`,
     [
       input.profile.handle,
@@ -102,7 +107,7 @@ export async function upsertInfluencerProfile(input: {
       input.profile.bio,
       input.profile.followers,
       input.profile.following ?? null,
-      input.profile.location,
+      input.influencerLocation || input.profile.location,
       input.profile.language,
       input.profile.verified,
       "Recently checked",
@@ -114,7 +119,8 @@ export async function upsertInfluencerProfile(input: {
       "#2f6f91",
       input.profile.profileImageUrl ?? null,
       input.profile.profileUrl,
-      input.sourceSubmissionId ?? null
+      input.sourceSubmissionId ?? null,
+      input.commentary ?? ""
     ]
   );
 

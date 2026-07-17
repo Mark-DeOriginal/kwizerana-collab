@@ -17,6 +17,8 @@ export type InfluencerSubmission = {
   reviewedAt?: string;
   profile: TwitterProfile;
   riskFlags: string[];
+  location?: string;
+  commentary?: string;
 };
 
 type SubmissionRow = {
@@ -34,6 +36,7 @@ type SubmissionRow = {
   profile_bio: string;
   profile_followers: number;
   profile_following: number | null;
+  location: string | null;
   profile_location: string;
   profile_language: string;
   profile_verified: boolean;
@@ -41,6 +44,7 @@ type SubmissionRow = {
   profile_updated_at: string;
   recent_signal: string;
   risk_flags: string[];
+  commentary: string | null;
 };
 
 function mapSubmission(row: SubmissionRow): InfluencerSubmission {
@@ -55,6 +59,8 @@ function mapSubmission(row: SubmissionRow): InfluencerSubmission {
     createdAt: new Date(row.created_at).toISOString(),
     reviewedAt: row.reviewed_at ? new Date(row.reviewed_at).toISOString() : undefined,
     riskFlags: row.risk_flags ?? [],
+    location: row.location || undefined,
+    commentary: row.commentary || undefined,
     profile: {
       handle: row.profile_handle,
       name: row.profile_name,
@@ -75,9 +81,10 @@ function mapSubmission(row: SubmissionRow): InfluencerSubmission {
 export async function listSubmissions() {
   await ensureDatabase();
   const rows = await dbQuery<SubmissionRow>(
-    `SELECT *
-     FROM submissions
-     ORDER BY created_at DESC`
+    `SELECT s.*, i.location, i.commentary
+     FROM submissions s
+     LEFT JOIN influencers i ON i.source_submission_id = s.id
+     ORDER BY s.created_at DESC`
   );
 
   return rows.map(mapSubmission);
@@ -157,7 +164,7 @@ export async function createSubmission(input: {
   return mapSubmission(row);
 }
 
-export async function updateSubmissionStatus(id: string, status: SubmissionStatus) {
+export async function updateSubmissionStatus(id: string, status: SubmissionStatus, meta?: { location?: string; commentary?: string }) {
   await ensureDatabase();
 
   const [updated] = await dbQuery<SubmissionRow>(
@@ -178,10 +185,21 @@ export async function updateSubmissionStatus(id: string, status: SubmissionStatu
       await upsertInfluencerProfile({
         profile: submission.profile,
         tags: submission.suggestedNiches,
-        sourceSubmissionId: submission.id
+        sourceSubmissionId: submission.id,
+        influencerLocation: meta?.location,
+        commentary: meta?.commentary,
       });
     } catch (error) {
       console.error("Failed to upsert influencer profile:", error);
+    }
+  } else if (status === "rejected") {
+    try {
+      await dbQuery(
+        `UPDATE influencers SET status = 'inactive' WHERE source_submission_id = $1`,
+        [submission.id]
+      );
+    } catch (error) {
+      console.error("Failed to deactivate influencer:", error);
     }
   }
 

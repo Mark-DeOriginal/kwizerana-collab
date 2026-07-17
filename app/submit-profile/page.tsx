@@ -11,7 +11,6 @@ import type { TwitterProfile } from "@/lib/twitter-profile";
 
 const previewTimeoutMs = 30000;
 
-type PreviewMessageTone = "idle" | "loading" | "error" | "success";
 type PreviewErrorPayload = {
   error?: string;
   code?: string;
@@ -75,8 +74,6 @@ export default function SubmitProfilePage() {
   const [preview, setPreview] = useState<TwitterProfile | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [previewDetail, setPreviewDetail] = useState("");
-  const [previewMessage, setPreviewMessage] = useState("Preview a profile to see the data admins will use before approval.");
-  const [previewTone, setPreviewTone] = useState<PreviewMessageTone>("idle");
   const [submissionMessage, setSubmissionMessage] = useState("");
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,8 +89,6 @@ export default function SubmitProfilePage() {
     setIsPreviewLoading(true);
     setPreviewError("");
     setPreviewDetail("");
-    setPreviewMessage("Fetching live profile data from twitterapi.io...");
-    setPreviewTone("loading");
 
     try {
       const response = await fetch(`/api/twitter/profile?profile=${encodeURIComponent(profileUrl)}`, {
@@ -106,8 +101,6 @@ export default function SubmitProfilePage() {
       }
 
       setPreview(payload.data ?? null);
-      setPreviewMessage("Profile preview loaded successfully.");
-      setPreviewTone("success");
     } catch (error) {
       setPreview(null);
       const normalized = error instanceof Error
@@ -115,8 +108,6 @@ export default function SubmitProfilePage() {
         : normalizePreviewError((error as PreviewErrorPayload) ?? {});
       setPreviewError(normalized.title);
       setPreviewDetail(normalized.detail);
-      setPreviewMessage(normalized.message);
-      setPreviewTone("error");
     } finally {
       clearTimeout(timeoutId);
       setIsPreviewLoading(false);
@@ -176,8 +167,6 @@ export default function SubmitProfilePage() {
                     setProfileUrl(event.target.value);
                     setPreviewError("");
                     setPreviewDetail("");
-                    setPreviewMessage("Preview a profile to see the data admins will use before approval.");
-                    setPreviewTone("idle");
                   }}
                   className="h-10 border border-line bg-panel px-3 outline-none transition-colors focus:border-ocean"
                   placeholder="https://x.com/example or @example"
@@ -247,32 +236,35 @@ export default function SubmitProfilePage() {
           <aside className="h-fit border border-line bg-white/95 p-4 shadow-tight backdrop-blur lg:sticky lg:top-20">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-coral" aria-hidden="true" />
-              <h2 className="font-semibold">Provider preview</h2>
+              <h2 className="font-semibold">Profile preview</h2>
             </div>
-            <div
-              className={`mt-4 border p-4 text-sm leading-6 ${
-                previewTone === "error" ? "border-coral/40 bg-coral/10 text-ink"
-                : previewTone === "success" ? "border-moss/40 bg-mint text-ink"
-                : "border-line bg-panel text-muted"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                {isPreviewLoading ? <RefreshCcw className="mt-0.5 h-4 w-4 animate-spin text-ocean" /> : <Sparkles className="mt-0.5 h-4 w-4 text-coral" />}
-                <div>
-                  <p className="font-semibold text-ink">
-                    {isPreviewLoading ? "Loading profile preview" : previewTone === "error" ? "Preview unavailable" : previewTone === "success" ? "Preview ready" : "Profile preview"}
-                  </p>
-                  <p className="mt-1">{previewError || previewMessage}</p>
-                  {!isPreviewLoading && previewDetail && <p className="mt-2 text-xs text-muted">{previewDetail}</p>}
-                  {isPreviewLoading && <p className="mt-2 text-xs text-muted">This request will stop automatically after 30 seconds so you can try again.</p>}
-                </div>
+            {isPreviewLoading && (
+              <div className="mt-4 flex items-center gap-3 border border-line bg-panel p-4 text-sm text-muted">
+                <RefreshCcw className="h-4 w-4 animate-spin text-ocean" />
+                Fetching profile data...
               </div>
-            </div>
+            )}
+            {!isPreviewLoading && previewError && (
+              <div className="mt-4 border border-coral/40 bg-coral/10 p-4 text-sm text-ink">
+                <p className="font-semibold">{previewError}</p>
+                {previewDetail && <p className="mt-1 text-xs text-muted">{previewDetail}</p>}
+              </div>
+            )}
             {preview && (
               <div className="mt-4 space-y-3">
-                <div>
-                  <p className="text-lg font-semibold">{preview.name}</p>
-                  <p className="text-sm font-medium text-ocean">@{preview.handle}</p>
+                <div className="flex items-center gap-3">
+                  {preview.profileImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={preview.profileImageUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <div className="grid h-12 w-12 shrink-0 place-items-center bg-ink text-sm font-bold text-white">
+                      {preview.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-lg font-semibold">{preview.name}</p>
+                    <p className="text-sm font-medium text-ocean">@{preview.handle}</p>
+                  </div>
                 </div>
                 <p className="text-sm leading-6 text-muted">{preview.bio}</p>
                 <div className="grid grid-cols-2 gap-2">

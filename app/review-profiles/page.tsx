@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { BadgeCheck, Check, ExternalLink, FileCheck2, Loader2, LogIn, RefreshCcw, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { BadgeCheck, Check, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, Sparkles } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { formatFollowers } from "@/lib/format";
@@ -14,7 +14,11 @@ export default function AdminReviewPage() {
   const [submissions, setSubmissions] = useState<InfluencerSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
-  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
+  const [processingActions, setProcessingActions] = useState<Set<string>>(new Set());
+  const [adminLocations, setAdminLocations] = useState<Record<string, string>>({});
+  const [adminCommentary, setAdminCommentary] = useState<Record<string, string>>({});
+  const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
+  const [editingProcessingIds, setEditingProcessingIds] = useState<Set<string>>(new Set());
 
   const loadSubmissions = useCallback(async () => {
     setIsLoading(true);
@@ -29,6 +33,15 @@ export default function AdminReviewPage() {
       }
 
       setSubmissions(payload.data ?? []);
+
+      const locations: Record<string, string> = {};
+      const commentaries: Record<string, string> = {};
+      for (const sub of payload.data ?? []) {
+        if (sub.location) locations[sub.id] = sub.location;
+        if (sub.commentary) commentaries[sub.id] = sub.commentary;
+      }
+      setAdminLocations((prev) => ({ ...locations, ...prev }));
+      setAdminCommentary((prev) => ({ ...commentaries, ...prev }));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load submissions.");
     } finally {
@@ -49,13 +62,18 @@ export default function AdminReviewPage() {
   }, [status, session?.user?.role, loadSubmissions]);
 
   const handleAdminAction = async (id: string, statusValue: InfluencerSubmission["status"]) => {
-    setProcessingIds((prev) => new Set(prev).add(id));
+    const key = `${id}-${statusValue}`;
+    setProcessingActions((prev) => new Set(prev).add(key));
 
     try {
       const response = await fetch(`/api/admin/submissions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: statusValue })
+        body: JSON.stringify({
+          status: statusValue,
+          location: adminLocations[id] || undefined,
+          commentary: adminCommentary[id] || undefined,
+        })
       });
       const payload = await response.json();
 
@@ -67,7 +85,42 @@ export default function AdminReviewPage() {
     } catch {
       setErrorMessage("Failed to update submission.");
     } finally {
-      setProcessingIds((prev) => {
+      setProcessingActions((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const handleEditSave = async (id: string) => {
+    setEditingProcessingIds((prev) => new Set(prev).add(id));
+
+    try {
+      const response = await fetch(`/api/admin/submissions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "edit",
+          location: adminLocations[id] || "",
+          commentary: adminCommentary[id] || "",
+        })
+      });
+      const payload = await response.json();
+
+      if (response.ok) {
+        setEditingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      } else {
+        setErrorMessage(payload.error ?? "Failed to save edits.");
+      }
+    } catch {
+      setErrorMessage("Failed to save edits.");
+    } finally {
+      setEditingProcessingIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
@@ -109,9 +162,9 @@ export default function AdminReviewPage() {
             <div>
               <h1 className="text-2xl font-semibold sm:text-3xl">Review submitted profiles</h1>
             </div>
-            <button onClick={() => void loadSubmissions()} className="flex h-10 items-center gap-2 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean">
+            <button onClick={() => void loadSubmissions()} className="flex h-10 w-fit items-center gap-2 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean">
               <RefreshCcw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-              Refresh queue
+              Refresh
             </button>
           </div>
 
@@ -154,6 +207,30 @@ export default function AdminReviewPage() {
                   <DataPoint label="Followers" value={formatFollowers(submission.profile.followers)} />
                   <DataPoint label="Submitted by" value={submission.submitterEmail} />
                 </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 sm:max-w-[800px]">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Commentary</label>
+                    <textarea
+                      value={adminCommentary[submission.id] ?? ""}
+                      onChange={(e) => setAdminCommentary((prev) => ({ ...prev, [submission.id]: e.target.value }))}
+                      rows={3}
+                      disabled={submission.status === "approved" && !editingIds.has(submission.id)}
+                      className="w-full border border-line bg-white p-3 text-sm outline-none transition-colors focus:border-ink resize-none"
+                      placeholder="Your notes about this influencer..."
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Location</label>
+                    <input
+                      type="text"
+                      value={adminLocations[submission.id] ?? submission.profile.location}
+                      onChange={(e) => setAdminLocations((prev) => ({ ...prev, [submission.id]: e.target.value }))}
+                      disabled={submission.status === "approved" && !editingIds.has(submission.id)}
+                      className="h-10 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ink"
+                      placeholder="e.g. Lagos, Nigeria"
+                    />
+                  </div>
+                </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {submission.status === "approved" ? (
                     <>
@@ -163,6 +240,10 @@ export default function AdminReviewPage() {
                       </button>
                       <button onClick={() => void handleAdminAction(submission.id, "rejected")} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10">
                         Remove profile
+                      </button>
+                      <button onClick={() => editingIds.has(submission.id) ? void handleEditSave(submission.id) : setEditingIds((prev) => new Set(prev).add(submission.id))} disabled={editingProcessingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean disabled:opacity-50">
+                        {editingProcessingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : editingIds.has(submission.id) ? <Save className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
+                        {editingProcessingIds.has(submission.id) ? "Saving..." : editingIds.has(submission.id) ? "Save edit" : "Edit"}
                       </button>
                     </>
                   ) : submission.status === "rejected" ? (
@@ -176,12 +257,12 @@ export default function AdminReviewPage() {
                     </>
                   ) : (
                     <>
-                      <button onClick={() => void handleAdminAction(submission.id, "approved")} disabled={processingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-moss px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-50">
-                        {processingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      <button onClick={() => void handleAdminAction(submission.id, "approved")} disabled={processingActions.has(`${submission.id}-approved`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-moss px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-50">
+                        {processingActions.has(`${submission.id}-approved`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Approve
                       </button>
-                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} disabled={processingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50">
-                        {processingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} disabled={processingActions.has(`${submission.id}-rejected`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50">
+                        {processingActions.has(`${submission.id}-rejected`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Reject
                       </button>
                     </>

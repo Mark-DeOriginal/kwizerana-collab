@@ -70,7 +70,8 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS influencers_followers_idx ON influencers (followers DESC)`,
   `CREATE INDEX IF NOT EXISTS influencers_status_idx ON influencers (status)`,
   `CREATE INDEX IF NOT EXISTS submissions_status_idx ON submissions (status)`,
-  `CREATE INDEX IF NOT EXISTS submissions_created_at_idx ON submissions (created_at DESC)`
+  `CREATE INDEX IF NOT EXISTS submissions_created_at_idx ON submissions (created_at DESC)`,
+  `ALTER TABLE influencers ADD COLUMN IF NOT EXISTS commentary TEXT NOT NULL DEFAULT ''`
 ];
 
 export function getDatabaseUrl() {
