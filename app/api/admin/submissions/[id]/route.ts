@@ -23,16 +23,21 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
   if (body.action === "edit") {
     try {
+      if (body.niches !== undefined) {
+        await sql`UPDATE submissions SET suggested_niches = ${body.niches} WHERE id = ${params.id}`;
+      }
+
       const updated = await sql`UPDATE influencers
         SET location = ${body.location ?? ""}, commentary = ${body.commentary ?? ""}, updated_at = NOW()
         WHERE source_submission_id = ${params.id}
         RETURNING id`;
 
-      if (!updated || updated.length === 0) {
-        return NextResponse.json({ error: "Approved profile not found." }, { status: 404 });
+      const submission = await sql`SELECT * FROM submissions WHERE id = ${params.id} LIMIT 1`;
+      if (!submission || submission.length === 0) {
+        return NextResponse.json({ error: "Submission not found." }, { status: 404 });
       }
 
-      return NextResponse.json({ data: { id: updated[0].id, location: body.location, commentary: body.commentary } });
+      return NextResponse.json({ data: { id: params.id, niches: body.niches, location: body.location, commentary: body.commentary } });
     } catch (error) {
       console.error("Failed to edit profile:", error);
       return NextResponse.json({ error: "Failed to edit profile." }, { status: 500 });
@@ -58,5 +63,26 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   } catch (error) {
     console.error("Failed to update submission:", error);
     return NextResponse.json({ error: "Failed to update submission." }, { status: 500 });
+  }
+}
+
+export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
+  const allowOverride = isAdminReviewOverrideEnabled();
+
+  if (!allowDevAdmin && !allowOverride && !isAdminEmail(session?.user?.email)) {
+    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
+  }
+
+  try {
+    const deleted = await sql`DELETE FROM submissions WHERE id = ${params.id} RETURNING id`;
+    if (!deleted || deleted.length === 0) {
+      return NextResponse.json({ error: "Submission not found." }, { status: 404 });
+    }
+    return NextResponse.json({ data: { deleted: true } });
+  } catch (error) {
+    console.error("Failed to delete submission:", error);
+    return NextResponse.json({ error: "Failed to delete submission." }, { status: 500 });
   }
 }

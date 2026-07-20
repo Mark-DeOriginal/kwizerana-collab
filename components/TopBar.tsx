@@ -29,7 +29,7 @@ export function TopBar() {
         <nav className="flex items-center gap-1 text-sm" aria-label="Primary navigation" />
 
         {/* Desktop nav */}
-        <div className="hidden items-center gap-2 sm:flex">
+        <div className="hidden items-center gap-2 md:flex">
           {canReview && (
             <Link
               href="/review-profiles"
@@ -61,7 +61,7 @@ export function TopBar() {
                 className="flex h-10 items-center gap-2 px-3 font-semibold text-muted transition-colors hover:bg-panel hover:text-ink"
               >
                 <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">Sign out</span>
+                <span className="hidden md:inline">Sign out</span>
               </button>
             </div>
           ) : (
@@ -78,7 +78,7 @@ export function TopBar() {
         {/* Mobile hamburger */}
         <button
           onClick={() => setMenuOpen((prev) => !prev)}
-          className="relative flex h-10 w-10 items-center justify-center sm:hidden"
+          className="relative flex h-10 w-10 items-center justify-center md:hidden"
           aria-label="Toggle menu"
         >
           <span
@@ -102,7 +102,7 @@ export function TopBar() {
       {/* Mobile menu */}
       <div
         ref={menuRef}
-        className={`absolute left-0 right-0 overflow-hidden border-b border-line bg-white shadow-md transition-[max-height] duration-300 ease-in-out sm:hidden ${
+        className={`absolute left-0 right-0 overflow-hidden border-b border-line bg-white shadow-md transition-[max-height] duration-300 ease-in-out md:hidden ${
           menuOpen ? "max-h-64" : "max-h-0 border-b-0"
         }`}
       >

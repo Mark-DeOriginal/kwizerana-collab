@@ -16,10 +16,12 @@ export async function GET() {
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
   const body = await request.json();
-  const selectedNiches = Array.isArray(body.niches) ? body.niches.filter((item: Niche) => niches.includes(item)) : [];
+  const selectedNiches = Array.isArray(body.niches) && body.niches.length > 0
+    ? body.niches.filter((item: Niche) => niches.includes(item))
+    : ["DeFi"];
 
-  if (!body.profileUrl || selectedNiches.length === 0) {
-    return NextResponse.json({ error: "Profile link and at least one niche are required." }, { status: 400 });
+  if (!body.profileUrl) {
+    return NextResponse.json({ error: "Profile link is required." }, { status: 400 });
   }
 
   if (sql) {
@@ -39,12 +41,18 @@ export async function POST(request: Request) {
     }
   }
 
-  const submission = await createSubmission({
-    profileUrl: String(body.profileUrl),
-    niches: selectedNiches,
-    submitterEmail: session?.user?.email ?? String(body.email ?? "anonymous@local.test"),
-    note: String(body.note ?? "")
-  });
+  let submission;
+  try {
+    submission = await createSubmission({
+      profileUrl: String(body.profileUrl),
+      niches: selectedNiches,
+      submitterEmail: session?.user?.email ?? String(body.email ?? "anonymous@local.test"),
+      note: String(body.note ?? "")
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch profile data.";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
 
   return NextResponse.json({ data: submission }, { status: 201 });
 }

@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { BadgeCheck, Check, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { BadgeCheck, Check, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, X, ListPlus } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { formatFollowers } from "@/lib/format";
+import { niches, type Niche } from "@/lib/influencers";
 import type { InfluencerSubmission } from "@/lib/submissions";
 
 export default function AdminReviewPage() {
@@ -19,6 +20,15 @@ export default function AdminReviewPage() {
   const [adminCommentary, setAdminCommentary] = useState<Record<string, string>>({});
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
   const [editingProcessingIds, setEditingProcessingIds] = useState<Set<string>>(new Set());
+  const [adminNiches, setAdminNiches] = useState<Record<string, Niche[]>>({});
+  const [openNichePickerId, setOpenNichePickerId] = useState<string | null>(null);
+  const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
+
+  const [showBatchModal, setShowBatchModal] = useState(false);
+  const [batchText, setBatchText] = useState("");
+  const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
+  const [batchResults, setBatchResults] = useState<Array<{ handle: string; status: "ok" | "duplicate" | "error"; message: string }>>([]);
 
   const loadSubmissions = useCallback(async () => {
     setIsLoading(true);
@@ -36,12 +46,15 @@ export default function AdminReviewPage() {
 
       const locations: Record<string, string> = {};
       const commentaries: Record<string, string> = {};
+      const nichesMap: Record<string, Niche[]> = {};
       for (const sub of payload.data ?? []) {
         if (sub.location) locations[sub.id] = sub.location;
         if (sub.commentary) commentaries[sub.id] = sub.commentary;
+        nichesMap[sub.id] = [...sub.suggestedNiches];
       }
       setAdminLocations((prev) => ({ ...locations, ...prev }));
       setAdminCommentary((prev) => ({ ...commentaries, ...prev }));
+      setAdminNiches((prev) => ({ ...nichesMap, ...prev }));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load submissions.");
     } finally {
@@ -104,6 +117,7 @@ export default function AdminReviewPage() {
           action: "edit",
           location: adminLocations[id] || "",
           commentary: adminCommentary[id] || "",
+          niches: adminNiches[id] || [],
         })
       });
       const payload = await response.json();
@@ -114,6 +128,7 @@ export default function AdminReviewPage() {
           next.delete(id);
           return next;
         });
+        if (openNichePickerId === id) setOpenNichePickerId(null);
       } else {
         setErrorMessage(payload.error ?? "Failed to save edits.");
       }
@@ -127,6 +142,159 @@ export default function AdminReviewPage() {
       });
     }
   };
+
+  const handleRefreshProfile = async (id: string) => {
+    setRefreshingIds((prev) => new Set(prev).add(id));
+
+    try {
+      const response = await fetch(`/api/admin/submissions/${id}/refresh`, { method: "POST" });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Refresh failed.");
+      }
+
+      const fresh = payload.data;
+      setSubmissions((current) => current.map((item) => {
+        if (item.id !== id) return item;
+        return {
+          ...item,
+          profile: {
+            ...item.profile,
+            name: fresh.name,
+            bio: fresh.bio,
+            followers: fresh.followers,
+            following: fresh.following,
+            location: fresh.location,
+            language: fresh.language,
+            verified: fresh.verified,
+            profileImageUrl: fresh.profileImageUrl,
+            updatedAt: fresh.updatedAt,
+            recentSignal: fresh.recentSignal,
+          }
+        };
+      }));
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Refresh failed.");
+    } finally {
+      setRefreshingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleDeleteSubmission = async (id: string) => {
+    const key = `delete-${id}`;
+    setProcessingActions((prev) => new Set(prev).add(key));
+
+    try {
+      const response = await fetch(`/api/admin/submissions/${id}`, { method: "DELETE" });
+      const payload = await response.json();
+
+      if (response.ok) {
+        setSubmissions((current) => current.filter((item) => item.id !== id));
+      } else {
+        setErrorMessage(payload.error ?? "Failed to delete submission.");
+      }
+    } catch {
+      setErrorMessage("Failed to delete submission.");
+    } finally {
+      setProcessingActions((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const handleBatchSubmit = async () => {
+    const handles = batchText
+      .split(/[,\n]+/)
+      .map((h) => h.trim().replace(/^@/, ""))
+      .filter((h) => /^[A-Za-z0-9_]{1,15}$/.test(h));
+
+    if (handles.length === 0) return;
+
+    setIsBatchSubmitting(true);
+    setBatchResults([]);
+    setBatchProgress({ current: 0, total: handles.length });
+    setErrorMessage("");
+
+    for (let i = 0; i < handles.length; i++) {
+      const handle = handles[i];
+      setBatchProgress({ current: i + 1, total: handles.length });
+
+      const maxRetries = 3;
+      let succeeded = false;
+
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await fetch("/api/submissions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              profileUrl: `https://x.com/${handle}`,
+              niches: ["DeFi"],
+              note: "Batch submitted by admin."
+            })
+          });
+
+          let msg = "";
+          try {
+            const payload = await response.json();
+            msg = payload.error ?? payload.data?.profile?.name ?? "";
+          } catch {
+            msg = `Server returned status ${response.status}`;
+          }
+
+          if (response.ok) {
+            setBatchResults((prev) => [...prev, { handle, status: "ok", message: msg ? `Added as ${msg}` : `Added @${handle}` }]);
+            succeeded = true;
+            break;
+          }
+
+          const isRateLimit = msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("429");
+          if (isRateLimit && attempt < maxRetries - 1) {
+            setBatchProgress({ current: i + 1, total: handles.length });
+            await sleep(3000);
+            continue;
+          }
+
+          const isDuplicate = msg.toLowerCase().includes("already") || msg.toLowerCase().includes("duplicate") || response.status === 409;
+          setBatchResults((prev) => [...prev, { handle, status: isDuplicate ? "duplicate" : "error", message: msg }]);
+          succeeded = true;
+          break;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Request failed";
+          const isRateLimit = msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("429");
+          if (isRateLimit && attempt < maxRetries - 1) {
+            await sleep(3000);
+            continue;
+          }
+          setBatchResults((prev) => [...prev, { handle, status: "error", message: msg }]);
+          succeeded = true;
+        }
+      }
+
+      if (!succeeded) {
+        setBatchResults((prev) => [...prev, { handle, status: "error", message: "Rate limited after retries" }]);
+      }
+    }
+
+    setBatchProgress(null);
+    setIsBatchSubmitting(false);
+    setBatchText("");
+    await loadSubmissions();
+  };
+
+  const parsedHandleCount = batchText
+    .split(/[,\n]+/)
+    .map((h) => h.trim().replace(/^@/, ""))
+    .filter((h) => /^[A-Za-z0-9_]{1,15}$/.test(h)).length;
 
   if (!canAccessAdminReview(session?.user?.role) && status !== "loading") {
     return (
@@ -162,10 +330,19 @@ export default function AdminReviewPage() {
             <div>
               <h1 className="text-2xl font-semibold sm:text-3xl">Review submitted profiles</h1>
             </div>
-            <button onClick={() => void loadSubmissions()} className="flex h-10 w-fit items-center gap-2 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean">
-              <RefreshCcw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setShowBatchModal(true); setBatchResults([]); setErrorMessage(""); }}
+                className="flex h-10 w-fit items-center gap-2 border border-ocean bg-ocean px-3 text-sm font-semibold text-white transition-colors hover:bg-ink active:scale-[0.97]"
+              >
+                <ListPlus className="h-4 w-4" />
+                Batch submit
+              </button>
+              <button onClick={() => void loadSubmissions()} className="flex h-10 w-fit items-center gap-2 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean active:scale-[0.97]">
+                <RefreshCcw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            </div>
           </div>
 
           <div className="grid gap-3 p-4">
@@ -196,12 +373,44 @@ export default function AdminReviewPage() {
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
                 <p className="mt-3 text-sm leading-6 text-muted">{submission.profile.bio}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {submission.suggestedNiches.map((niche) => (
-                    <span key={niche} className="border border-line bg-mint px-2 py-1 text-xs font-semibold text-ink">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {(adminNiches[submission.id] ?? submission.suggestedNiches).map((niche) => (
+                    <span key={niche} className="inline-flex items-center gap-1 border border-line bg-mint px-2 py-1 text-xs font-semibold text-ink">
                       {niche}
+                      {editingIds.has(submission.id) && (
+                        <button
+                          onClick={() => setAdminNiches((prev) => ({ ...prev, [submission.id]: (prev[submission.id] ?? submission.suggestedNiches).filter((n) => n !== niche) }))}
+                          className="ml-0.5 text-muted transition-colors hover:text-coral active:scale-90"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
                     </span>
                   ))}
+                  {editingIds.has(submission.id) && openNichePickerId === submission.id && (
+                    <div className="flex flex-wrap gap-1">
+                      {niches.filter((n) => !(adminNiches[submission.id] ?? submission.suggestedNiches).includes(n)).map((niche) => (
+                        <button
+                          key={niche}
+                          onClick={() => {
+                            setAdminNiches((prev) => ({ ...prev, [submission.id]: [...(prev[submission.id] ?? submission.suggestedNiches), niche] }));
+                            setOpenNichePickerId(null);
+                          }}
+                          className="border border-ocean/30 bg-ocean/5 px-2 py-1 text-xs font-semibold text-ocean transition-colors hover:bg-ocean/10 active:scale-95"
+                        >
+                          + {niche}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {editingIds.has(submission.id) && openNichePickerId !== submission.id && (
+                    <button
+                      onClick={() => setOpenNichePickerId(submission.id)}
+                      className="border border-dashed border-line px-2 py-1 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ocean active:scale-95"
+                    >
+                      + Add niche
+                    </button>
+                  )}
                 </div>
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 sm:max-w-[800px]">
                   <DataPoint label="Followers" value={formatFollowers(submission.profile.followers)} />
@@ -232,37 +441,37 @@ export default function AdminReviewPage() {
                   </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => void handleRefreshProfile(submission.id)}
+                    disabled={refreshingIds.has(submission.id)}
+                    className="flex h-10 w-fit items-center justify-center gap-2 border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean disabled:opacity-50 active:scale-[0.97]"
+                  >
+                    {refreshingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
+                    {refreshingIds.has(submission.id) ? "Updating..." : "Update"}
+                  </button>
                   {submission.status === "approved" ? (
                     <>
                       <button disabled className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-white px-3 text-sm font-semibold text-moss">
                         <Check className="h-4 w-4" />
                         Approved
                       </button>
-                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10">
-                        Remove profile
+                      <button onClick={() => void handleDeleteSubmission(submission.id)} disabled={processingActions.has(`delete-${submission.id}`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50 active:scale-[0.97]">
+                        {processingActions.has(`delete-${submission.id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Remove
                       </button>
-                      <button onClick={() => editingIds.has(submission.id) ? void handleEditSave(submission.id) : setEditingIds((prev) => new Set(prev).add(submission.id))} disabled={editingProcessingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean disabled:opacity-50">
+                      <button onClick={() => editingIds.has(submission.id) ? void handleEditSave(submission.id) : setEditingIds((prev) => new Set(prev).add(submission.id))} disabled={editingProcessingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean disabled:opacity-50 active:scale-[0.97]">
                         {editingProcessingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : editingIds.has(submission.id) ? <Save className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                         {editingProcessingIds.has(submission.id) ? "Saving..." : editingIds.has(submission.id) ? "Save edit" : "Edit"}
                       </button>
                     </>
-                  ) : submission.status === "rejected" ? (
-                    <>
-                      <button onClick={() => void handleAdminAction(submission.id, "approved")} className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-white px-3 text-sm font-semibold text-moss transition-colors hover:bg-mint">
-                        Approve
-                      </button>
-                      <button disabled className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-coral/20 px-3 text-sm font-semibold text-coral">
-                        Rejected
-                      </button>
-                    </>
                   ) : (
                     <>
-                      <button onClick={() => void handleAdminAction(submission.id, "approved")} disabled={processingActions.has(`${submission.id}-approved`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-moss px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-50">
+                      <button onClick={() => void handleAdminAction(submission.id, "approved")} disabled={processingActions.has(`${submission.id}-approved`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-moss bg-moss px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-50 active:scale-[0.97]">
                         {processingActions.has(`${submission.id}-approved`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Approve
                       </button>
-                      <button onClick={() => void handleAdminAction(submission.id, "rejected")} disabled={processingActions.has(`${submission.id}-rejected`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50">
-                        {processingActions.has(`${submission.id}-rejected`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      <button onClick={() => void handleDeleteSubmission(submission.id)} disabled={processingActions.has(`delete-${submission.id}`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50 active:scale-[0.97]">
+                        {processingActions.has(`delete-${submission.id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Reject
                       </button>
                     </>
@@ -273,6 +482,82 @@ export default function AdminReviewPage() {
           </div>
         </section>
       </div>
+
+      {showBatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl border border-line bg-white p-6 shadow-tight">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Batch submit profiles</h2>
+              <button onClick={() => { setShowBatchModal(false); setBatchResults([]); }} className="text-muted transition-colors hover:text-ink active:scale-[0.97]">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mt-2 text-sm text-muted">
+              Paste Twitter/X handles separated by commas or newlines. Each will be looked up via the profile API and added to the review queue.
+            </p>
+            <textarea
+              value={batchText}
+              onChange={(e) => { setBatchText(e.target.value); setBatchResults([]); }}
+              rows={6}
+              placeholder="vitalikbuterin, elonmusk, Cobie"
+              disabled={isBatchSubmitting}
+              className="mt-4 w-full resize-none border border-line bg-white p-3 text-sm outline-none transition-colors focus:border-ink disabled:opacity-50"
+            />
+            <div className="mt-2 flex items-center justify-between text-xs text-muted">
+              <span>{parsedHandleCount} valid handle{parsedHandleCount !== 1 ? "s" : ""} detected</span>
+              {batchProgress && (
+                <span className="text-ocean font-semibold">
+                  Adding profile {batchProgress.current} of {batchProgress.total}
+                </span>
+              )}
+            </div>
+
+            {batchResults.length > 0 && (
+              <div className="mt-4 border border-line bg-panel p-4 text-sm">
+                <div className="flex items-center gap-2 font-semibold">
+                  <FileCheck2 className="h-4 w-4 text-moss" />
+                  Batch complete — {batchResults.filter((r) => r.status === "ok").length} submitted, {batchResults.filter((r) => r.status === "duplicate").length} duplicates, {batchResults.filter((r) => r.status === "error").length} errors
+                </div>
+                <div className="mt-3 h-32 overflow-y-auto text-xs space-y-1">
+                  {batchResults.map((r) => (
+                    <div key={r.handle} className={`flex items-center gap-2 ${r.status === "ok" ? "text-moss" : r.status === "duplicate" ? "text-ocean" : "text-coral"}`}>
+                      <span className="font-semibold">@{r.handle}</span>
+                      <span className="text-muted">— {r.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { setShowBatchModal(false); setBatchResults([]); }}
+                disabled={isBatchSubmitting}
+                className="flex h-10 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold transition-colors hover:border-ocean disabled:opacity-50 active:scale-[0.97]"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => void handleBatchSubmit()}
+                disabled={isBatchSubmitting || parsedHandleCount === 0}
+                className="flex h-10 items-center gap-2 border border-ocean bg-ocean px-4 text-sm font-semibold text-white transition-colors hover:bg-ink disabled:opacity-50 active:scale-[0.97]"
+              >
+                {isBatchSubmitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <ListPlus className="h-4 w-4" />
+                    Submit {parsedHandleCount} profile{parsedHandleCount !== 1 ? "s" : ""}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
