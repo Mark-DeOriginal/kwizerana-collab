@@ -22,12 +22,8 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-white/96 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-[1580px] items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-3 transition-opacity hover:opacity-80">
-          <div className="grid h-9 w-9 shrink-0 place-items-center bg-ink text-xs font-bold text-white">KW</div>
-          <div className="hidden sm:block">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Kwizerana</p>
-            <p className="text-sm font-semibold leading-tight">Influencer Archive</p>
-          </div>
+        <Link href="/" className="flex items-center">
+          <img src="/kwizerana-logo.svg" alt="Kwizerana" className="h-7 w-auto shrink-0" />
         </Link>
 
         <nav className="flex items-center gap-1 text-sm" aria-label="Primary navigation" />

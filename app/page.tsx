@@ -11,7 +11,6 @@ import {
   ChevronDown,
   Download,
   ExternalLink,
-  Filter,
   MessageSquare,
   RefreshCcw,
   Search,
@@ -23,7 +22,7 @@ import { DataPoint } from "@/components/DataPoint";
 import { type Influencer, niches, type Niche } from "@/lib/influencers";
 import { formatFollowers } from "@/lib/format";
 
-type SortKey = "match" | "followers" | "updated";
+type SortKey = "match" | "followers";
 
 const pageSize = 30;
 
@@ -36,8 +35,7 @@ const followerTiers = [
 
 const sortOptions: Array<{ label: string; description: string; value: SortKey }> = [
   { label: "Best match", description: "Highest tag confidence first", value: "match" },
-  { label: "Followers", description: "Largest audience first", value: "followers" },
-  { label: "Recently refreshed", description: "Freshest profile data first", value: "updated" }
+  { label: "Followers", description: "Largest audience first", value: "followers" }
 ];
 
 export default function Home() {
@@ -100,7 +98,6 @@ export default function Home() {
       })
       .sort((a, b) => {
         if (sortKey === "followers") return b.followers - a.followers;
-        if (sortKey === "updated") return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
         return b.confidence - a.confidence;
       });
   }, [archiveInfluencers, minFollowers, query, selectedNiches, sortKey, verifiedOnly]);
@@ -185,64 +182,57 @@ export default function Home() {
   return (
     <div className="px-4 py-6 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1580px]">
-        <section className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-          <ControlRail
-            query={query}
-            setQuery={(value) => {
-              setQuery(value);
-              setCurrentPage(1);
-            }}
-            selectedNiches={selectedNiches}
-            toggleNiche={toggleNiche}
-            clearNiches={() => {
-              setSelectedNiches([]);
-              setCurrentPage(1);
-            }}
-            minFollowers={minFollowers}
-            setMinFollowers={(value) => {
-              setMinFollowers(value);
-              setCurrentPage(1);
-            }}
-            verifiedOnly={verifiedOnly}
-            setVerifiedOnly={(value) => {
-              setVerifiedOnly(value);
-              setCurrentPage(1);
-            }}
-          />
-
-          <div className="min-w-0">
-            <ArchiveView
-              sortKey={sortKey}
-              setSortKey={(value) => {
-                setSortKey(value);
-                setCurrentPage(1);
-              }}
-              filteredInfluencers={filteredInfluencers}
-              paginatedInfluencers={paginatedInfluencers}
-              selectedInfluencer={selectedInfluencer}
-              setSelectedId={setSelectedId}
-              currentPage={safePage}
-              totalPages={totalPages}
-              pageStart={pageStart}
-              onPageChange={setCurrentPage}
-              isLoading={isArchiveLoading}
-              error={archiveError}
-              onRefresh={loadArchive}
-              onOpenSubmit={() => window.location.assign("/submit-profile")}
-              onExportCsv={exportCsv}
-              favoriteIds={favoriteIds}
-              addFavorite={addFavorite}
-              removeFavorite={removeFavorite}
-              favoriteInfluencers={favoriteInfluencers}
-            />
-          </div>
-        </section>
+        <ArchiveView
+          query={query}
+          setQuery={(value) => {
+            setQuery(value);
+            setCurrentPage(1);
+          }}
+          selectedNiches={selectedNiches}
+          toggleNiche={toggleNiche}
+          clearNiches={() => {
+            setSelectedNiches([]);
+            setCurrentPage(1);
+          }}
+          minFollowers={minFollowers}
+          setMinFollowers={(value) => {
+            setMinFollowers(value);
+            setCurrentPage(1);
+          }}
+          verifiedOnly={verifiedOnly}
+          setVerifiedOnly={(value) => {
+            setVerifiedOnly(value);
+            setCurrentPage(1);
+          }}
+          sortKey={sortKey}
+          setSortKey={(value) => {
+            setSortKey(value);
+            setCurrentPage(1);
+          }}
+          filteredInfluencers={filteredInfluencers}
+          paginatedInfluencers={paginatedInfluencers}
+          selectedInfluencer={selectedInfluencer}
+          setSelectedId={setSelectedId}
+          currentPage={safePage}
+          totalPages={totalPages}
+          pageStart={pageStart}
+          onPageChange={setCurrentPage}
+          isLoading={isArchiveLoading}
+          error={archiveError}
+          onRefresh={loadArchive}
+          onOpenSubmit={() => window.location.assign("/submit-profile")}
+          onExportCsv={exportCsv}
+          favoriteIds={favoriteIds}
+          addFavorite={addFavorite}
+          removeFavorite={removeFavorite}
+          favoriteInfluencers={favoriteInfluencers}
+        />
       </div>
     </div>
   );
 }
 
-function ControlRail({
+function ArchiveView({
   query,
   setQuery,
   selectedNiches,
@@ -251,114 +241,7 @@ function ControlRail({
   minFollowers,
   setMinFollowers,
   verifiedOnly,
-  setVerifiedOnly
-}: {
-  query: string;
-  setQuery: (value: string) => void;
-  selectedNiches: Niche[];
-  toggleNiche: (niche: Niche) => void;
-  clearNiches: () => void;
-  minFollowers: number;
-  setMinFollowers: (value: number) => void;
-  verifiedOnly: boolean;
-  setVerifiedOnly: (value: boolean) => void;
-}) {
-  return (
-    <aside className="h-fit border border-line bg-white/92 p-4 shadow-tight backdrop-blur xl:sticky xl:top-20">
-      <div className="mb-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Filters</p>
-          <h2 className="mt-1 text-lg font-semibold">Discovery controls</h2>
-        </div>
-        <Filter className="h-5 w-5 text-ocean" aria-hidden="true" />
-      </div>
-
-      <label className="block text-sm font-medium" htmlFor="search">
-        Search archive
-      </label>
-      <div className="mt-2 flex items-center border border-line bg-panel px-3 transition-colors focus-within:border-ocean">
-        <Search className="h-4 w-4 text-muted" aria-hidden="true" />
-        <input
-          id="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Handle, niche, bio, region"
-          className="h-10 w-full bg-transparent px-2 text-sm outline-none placeholder:text-muted"
-        />
-        {query && (
-          <button className="text-muted transition-colors hover:text-ink" onClick={() => setQuery("")} aria-label="Clear search">
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-
-      <div className="mt-5">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium" htmlFor="followers">
-            Minimum followers
-          </label>
-          <span className="text-sm font-semibold text-ocean">{minFollowers === 0 ? "All" : formatFollowers(minFollowers)}</span>
-        </div>
-        <input
-          id="followers"
-          type="range"
-          min="0"
-          max="500000"
-          step="10000"
-          value={minFollowers}
-          onChange={(event) => setMinFollowers(Number(event.target.value))}
-          className="mt-3 w-full accent-ocean"
-        />
-        <div className="mt-3 grid grid-cols-4 gap-2">
-          {followerTiers.map((tier) => (
-            <button
-              key={tier.label}
-              onClick={() => setMinFollowers(tier.min)}
-              className={`h-9 border text-xs font-semibold transition-colors ${
-                minFollowers === tier.min ? "border-ocean bg-ocean text-white" : "border-line bg-white text-muted hover:border-ocean"
-              }`}
-            >
-              {tier.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm font-medium">Niches</span>
-          <button className="text-xs font-semibold text-ocean transition-colors hover:text-ink" onClick={clearNiches}>
-            Clear
-          </button>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          {niches.map((niche) => {
-            const active = selectedNiches.includes(niche);
-            return (
-              <button
-                key={niche}
-                onClick={() => toggleNiche(niche)}
-                className={`flex min-h-10 items-center justify-between border px-3 text-left text-xs font-semibold transition-colors ${
-                  active ? "border-moss bg-mint text-ink" : "border-line bg-white text-muted hover:border-moss"
-                }`}
-              >
-                <span>{niche}</span>
-                {active && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <label className="mt-5 flex items-center justify-between border border-line bg-panel px-3 py-3 text-sm transition-colors hover:bg-white">
-        <span className="font-medium">Verified only</span>
-        <input type="checkbox" checked={verifiedOnly} onChange={(event) => setVerifiedOnly(event.target.checked)} className="h-4 w-4 accent-ocean" />
-      </label>
-    </aside>
-  );
-}
-
-function ArchiveView({
+  setVerifiedOnly,
   sortKey,
   setSortKey,
   filteredInfluencers,
@@ -379,6 +262,15 @@ function ArchiveView({
   removeFavorite,
   favoriteInfluencers
 }: {
+  query: string;
+  setQuery: (value: string) => void;
+  selectedNiches: Niche[];
+  toggleNiche: (niche: Niche) => void;
+  clearNiches: () => void;
+  minFollowers: number;
+  setMinFollowers: (value: number) => void;
+  verifiedOnly: boolean;
+  setVerifiedOnly: (value: boolean) => void;
   sortKey: SortKey;
   setSortKey: (value: SortKey) => void;
   filteredInfluencers: Influencer[];
@@ -400,69 +292,150 @@ function ArchiveView({
   favoriteInfluencers: Influencer[];
 }) {
   return (
-    <section className="grid min-h-[calc(100vh-140px)] gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="min-w-0 border border-line bg-white/94 shadow-tight backdrop-blur">
-        <div className="border-b border-line p-4">
-          <div className="flex flex-col gap-4">
-            <div className="max-w-3xl">
-              <h1 className="text-2xl font-semibold sm:text-3xl">Discover notable accounts to collaborate with on X/Twitter</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-                Explore a searchable database of influential X/Twitter profiles. Filter by followers, niche, and activity to identify collaboration opportunities that match your goals.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <ToolbarButton icon={<RefreshCcw className="h-4 w-4" />} label="Refresh" onClick={onRefresh} />
-                <ToolbarButton icon={<Download className="h-4 w-4" />} label="Export CSV" onClick={onExportCsv} />
-                <ToolbarButton icon={<UserPlus className="h-4 w-4" />} label="Submit profile" primary onClick={onOpenSubmit} />
-              </div>
+    <div className="min-h-[calc(100vh-140px)]">
+      <div className="bg-white/94 p-6 backdrop-blur sm:p-8">
+        <div className="flex flex-col-reverse gap-6 lg:flex-row lg:items-center lg:gap-10">
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold leading-tight tracking-tight sm:text-4xl lg:text-[2.75rem]">
+              Discover notable accounts to collaborate with on <span className="text-ocean">X / Twitter</span>
+            </h1>
+            <p className="mt-4 max-w-xl text-base leading-relaxed text-muted">
+              Explore a searchable database of influential X/Twitter profiles. Filter by followers, niche, and activity to identify collaboration opportunities that match your goals.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <ToolbarButton icon={<Download className="h-4 w-4" />} label="Export CSV" onClick={onExportCsv} />
+              <ToolbarButton icon={<UserPlus className="h-4 w-4" />} label="Submit profile" primary onClick={onOpenSubmit} />
             </div>
           </div>
-        </div>
-
-        <div className="flex flex-col gap-3 border-b border-line p-4 md:flex-row md:items-center md:justify-between">
-          <p className="text-sm text-muted">
-            Showing{" "}
-            <span className="font-semibold text-ink">
-              {filteredInfluencers.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + pageSize, filteredInfluencers.length)}
-            </span>{" "}
-            of <span className="font-semibold text-ink">{filteredInfluencers.length}</span> matching accounts.
-          </p>
-          <SortMenu value={sortKey} onChange={setSortKey} />
-        </div>
-
-        <div className="thin-scrollbar grid max-h-none gap-3 overflow-auto p-4 xl:max-h-[calc(100vh-380px)]">
-          {error && (
-            <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-ink">{error}</div>
-          )}
-          {isLoading && (
-            <div className="flex items-center gap-3 border border-line bg-panel p-6 text-sm text-muted">
-              <RefreshCcw className="h-4 w-4 animate-spin text-ocean" />
-              Loading profiles...
-            </div>
-          )}
-          {!isLoading && paginatedInfluencers.length === 0 && !error && (
-            <div className="border border-line bg-panel p-6 text-center">
-              <Search className="mx-auto h-8 w-8 text-muted/40" />
-              <p className="mt-3 font-semibold">No profiles match these filters.</p>
-              <p className="mt-1 text-sm text-muted">Clear a niche, lower the follower threshold, or search a broader term.</p>
-            </div>
-          )}
-          {paginatedInfluencers.map((influencer) => (
-            <InfluencerCard
-              key={influencer.id}
-              influencer={influencer}
-              active={selectedInfluencer?.id === influencer.id}
-              onSelect={() => setSelectedId(influencer.id)}
+          <div className="w-full max-w-[560px] shrink-0">
+            <img
+              src="/hero.png"
+              alt="Kwizerana hero"
+              className="h-auto w-full rounded-2xl object-contain"
             />
-          ))}
+          </div>
         </div>
-        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={onPageChange} />
       </div>
 
-      <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-fit">
-        <ProfilePanel influencer={selectedInfluencer} isFavorited={selectedInfluencer ? favoriteIds.has(selectedInfluencer.id) : false} onAddFavorite={selectedInfluencer ? () => addFavorite(selectedInfluencer.id) : undefined} />
-        <FavoritesPanel favorites={favoriteInfluencers} onRemove={removeFavorite} />
-      </div>
-    </section>
+      <section className="mt-4 grid h-fit gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="flex flex-col border border-line bg-white/94 shadow-tight backdrop-blur h-[540px]">
+          <div className="border-b border-line p-4">
+            <div className="flex items-center gap-2 border border-line bg-panel px-3 transition-colors focus-within:border-ocean">
+              <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by handle, niche, bio, or region..."
+                className="h-11 w-full bg-transparent px-1 text-sm outline-none placeholder:text-muted"
+              />
+              {query && (
+                <button className="shrink-0 text-muted transition-colors hover:text-ink" onClick={() => setQuery("")} aria-label="Clear search">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {followerTiers.map((tier) => (
+                <button
+                  key={tier.label}
+                  onClick={() => setMinFollowers(tier.min)}
+                  className={`h-8 px-3 border text-xs font-semibold transition-colors ${
+                    minFollowers === tier.min ? "border-ocean bg-ocean text-white" : "border-line bg-white text-muted hover:border-ocean"
+                  }`}
+                >
+                  {tier.label}
+                </button>
+              ))}
+
+              <div className="mx-1 h-5 w-px bg-line" />
+
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={verifiedOnly} onChange={(event) => setVerifiedOnly(event.target.checked)} className="h-4 w-4 accent-ocean" />
+                <span className="whitespace-nowrap text-xs font-semibold text-muted">Verified</span>
+              </div>
+
+              <div className="mx-1 h-5 w-px bg-line" />
+
+              {niches.map((niche) => {
+                const active = selectedNiches.includes(niche);
+                return (
+                  <button
+                    key={niche}
+                    onClick={() => toggleNiche(niche)}
+                    className={`flex items-center gap-1.5 h-8 px-2.5 border text-xs font-semibold transition-colors ${
+                      active ? "border-moss bg-mint text-ink" : "border-line bg-white text-muted hover:border-moss"
+                    }`}
+                  >
+                    {niche}
+                    {active && <Check className="h-3 w-3" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+
+              {selectedNiches.length > 0 && (
+                <button className="ml-auto text-xs font-semibold text-ocean transition-colors hover:text-ink" onClick={clearNiches}>
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 border-b border-line p-4 md:flex-row md:items-center md:justify-between">
+            <p className="text-sm text-muted">
+              Showing{" "}
+              <span className="font-semibold text-ink">
+                {filteredInfluencers.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + pageSize, filteredInfluencers.length)}
+              </span>{" "}
+              of <span className="font-semibold text-ink">{filteredInfluencers.length}</span> matching accounts.
+            </p>
+            <div className="flex items-center gap-2">
+              <SortMenu value={sortKey} onChange={setSortKey} />
+              <button
+                onClick={onRefresh}
+                className="flex h-9 w-9 shrink-0 items-center justify-center border border-line bg-white text-muted transition-colors hover:border-ocean hover:text-ocean"
+                aria-label="Refresh"
+              >
+                <RefreshCcw className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="thin-scrollbar flex flex-1 flex-col gap-3 overflow-auto p-4">
+            {error && (
+              <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-ink">{error}</div>
+            )}
+            {isLoading && (
+              <div className="flex items-center gap-3 border border-line bg-panel p-6 text-sm text-muted">
+                <RefreshCcw className="h-4 w-4 animate-spin text-ocean" />
+                Loading profiles...
+              </div>
+            )}
+            {!isLoading && paginatedInfluencers.length === 0 && !error && (
+              <div className="border border-line bg-panel p-6 text-center">
+                <Search className="mx-auto h-8 w-8 text-muted/40" />
+                <p className="mt-3 font-semibold">No profiles match these filters.</p>
+                <p className="mt-1 text-sm text-muted">Clear a niche, lower the follower threshold, or search a broader term.</p>
+              </div>
+            )}
+            {paginatedInfluencers.map((influencer) => (
+              <InfluencerCard
+                key={influencer.id}
+                influencer={influencer}
+                active={selectedInfluencer?.id === influencer.id}
+                onSelect={() => setSelectedId(influencer.id)}
+              />
+            ))}
+          </div>
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={onPageChange} />
+        </div>
+
+        <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-fit">
+          <ProfilePanel influencer={selectedInfluencer} isFavorited={selectedInfluencer ? favoriteIds.has(selectedInfluencer.id) : false} onAddFavorite={selectedInfluencer ? () => addFavorite(selectedInfluencer.id) : undefined} />
+          <FavoritesPanel favorites={favoriteInfluencers} onRemove={removeFavorite} />
+        </div>
+      </section>
+    </div>
   );
 }
 

@@ -7,12 +7,8 @@ export function Footer() {
       <div className="mx-auto max-w-[1580px] px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-24">
           <div className="max-w-sm">
-            <div className="flex items-center gap-3">
-              <div className="grid h-8 w-8 shrink-0 place-items-center bg-ink text-[10px] font-bold text-white">KW</div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Kwizerana</p>
-                <p className="text-sm font-semibold leading-tight">Influencer Archive</p>
-              </div>
+            <div>
+              <img src="/kwizerana-logo.svg" alt="Kwizerana" className="h-7 w-auto shrink-0" />
             </div>
             <p className="mt-3 text-sm leading-6 text-muted">
               A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with.

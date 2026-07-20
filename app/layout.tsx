@@ -5,7 +5,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Kwizerana Influencer Archive",
-  description: "A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with."
+  description: "A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with.",
+  icons: {
+    icon: "/kwizerana-logo-icon.svg"
+  }
 };
 
 export default function RootLayout({
