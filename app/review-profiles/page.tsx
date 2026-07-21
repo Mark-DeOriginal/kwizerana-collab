@@ -23,6 +23,13 @@ export default function AdminReviewPage() {
   const [adminNiches, setAdminNiches] = useState<Record<string, Niche[]>>({});
   const [openNichePickerId, setOpenNichePickerId] = useState<string | null>(null);
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
+  const [reviewPage, setReviewPage] = useState(1);
+  const reviewPageSize = 15;
+
+  const goToReviewPage = (page: number) => {
+    setReviewPage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [batchText, setBatchText] = useState("");
@@ -73,6 +80,11 @@ export default function AdminReviewPage() {
       setIsLoading(false);
     }
   }, [status, session?.user?.role, loadSubmissions]);
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(submissions.length / reviewPageSize));
+    if (reviewPage > maxPage) setReviewPage(maxPage);
+  }, [submissions.length, reviewPage]);
 
   const handleAdminAction = async (id: string, statusValue: InfluencerSubmission["status"]) => {
     const key = `${id}-${statusValue}`;
@@ -362,11 +374,33 @@ export default function AdminReviewPage() {
                 <p className="mt-1 text-sm text-muted">The review queue is empty. New submissions will appear here.</p>
               </div>
             )}
-            {submissions.map((submission) => (
+            {(() => {
+              const reviewTotalPages = Math.max(1, Math.ceil(submissions.length / reviewPageSize));
+              const safePage = Math.min(reviewPage, reviewTotalPages);
+              const start = (safePage - 1) * reviewPageSize;
+              const pageItems = submissions.slice(start, start + reviewPageSize);
+              return (
+                <>
+                  {submissions.length > 0 && (
+                    <div className="flex items-center justify-between text-xs text-muted">
+                      <span>Showing {start + 1}–{Math.min(start + reviewPageSize, submissions.length)} of {submissions.length}</span>
+                      <span>Page <span className="font-semibold text-ink">{safePage}</span> of <span className="font-semibold text-ink">{reviewTotalPages}</span></span>
+                    </div>
+                  )}
+                  {pageItems.map((submission) => (
               <article key={submission.id} className="border border-line bg-white p-4 shadow-tight backdrop-blur transition-colors hover:border-ocean/30">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-semibold">{submission.profile.name}</h2>
-                  {submission.profile.verified && <BadgeCheck className="h-4 w-4 text-ocean" aria-hidden="true" />}
+                <div className="flex flex-wrap items-center gap-3">
+                  {submission.profile.profileImageUrl ? (
+                    <img src={submission.profile.profileImageUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ocean text-sm font-bold text-white">
+                      {submission.profile.name.split(" ").map((p) => p[0]).join("").slice(0, 2)}
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg font-semibold">{submission.profile.name}</h2>
+                    {submission.profile.verified && <BadgeCheck className="h-4 w-4 text-ocean" aria-hidden="true" />}
+                  </div>
                 </div>
                 <a href={submission.profile.profileUrl} target="_blank" className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-ocean transition-colors hover:text-ink">
                   @{submission.profile.handle}
@@ -479,6 +513,38 @@ export default function AdminReviewPage() {
                 </div>
               </article>
             ))}
+                  {submissions.length > reviewPageSize && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                      <button
+                        onClick={() => goToReviewPage(Math.max(1, safePage - 1))}
+                        disabled={safePage <= 1}
+                        className="h-9 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      {Array.from({ length: reviewTotalPages }, (_, i) => i + 1).slice(0, 5).map((page) => (
+                        <button
+                          key={page}
+                          onClick={() => goToReviewPage(page)}
+                          className={`h-9 min-w-9 border px-3 text-sm font-semibold transition-colors ${
+                            safePage === page ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:border-ocean hover:text-ink"
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => goToReviewPage(Math.min(reviewTotalPages, safePage + 1))}
+                        disabled={safePage >= reviewTotalPages}
+                        className="h-9 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </section>
       </div>
