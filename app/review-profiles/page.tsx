@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { BadgeCheck, Check, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, X, ListPlus } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
@@ -393,7 +394,7 @@ export default function AdminReviewPage() {
               <article key={submission.id} className="border border-line bg-white p-4 shadow-tight backdrop-blur transition-colors hover:border-ocean/30">
                 <div className="flex flex-wrap items-center gap-3">
                   {submission.profile.profileImageUrl ? (
-                    <img src={submission.profile.profileImageUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                    <Image src={submission.profile.profileImageUrl} alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded-full object-cover" />
                   ) : (
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ocean text-sm font-bold text-white">
                       {submission.profile.name.split(" ").map((p) => p[0]).join("").slice(0, 2)}

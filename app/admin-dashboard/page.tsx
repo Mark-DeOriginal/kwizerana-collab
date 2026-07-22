@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import {
@@ -306,9 +307,11 @@ export default function AdminDashboardPage() {
                     <div key={user.id} className="border border-line bg-white p-5">
                       <div className="flex items-start gap-4">
                         {user.image && !failedImages.has(user.id) ? (
-                          <img
+                          <Image
                             src={user.image}
                             alt={user.name ?? user.email}
+                            width={48}
+                            height={48}
                             className="h-12 w-12 shrink-0 rounded-full object-cover"
                             onError={() => setFailedImages((prev) => new Set(prev).add(user.id))}
                           />

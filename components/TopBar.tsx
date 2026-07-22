@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { ChevronDown, FileCheck2, LogIn, LogOut, Plus, ShieldCheck, User } from "lucide-react";
@@ -37,7 +38,7 @@ export function TopBar() {
     <header className="sticky top-0 z-40 border-b border-line bg-white/96 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-[1580px] items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
         <Link href="/" className="flex items-center">
-          <img src="/kwizerana-logo.svg" alt="Kwizerana" className="h-7 w-auto shrink-0" />
+          <Image src="/kwizerana-logo.svg" alt="Kwizerana" width={28} height={28} className="h-7 w-auto shrink-0" />
         </Link>
 
         <nav className="flex items-center gap-1 text-sm" aria-label="Primary navigation" />
@@ -60,7 +61,7 @@ export function TopBar() {
                 className="flex h-10 items-center gap-2 border border-line px-3 text-xs font-semibold transition-colors hover:bg-panel"
               >
                 {session.user.image ? (
-                  <img src={session.user.image} alt="" className="h-5 w-5 rounded-full object-cover" />
+                  <Image src={session.user.image} alt="" width={20} height={20} className="h-5 w-5 rounded-full object-cover" />
                 ) : (
                   <User className="h-3.5 w-3.5 text-muted" />
                 )}
@@ -191,7 +192,7 @@ export function TopBar() {
               <div className="border-t border-line my-1" />
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted">
                 {session.user.image ? (
-                  <img src={session.user.image} alt="" className="h-5 w-5 rounded-full object-cover" />
+                  <Image src={session.user.image} alt="" width={20} height={20} className="h-5 w-5 rounded-full object-cover" />
                 ) : (
                   <User className="h-3.5 w-3.5" />
                 )}

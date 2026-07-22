@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Database, Plus } from "lucide-react";
 
 export function Footer() {
@@ -8,7 +9,7 @@ export function Footer() {
         <div className="flex flex-col gap-6 md:flex-row md:items-start md:gap-24">
           <div className="max-w-sm">
             <div>
-              <img src="/kwizerana-logo.svg" alt="Kwizerana" className="h-7 w-auto shrink-0" />
+              <Image src="/kwizerana-logo.svg" alt="Kwizerana" width={28} height={28} className="h-7 w-auto shrink-0" />
             </div>
             <p className="mt-3 text-sm leading-6 text-muted">
               A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with.

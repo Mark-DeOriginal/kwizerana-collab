@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { useState } from "react";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { Check, RefreshCcw, Search, Sparkles, UserPlus } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
@@ -242,8 +243,7 @@ export default function SubmitProfilePage() {
               <div className="mt-4 space-y-3">
                 <div className="flex items-center gap-3">
                   {preview.profileImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={preview.profileImageUrl} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                    <Image src={preview.profileImageUrl} alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded-full object-cover" />
                   ) : (
                     <div className="grid h-12 w-12 shrink-0 place-items-center bg-ink text-sm font-bold text-white">
                       {preview.name.split(" ").map((part) => part[0]).join("").slice(0, 2)}

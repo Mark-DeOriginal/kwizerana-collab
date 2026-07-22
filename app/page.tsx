@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowUpDown,
   BadgeCheck,
@@ -308,9 +309,11 @@ function ArchiveView({
             </div>
           </div>
           <div className="w-full max-w-[560px] shrink-0">
-            <img
+            <Image
               src="/hero.png"
               alt="Kwizerana hero"
+              width={560}
+              height={0}
               className="h-auto w-full rounded-2xl object-contain"
             />
           </div>
@@ -732,10 +735,9 @@ function FavoritesPanel({ favorites, onRemove }: { favorites: Influencer[]; onRe
 function Avatar({ influencer, size = "md" }: { influencer: Influencer; size?: "sm" | "md" }) {
   const classes = size === "sm" ? "h-11 w-11" : "h-12 w-12";
   return (
-    <div className={`grid shrink-0 place-items-center overflow-hidden rounded-full text-sm font-bold text-white ${classes}`} style={{ backgroundColor: influencer.avatarColor }}>
+    <div className={`relative shrink-0 overflow-hidden rounded-full text-sm font-bold text-white ${classes}`} style={{ backgroundColor: influencer.avatarColor }}>
       {influencer.profileImageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={influencer.profileImageUrl} alt="" className="h-full w-full object-cover" />
+        <Image src={influencer.profileImageUrl} alt="" fill className="object-cover" sizes="48px" />
       ) : (
         influencer.name
           .split(" ")
