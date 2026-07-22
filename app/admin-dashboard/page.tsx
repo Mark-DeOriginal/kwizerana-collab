@@ -145,7 +145,7 @@ export default function AdminDashboardPage() {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
         <ShieldCheck className="h-10 w-10 text-muted" />
-        <p className="text-muted">You don't have access to this page.</p>
+        <p className="text-muted">You don&apos;t have access to this page.</p>
       </div>
     );
   }
