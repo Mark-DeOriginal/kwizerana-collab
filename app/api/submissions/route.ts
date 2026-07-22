@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { authOptions } from "@/lib/auth";
+import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { niches, Niche } from "@/lib/influencers";
 import { createSubmission, listSubmissions } from "@/lib/submissions";
 
@@ -9,6 +10,12 @@ const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ??
 const sql = connectionString ? neon(connectionString) : null;
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+
+  if (!canAccessAdminReview(session?.user?.role, session?.user?.permissions)) {
+    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
+  }
+
   const submissions = await listSubmissions();
   return NextResponse.json({ data: submissions });
 }

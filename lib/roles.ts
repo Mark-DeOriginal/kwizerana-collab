@@ -24,6 +24,5 @@ export function resolveUserRole(email?: string | null): UserRole {
 }
 
 export function hasPermission(userRole: UserRole, permissions: Permission[], permission: Permission) {
-  if (userRole === "admin") return true;
   return permissions.includes(permission);
 }

@@ -1,7 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { dbQuery } from "@/lib/db";
-import { resolveUserRole } from "@/lib/roles";
+import { ALL_PERMISSIONS, isAdminEmail, resolveUserRole } from "@/lib/roles";
 import { getUserByEmail, upsertUser } from "@/lib/users";
 
 export function hasGoogleAuthConfig() {
@@ -33,26 +32,25 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
     async jwt({ token, user }) {
-      if (user?.email) {
-        const dbUser = await upsertUser({
-          email: user.email,
-          name: user.name,
-          image: user.image
-        });
+      try {
+        if (user?.email) {
+          const dbUser = await upsertUser({
+            email: user.email,
+            name: user.name,
+            image: user.image
+          });
 
-        token.userId = dbUser.id;
-        token.role = dbUser.role;
-        token.permissions = dbUser.permissions;
-      } else if (token.email) {
-        const dbUser = await getUserByEmail(token.email);
-        token.userId = dbUser?.id ?? null;
-        token.role = dbUser?.role ?? resolveUserRole(token.email);
-        token.permissions = dbUser?.permissions ?? [];
-
-        await dbQuery(
-          `UPDATE users SET last_sign_in_at = NOW() WHERE email = $1`,
-          [token.email.toLowerCase()]
-        );
+          token.userId = dbUser.id;
+          token.role = isAdminEmail(user.email) ? "admin" : dbUser.role;
+          token.permissions = isAdminEmail(user.email) ? ALL_PERMISSIONS : dbUser.permissions;
+        } else if (token.email) {
+          const dbUser = await getUserByEmail(token.email);
+          token.userId = dbUser?.id ?? null;
+          token.role = isAdminEmail(token.email) ? "admin" : (dbUser?.role ?? resolveUserRole(token.email));
+          token.permissions = isAdminEmail(token.email) ? ALL_PERMISSIONS : (dbUser?.permissions ?? []);
+        }
+      } catch (err) {
+        console.error("JWT callback DB error, preserving existing token:", err);
       }
 
       return token;

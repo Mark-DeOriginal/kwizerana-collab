@@ -3,24 +3,17 @@ import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { ALL_PERMISSIONS, hasPermission, isAdminEmail, isSuperAdmin, type Permission } from "@/lib/roles";
-import { getUserByEmail, updateUserRole } from "@/lib/users";
+import { updateUserRole } from "@/lib/users";
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
 
-  if (!allowDevAdmin && !isAdminEmail(session?.user?.email)) {
+  const isAllowed = allowDevAdmin || isAdminEmail(session?.user?.email) ||
+    (session?.user?.role === "admin" && hasPermission(session?.user?.role, session?.user?.permissions ?? [], "manage_admins"));
+
+  if (!isAllowed) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
-
-  const currentUser = await getUserByEmail(session?.user?.email);
-  if (!currentUser) {
-    return NextResponse.json({ error: "User not found." }, { status: 404 });
-  }
-
-  const canManage = hasPermission(currentUser.role, currentUser.permissions, "manage_admins");
-  if (!canManage) {
-    return NextResponse.json({ error: "Missing permission: manage_admins." }, { status: 403 });
   }
 
   const body = await request.json();

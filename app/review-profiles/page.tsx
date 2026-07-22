@@ -24,8 +24,7 @@ const reviewSortOptions: Array<{ label: string; description: string; value: Revi
 
 export default function AdminReviewPage() {
   const { data: session, status } = useSession();
-  const canRemoveProfiles = session?.user?.role === "admin" ||
-    (session?.user?.permissions ?? []).includes("remove_profiles");
+  const canRemoveProfiles = (session?.user?.permissions ?? []).includes("remove_profiles");
   const [submissions, setSubmissions] = useState<InfluencerSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -39,6 +38,7 @@ export default function AdminReviewPage() {
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
   const [reviewPage, setReviewPage] = useState(1);
   const reviewPageSize = 15;
+  const [serverDenied, setServerDenied] = useState(false);
 
   const goToReviewPage = (page: number) => {
     setReviewPage(page);
@@ -60,6 +60,12 @@ export default function AdminReviewPage() {
 
     try {
       const response = await fetch("/api/submissions");
+
+      if (response.status === 403) {
+        setServerDenied(true);
+        return;
+      }
+
       const payload = await response.json();
 
       if (!response.ok) {
@@ -89,7 +95,7 @@ export default function AdminReviewPage() {
   useEffect(() => {
     if (status === "loading") return;
 
-    const canReview = canAccessAdminReview(session?.user?.role);
+    const canReview = canAccessAdminReview(session?.user?.role, session?.user?.permissions);
 
     if (canReview) {
       void loadSubmissions();
@@ -334,7 +340,18 @@ export default function AdminReviewPage() {
     .map((h) => h.trim().replace(/^@/, ""))
     .filter((h) => /^[A-Za-z0-9_]{1,15}$/.test(h)).length;
 
-  if (!canAccessAdminReview(session?.user?.role) && status !== "loading") {
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center px-4 py-6 text-ink sm:px-6 lg:px-8">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Checking access…
+        </div>
+      </div>
+    );
+  }
+
+  if (!canAccessAdminReview(session?.user?.role, session?.user?.permissions) || serverDenied) {
     return (
       <div className="px-4 py-6 text-ink sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1580px]">

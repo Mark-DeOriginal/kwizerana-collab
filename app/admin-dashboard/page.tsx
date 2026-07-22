@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { useSession } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import {
   Shield,
@@ -36,6 +36,7 @@ type DashboardUser = {
   permissions: Permission[];
   created_at: string;
   last_sign_in_at: string;
+  isSuperAdmin: boolean;
 };
 
 type Stats = {
@@ -59,12 +60,14 @@ function relativeTime(dateStr: string) {
 }
 
 export default function AdminDashboardPage() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const router = useRouter();
   const [users, setUsers] = useState<DashboardUser[]>([]);
   const [stats, setStats] = useState<Stats>({ totalUsers: 0, totalAdmins: 0, totalProfiles: 0, pendingSubmissions: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [serverDenied, setServerDenied] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>([]);
@@ -83,13 +86,20 @@ export default function AdminDashboardPage() {
   const canManage = session?.user?.role === "admin" ||
     (session?.user?.permissions ?? []).includes("manage_admins");
 
-  const loadUsers = useCallback(async () => {
-    setIsLoading(true);
+  const canViewDashboard = canAccessAdminReview(session?.user?.role, session?.user?.permissions);
+
+  const loadUsers = useCallback(async (showLoading = false) => {
+    if (showLoading) setIsLoading(true);
     setError("");
     try {
       const res = await fetch("/api/admin/users");
+      if (res.status === 403) {
+        setServerDenied(true);
+        return;
+      }
       const payload = await res.json();
       if (!res.ok) throw new Error(payload.error ?? "Failed to load users.");
+      setServerDenied(false);
       setUsers(payload.users ?? []);
       setStats({
         totalUsers: (payload.users ?? []).length,
@@ -100,18 +110,18 @@ export default function AdminDashboardPage() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (status === "authenticated") {
-      loadUsers();
+      loadUsers(true);
     }
   }, [status, loadUsers]);
 
   useEffect(() => {
-    if (status === "authenticated" && !canAccessAdminReview(session?.user?.role)) {
+    if (status === "authenticated" && !canAccessAdminReview(session?.user?.role, session?.user?.permissions)) {
       router.replace("/");
     }
   }, [status, session, router]);
@@ -168,18 +178,26 @@ export default function AdminDashboardPage() {
     );
   }
 
-  if (!canAccessAdminReview(session?.user?.role)) {
+  if (!canViewDashboard || serverDenied) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4">
         <ShieldCheck className="h-10 w-10 text-muted" />
         <p className="text-muted">You don&apos;t have access to this page.</p>
+        {serverDenied && (
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="mt-2 flex h-9 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold text-muted transition-colors hover:border-ocean hover:text-ink active:scale-[0.97]"
+          >
+            Sign out and sign back in
+          </button>
+        )}
       </div>
     );
   }
 
   function startPromote(userId: string, currentPermissions: Permission[]) {
     setPromotingId(userId);
-    setSelectedPermissions(currentPermissions.length > 0 ? [...currentPermissions] : ["view_dashboard"]);
+    setSelectedPermissions([...currentPermissions]);
   }
 
   function cancelPromote() {
@@ -209,7 +227,15 @@ export default function AdminDashboardPage() {
       ));
       setPromotingId(null);
       setSelectedPermissions([]);
-      if (wasMember) setStats((prev) => ({ ...prev, totalAdmins: prev.totalAdmins + 1 }));
+      if (wasMember) {
+        setStats((prev) => ({ ...prev, totalAdmins: prev.totalAdmins + 1 }));
+        if (userId === session?.user?.id) {
+          await update();
+        } else {
+          setSuccessMessage("User promoted. They need to sign out and sign back in for the changes to take effect.");
+          setTimeout(() => setSuccessMessage(""), 8000);
+        }
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -285,6 +311,12 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
+      {successMessage && (
+        <div className="mb-6 border border-moss/30 bg-moss/5 px-4 py-3 text-sm text-moss">
+          {successMessage}
+        </div>
+      )}
+
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-bold">Users</h2>
         <div className="flex items-center gap-2">
@@ -299,7 +331,7 @@ export default function AdminDashboardPage() {
             />
           </div>
           <button
-            onClick={loadUsers}
+            onClick={() => loadUsers(true)}
             disabled={isLoading}
             className="flex h-9 items-center gap-2 border border-line bg-white px-3 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.97]"
           >
@@ -415,7 +447,7 @@ export default function AdminDashboardPage() {
                         </div>
                       ) : (
                         <div className="mt-4 flex gap-2 border-t border-line pt-3">
-                          {canManage && !isYou && (
+                          {canManage && !isYou && !user.isSuperAdmin && (
                             <>
                               {user.role === "member" ? (
                                 <button

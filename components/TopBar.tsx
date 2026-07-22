@@ -11,9 +11,8 @@ import { useEffect, useRef, useState } from "react";
 export function TopBar() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
-  const canReview = canAccessAdminReview(session?.user?.role);
-  const canViewDashboard = session?.user?.role === "admin" ||
-    (session?.user?.permissions ?? []).includes("view_dashboard");
+  const canReview = canAccessAdminReview(session?.user?.role, session?.user?.permissions);
+  const canViewDashboard = canReview;
   const [menuOpen, setMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);

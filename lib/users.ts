@@ -68,7 +68,10 @@ export async function upsertUser(input: {
      ON CONFLICT (email) DO UPDATE
      SET name = EXCLUDED.name,
          image = EXCLUDED.image,
-         role = EXCLUDED.role,
+         role = CASE
+           WHEN EXCLUDED.role = 'admin' THEN EXCLUDED.role
+           ELSE users.role
+         END,
          updated_at = NOW(),
          last_sign_in_at = NOW()
      RETURNING id, email, name, image, role, permissions, created_at, updated_at, last_sign_in_at`,

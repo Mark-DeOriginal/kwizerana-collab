@@ -4,6 +4,7 @@ import { neon } from "@neondatabase/serverless";
 import { isAdminReviewOverrideEnabled } from "@/lib/admin-review-access";
 import { authOptions } from "@/lib/auth";
 import { isAdminEmail } from "@/lib/roles";
+import { getUserByEmail } from "@/lib/users";
 import { SubmissionStatus, updateSubmissionStatus } from "@/lib/submissions";
 
 const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL;
@@ -15,7 +16,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const allowOverride = isAdminReviewOverrideEnabled();
 
-  if (!allowDevAdmin && !allowOverride && !isAdminEmail(session?.user?.email)) {
+  const currentUser = session?.user?.email ? await getUserByEmail(session.user.email) : null;
+  const isAllowed = allowDevAdmin || allowOverride || isAdminEmail(session?.user?.email) || currentUser?.role === "admin";
+
+  if (!isAllowed) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
@@ -71,7 +75,10 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const allowOverride = isAdminReviewOverrideEnabled();
 
-  if (!allowDevAdmin && !allowOverride && !isAdminEmail(session?.user?.email)) {
+  const currentUser = session?.user?.email ? await getUserByEmail(session.user.email) : null;
+  const isAllowed = allowDevAdmin || allowOverride || isAdminEmail(session?.user?.email) || currentUser?.role === "admin";
+
+  if (!isAllowed) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
