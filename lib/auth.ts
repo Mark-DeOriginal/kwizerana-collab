@@ -41,10 +41,12 @@ export const authOptions: NextAuthOptions = {
 
         token.userId = dbUser.id;
         token.role = dbUser.role;
+        token.permissions = dbUser.permissions;
       } else if (token.email) {
         const dbUser = await getUserByEmail(token.email);
         token.userId = dbUser?.id ?? null;
         token.role = dbUser?.role ?? resolveUserRole(token.email);
+        token.permissions = dbUser?.permissions ?? [];
       }
 
       return token;
@@ -53,6 +55,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = typeof token.userId === "string" ? token.userId : undefined;
         session.user.role = token.role === "admin" ? "admin" : "member";
+        session.user.permissions = token.permissions ?? [];
       }
 
       return session;

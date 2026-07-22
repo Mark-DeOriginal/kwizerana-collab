@@ -68,9 +68,8 @@ function normalizePreviewError(error: PreviewErrorPayload) {
 
 export default function SubmitProfilePage() {
   const { data: session } = useSession();
-  const [profileUrl, setProfileUrl] = useState("https://x.com/thedefinvestor");
+  const [profileUrl, setProfileUrl] = useState("");
   const [selectedNiches, setSelectedNiches] = useState<Niche[]>(["DeFi"]);
-  const [note, setNote] = useState("");
   const [preview, setPreview] = useState<TwitterProfile | null>(null);
   const [previewError, setPreviewError] = useState("");
   const [previewDetail, setPreviewDetail] = useState("");
@@ -126,7 +125,6 @@ export default function SubmitProfilePage() {
         body: JSON.stringify({
           profileUrl,
           niches: selectedNiches,
-          note,
           email: session?.user?.email
         })
       });
@@ -169,7 +167,7 @@ export default function SubmitProfilePage() {
                     setPreviewDetail("");
                   }}
                   className="h-10 border border-line bg-panel px-3 outline-none transition-colors focus:border-ocean"
-                  placeholder="https://x.com/example or @example"
+                  placeholder="https://x.com/username"
                 />
               </label>
 
@@ -197,16 +195,6 @@ export default function SubmitProfilePage() {
                   })}
                 </div>
               </div>
-
-              <label className="grid gap-2 text-sm font-medium">
-                Review note
-                <textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  className="min-h-28 border border-line bg-panel p-3 outline-none transition-colors focus:border-ocean"
-                  placeholder="Why should this account be listed?"
-                />
-              </label>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">

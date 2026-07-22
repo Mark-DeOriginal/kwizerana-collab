@@ -3,16 +3,30 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { FileCheck2, LogIn, LogOut, Plus, User } from "lucide-react";
+import { ChevronDown, FileCheck2, LogIn, LogOut, Plus, ShieldCheck, User } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export function TopBar() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
   const canReview = canAccessAdminReview(session?.user?.role);
+  const canViewDashboard = session?.user?.role === "admin" ||
+    (session?.user?.permissions ?? []).includes("view_dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setUserDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const isActive = (path: string) => {
     if (path === "/") return pathname === "/";
@@ -30,17 +44,6 @@ export function TopBar() {
 
         {/* Desktop nav */}
         <div className="hidden items-center gap-2 md:flex">
-          {canReview && (
-            <Link
-              href="/review-profiles"
-              className={`flex h-10 items-center gap-2 px-3 font-semibold transition-colors ${
-                isActive("/review-profiles") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
-              }`}
-            >
-              <FileCheck2 className="h-4 w-4" />
-              <span>Review profiles</span>
-            </Link>
-          )}
           <Link
             href="/submit-profile"
             className={`flex h-10 items-center gap-2 px-3 font-semibold transition-colors ${
@@ -51,18 +54,60 @@ export function TopBar() {
             <span>Submit profile</span>
           </Link>
           {session?.user?.email ? (
-            <div className="flex items-center gap-2">
-              <div className="hidden items-center gap-2 border border-line px-3 py-1.5 text-xs md:flex">
-                <User className="h-3.5 w-3.5 text-muted" />
-                <span className="font-semibold">{session.user.name ?? "Signed in"}</span>
-              </div>
+            <div className="relative" ref={dropdownRef}>
               <button
-                onClick={() => signOut()}
-                className="flex h-10 items-center gap-2 px-3 font-semibold text-muted transition-colors hover:bg-panel hover:text-ink"
+                onClick={() => setUserDropdownOpen((prev) => !prev)}
+                className="flex h-10 items-center gap-2 border border-line px-3 text-xs font-semibold transition-colors hover:bg-panel"
               >
-                <LogOut className="h-4 w-4" />
-                <span className="hidden md:inline">Sign out</span>
+                {session.user.image ? (
+                  <img src={session.user.image} alt="" className="h-5 w-5 rounded-full object-cover" />
+                ) : (
+                  <User className="h-3.5 w-3.5 text-muted" />
+                )}
+                <span className="font-semibold">{session.user.name ?? "Signed in"}</span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-muted transition-transform duration-200 ${
+                    userDropdownOpen ? "rotate-180" : ""
+                  }`}
+                />
               </button>
+
+              {userDropdownOpen && (
+                <div className="absolute right-0 top-full z-50 mt-1 w-56 border border-line bg-white shadow-md">
+                  {canReview && (
+                    <Link
+                      href="/review-profiles"
+                      onClick={() => setUserDropdownOpen(false)}
+                      className={`flex h-10 items-center gap-2 px-4 text-sm font-semibold transition-colors ${
+                        isActive("/review-profiles") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
+                      }`}
+                    >
+                      <FileCheck2 className="h-4 w-4" />
+                      Review profiles
+                    </Link>
+                  )}
+                  {canViewDashboard && (
+                    <Link
+                      href="/admin-dashboard"
+                      onClick={() => setUserDropdownOpen(false)}
+                      className={`flex h-10 items-center gap-2 px-4 text-sm font-semibold transition-colors ${
+                        isActive("/admin-dashboard") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
+                      }`}
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Admin dashboard
+                    </Link>
+                  )}
+                  {(canReview || canViewDashboard) && <div className="border-t border-line" />}
+                  <button
+                    onClick={() => { setUserDropdownOpen(false); void signOut(); }}
+                    className="flex h-10 w-full items-center gap-2 px-4 text-sm font-semibold text-muted transition-colors hover:bg-panel hover:text-ink"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign out
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <Link
@@ -103,10 +148,20 @@ export function TopBar() {
       <div
         ref={menuRef}
         className={`absolute left-0 right-0 overflow-hidden border-b border-line bg-white shadow-md transition-[max-height] duration-300 ease-in-out md:hidden ${
-          menuOpen ? "max-h-64" : "max-h-0 border-b-0"
+          menuOpen ? "max-h-80" : "max-h-0 border-b-0"
         }`}
       >
         <div className="flex flex-col gap-1 px-4 py-3">
+          <Link
+            href="/submit-profile"
+            onClick={() => setMenuOpen(false)}
+            className={`flex h-10 items-center gap-2 px-3 font-semibold transition-colors ${
+              isActive("/submit-profile") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
+            }`}
+          >
+            <Plus className="h-4 w-4" />
+            Submit profile
+          </Link>
           {canReview && (
             <Link
               href="/review-profiles"
@@ -119,20 +174,27 @@ export function TopBar() {
               Review profiles
             </Link>
           )}
-          <Link
-            href="/submit-profile"
-            onClick={() => setMenuOpen(false)}
-            className={`flex h-10 items-center gap-2 px-3 font-semibold transition-colors ${
-              isActive("/submit-profile") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
-            }`}
-          >
-            <Plus className="h-4 w-4" />
-            Submit profile
-          </Link>
+          {canViewDashboard && (
+            <Link
+              href="/admin-dashboard"
+              onClick={() => setMenuOpen(false)}
+              className={`flex h-10 items-center gap-2 px-3 font-semibold transition-colors ${
+                isActive("/admin-dashboard") ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
+              }`}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Admin dashboard
+            </Link>
+          )}
           {session?.user?.email ? (
             <>
+              <div className="border-t border-line my-1" />
               <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted">
-                <User className="h-3.5 w-3.5" />
+                {session.user.image ? (
+                  <img src={session.user.image} alt="" className="h-5 w-5 rounded-full object-cover" />
+                ) : (
+                  <User className="h-3.5 w-3.5" />
+                )}
                 <span className="font-semibold">{session.user.name ?? "Signed in"}</span>
               </div>
               <button

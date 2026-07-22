@@ -12,6 +12,8 @@ import type { InfluencerSubmission } from "@/lib/submissions";
 
 export default function AdminReviewPage() {
   const { data: session, status } = useSession();
+  const canRemoveProfiles = session?.user?.role === "admin" ||
+    (session?.user?.permissions ?? []).includes("remove_profiles");
   const [submissions, setSubmissions] = useState<InfluencerSubmission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -489,10 +491,12 @@ export default function AdminReviewPage() {
                         <Check className="h-4 w-4" />
                         Approved
                       </button>
-                      <button onClick={() => void handleDeleteSubmission(submission.id)} disabled={processingActions.has(`delete-${submission.id}`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50 active:scale-[0.97]">
-                        {processingActions.has(`delete-${submission.id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        Remove
-                      </button>
+                      {canRemoveProfiles && (
+                        <button onClick={() => void handleDeleteSubmission(submission.id)} disabled={processingActions.has(`delete-${submission.id}`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50 active:scale-[0.97]">
+                          {processingActions.has(`delete-${submission.id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                          Remove
+                        </button>
+                      )}
                       <button onClick={() => editingIds.has(submission.id) ? void handleEditSave(submission.id) : setEditingIds((prev) => new Set(prev).add(submission.id))} disabled={editingProcessingIds.has(submission.id)} className="flex h-10 w-fit items-center justify-center gap-2 border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean disabled:opacity-50 active:scale-[0.97]">
                         {editingProcessingIds.has(submission.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : editingIds.has(submission.id) ? <Save className="h-4 w-4" /> : <Pencil className="h-4 w-4" />}
                         {editingProcessingIds.has(submission.id) ? "Saving..." : editingIds.has(submission.id) ? "Save edit" : "Edit"}
@@ -504,10 +508,12 @@ export default function AdminReviewPage() {
                         {processingActions.has(`${submission.id}-approved`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Approve
                       </button>
-                      <button onClick={() => void handleDeleteSubmission(submission.id)} disabled={processingActions.has(`delete-${submission.id}`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50 active:scale-[0.97]">
-                        {processingActions.has(`delete-${submission.id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        Reject
-                      </button>
+                      {canRemoveProfiles && (
+                        <button onClick={() => void handleDeleteSubmission(submission.id)} disabled={processingActions.has(`delete-${submission.id}`)} className="flex h-10 w-fit items-center justify-center gap-2 border border-coral bg-white px-3 text-sm font-semibold text-coral transition-colors hover:bg-coral/10 disabled:opacity-50 active:scale-[0.97]">
+                          {processingActions.has(`delete-${submission.id}`) ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                          Reject
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
