@@ -1,15 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
-import { BadgeCheck, Check, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, X, ListPlus } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, X, ListPlus, ArrowUpDown } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { formatFollowers } from "@/lib/format";
 import { niches, type Niche } from "@/lib/influencers";
 import type { InfluencerSubmission } from "@/lib/submissions";
+
+type ReviewSortKey = "default" | "pending" | "approved" | "followers" | "newest" | "no_commentary";
+
+const reviewSortOptions: Array<{ label: string; description: string; value: ReviewSortKey }> = [
+  { label: "Default order", description: "As loaded from the server", value: "default" },
+  { label: "Pending first", description: "Show unreviewed profiles first", value: "pending" },
+  { label: "Approved first", description: "Show approved profiles first", value: "approved" },
+  { label: "Most followers", description: "Largest audience first", value: "followers" },
+  { label: "Newest first", description: "Recently submitted first", value: "newest" },
+  { label: "No commentary", description: "Profiles missing commentary first", value: "no_commentary" }
+];
 
 export default function AdminReviewPage() {
   const { data: session, status } = useSession();
@@ -39,6 +50,9 @@ export default function AdminReviewPage() {
   const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [batchResults, setBatchResults] = useState<Array<{ handle: string; status: "ok" | "duplicate" | "error"; message: string }>>([]);
+  const [sortBy, setSortBy] = useState<ReviewSortKey>("default");
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
 
   const loadSubmissions = useCallback(async () => {
     setIsLoading(true);
@@ -88,6 +102,15 @@ export default function AdminReviewPage() {
     const maxPage = Math.max(1, Math.ceil(submissions.length / reviewPageSize));
     if (reviewPage > maxPage) setReviewPage(maxPage);
   }, [submissions.length, reviewPage]);
+
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!sortMenuRef.current?.contains(e.target as Node)) setSortMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [sortMenuOpen]);
 
   const handleAdminAction = async (id: string, statusValue: InfluencerSubmission["status"]) => {
     const key = `${id}-${statusValue}`;
@@ -378,16 +401,86 @@ export default function AdminReviewPage() {
               </div>
             )}
             {(() => {
-              const reviewTotalPages = Math.max(1, Math.ceil(submissions.length / reviewPageSize));
+              const sorted = [...submissions].sort((a, b) => {
+                switch (sortBy) {
+                  case "pending":
+                    if (a.status === "pending" && b.status !== "pending") return -1;
+                    if (a.status !== "pending" && b.status === "pending") return 1;
+                    return 0;
+                  case "approved":
+                    if (a.status === "approved" && b.status !== "approved") return -1;
+                    if (a.status !== "approved" && b.status === "approved") return 1;
+                    return 0;
+                  case "followers":
+                    return (b.profile.followers ?? 0) - (a.profile.followers ?? 0);
+                  case "newest":
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                  case "no_commentary":
+                    if (!a.commentary && b.commentary) return -1;
+                    if (a.commentary && !b.commentary) return 1;
+                    return 0;
+                  default:
+                    return 0;
+                }
+              });
+
+              const reviewTotalPages = Math.max(1, Math.ceil(sorted.length / reviewPageSize));
               const safePage = Math.min(reviewPage, reviewTotalPages);
               const start = (safePage - 1) * reviewPageSize;
-              const pageItems = submissions.slice(start, start + reviewPageSize);
+              const pageItems = sorted.slice(start, start + reviewPageSize);
               return (
                 <>
                   {submissions.length > 0 && (
-                    <div className="flex items-center justify-between text-xs text-muted">
-                      <span>Showing {start + 1}–{Math.min(start + reviewPageSize, submissions.length)} of {submissions.length}</span>
-                      <span>Page <span className="font-semibold text-ink">{safePage}</span> of <span className="font-semibold text-ink">{reviewTotalPages}</span></span>
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3 text-xs text-muted">
+                        <span>Showing {start + 1}–{Math.min(start + reviewPageSize, sorted.length)} of {sorted.length}</span>
+                        <span>Page <span className="font-semibold text-ink">{safePage}</span> of <span className="font-semibold text-ink">{reviewTotalPages}</span></span>
+                      </div>
+                      <div className="relative" ref={sortMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => setSortMenuOpen((prev) => !prev)}
+                          aria-haspopup="listbox"
+                          aria-expanded={sortMenuOpen}
+                          className={`flex h-8 items-center gap-2 border bg-white px-3 text-xs font-semibold transition-colors ${
+                            sortMenuOpen ? "border-ocean ring-2 ring-ocean/15" : "border-line hover:border-ocean"
+                          }`}
+                        >
+                          <ArrowUpDown className="h-3.5 w-3.5 text-muted" />
+                          <span className="text-ink">{reviewSortOptions.find((o) => o.value === sortBy)?.label ?? "Sort"}</span>
+                          <ChevronDown className={`h-3.5 w-3.5 text-muted transition-transform ${sortMenuOpen ? "rotate-180" : ""}`} />
+                        </button>
+
+                        {sortMenuOpen && (
+                          <div className="absolute right-0 z-30 mt-1 w-56 border border-line bg-white p-1 shadow-tight" role="listbox" aria-label="Sort submissions">
+                            {reviewSortOptions.map((option) => {
+                              const active = option.value === sortBy;
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  role="option"
+                                  aria-selected={active}
+                                  onClick={() => {
+                                    setSortBy(option.value);
+                                    setSortMenuOpen(false);
+                                    setReviewPage(1);
+                                  }}
+                                  className={`flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-xs transition-colors ${
+                                    active ? "bg-mint text-ink" : "text-muted hover:bg-panel hover:text-ink"
+                                  }`}
+                                >
+                                  <span>
+                                    <span className="block font-semibold">{option.label}</span>
+                                    <span className="mt-0.5 block text-[11px]">{option.description}</span>
+                                  </span>
+                                  {active && <Check className="h-3.5 w-3.5 shrink-0 text-ocean" />}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   {pageItems.map((submission) => (
@@ -520,7 +613,7 @@ export default function AdminReviewPage() {
                 </div>
               </article>
             ))}
-                  {submissions.length > reviewPageSize && (
+                  {sorted.length > reviewPageSize && (
                     <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                       <button
                         onClick={() => goToReviewPage(Math.max(1, safePage - 1))}

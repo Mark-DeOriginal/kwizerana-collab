@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import { dbQuery } from "@/lib/db";
 import { resolveUserRole } from "@/lib/roles";
 import { getUserByEmail, upsertUser } from "@/lib/users";
 
@@ -47,6 +48,11 @@ export const authOptions: NextAuthOptions = {
         token.userId = dbUser?.id ?? null;
         token.role = dbUser?.role ?? resolveUserRole(token.email);
         token.permissions = dbUser?.permissions ?? [];
+
+        await dbQuery(
+          `UPDATE users SET last_sign_in_at = NOW() WHERE email = $1`,
+          [token.email.toLowerCase()]
+        );
       }
 
       return token;

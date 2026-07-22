@@ -73,6 +73,12 @@ export default function AdminDashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [usersPage, setUsersPage] = useState(1);
   const usersPageSize = 20;
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const canManage = session?.user?.role === "admin" ||
     (session?.user?.permissions ?? []).includes("manage_admins");
@@ -124,6 +130,27 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     setUsersPage(1);
   }, [searchQuery]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const sendHeartbeat = () => fetch("/api/user/heartbeat", { method: "POST" }).catch(() => {});
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 60000);
+
+    return () => clearInterval(interval);
+  }, [status]);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const interval = setInterval(() => {
+      loadUsers();
+    }, 120000);
+
+    return () => clearInterval(interval);
+  }, [status, loadUsers]);
 
   if (status === "loading") {
     return (
