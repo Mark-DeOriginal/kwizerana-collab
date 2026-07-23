@@ -4,9 +4,10 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
-import { Check, RefreshCcw, Search, Sparkles, UserPlus } from "lucide-react";
+import { RefreshCcw, Search, Sparkles, UserPlus } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
-import { niches, type Niche } from "@/lib/influencers";
+import { NicheTagInput } from "@/components/NicheTagInput";
+import type { Niche } from "@/lib/niches";
 import { formatFollowers } from "@/lib/format";
 import type { TwitterProfile } from "@/lib/twitter-profile";
 
@@ -78,10 +79,6 @@ export default function SubmitProfilePage() {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const toggleNiche = (niche: Niche) => {
-    setSelectedNiches((current) => (current.includes(niche) ? current.filter((item) => item !== niche) : [...current, niche]));
-  };
-
   const previewProfile = async () => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), previewTimeoutMs);
@@ -148,7 +145,7 @@ export default function SubmitProfilePage() {
     <div className="px-4 py-6 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1580px]">
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <form onSubmit={submitProfile} className="border border-line bg-white/94 p-5 shadow-tight backdrop-blur">
+          <form onSubmit={submitProfile} className="relative z-10 border border-line bg-white/94 p-5 shadow-tight backdrop-blur">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Submit a profile</p>
               <h1 className="mt-1 text-2xl font-semibold sm:text-3xl">Submit an X profile for review</h1>
@@ -174,27 +171,14 @@ export default function SubmitProfilePage() {
 
               <div>
                 <div className="mb-3 flex items-center justify-between">
-                  <span className="text-sm font-medium">Submitted niches</span>
+                  <span className="text-sm font-medium">Profile niche</span>
                   <span className="text-xs text-muted">Choose at least one</span>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {niches.map((niche) => {
-                    const active = selectedNiches.includes(niche);
-                    return (
-                      <button
-                        type="button"
-                        key={niche}
-                        onClick={() => toggleNiche(niche)}
-                        className={`flex min-h-10 items-center justify-between border px-3 text-left text-xs font-semibold transition-colors ${
-                          active ? "border-moss bg-mint text-ink" : "border-line bg-white text-muted hover:border-moss"
-                        }`}
-                      >
-                        <span>{niche}</span>
-                        {active && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                <NicheTagInput
+                  value={selectedNiches}
+                  onChange={setSelectedNiches}
+                  placeholder="Search and add niches…"
+                />
               </div>
             </div>
 

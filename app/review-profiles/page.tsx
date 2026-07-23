@@ -6,9 +6,10 @@ import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { BadgeCheck, Check, ChevronDown, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, X, ListPlus, ArrowUpDown } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
+import { NicheTagInput } from "@/components/NicheTagInput";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { formatFollowers } from "@/lib/format";
-import { niches, type Niche } from "@/lib/influencers";
+import { type Niche } from "@/lib/niches";
 import type { InfluencerSubmission } from "@/lib/submissions";
 
 type ReviewSortKey = "default" | "pending" | "approved" | "followers" | "newest" | "no_commentary";
@@ -34,7 +35,6 @@ export default function AdminReviewPage() {
   const [editingIds, setEditingIds] = useState<Set<string>>(new Set());
   const [editingProcessingIds, setEditingProcessingIds] = useState<Set<string>>(new Set());
   const [adminNiches, setAdminNiches] = useState<Record<string, Niche[]>>({});
-  const [openNichePickerId, setOpenNichePickerId] = useState<string | null>(null);
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
   const [reviewPage, setReviewPage] = useState(1);
   const reviewPageSize = 15;
@@ -172,7 +172,6 @@ export default function AdminReviewPage() {
           next.delete(id);
           return next;
         });
-        if (openNichePickerId === id) setOpenNichePickerId(null);
       } else {
         setErrorMessage(payload.error ?? "Failed to save edits.");
       }
@@ -520,45 +519,23 @@ export default function AdminReviewPage() {
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
                 <p className="mt-3 text-sm leading-6 text-muted">{submission.profile.bio}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {(adminNiches[submission.id] ?? submission.suggestedNiches).map((niche) => (
-                    <span key={niche} className="inline-flex items-center gap-1 border border-line bg-mint px-2 py-1 text-xs font-semibold text-ink">
-                      {niche}
-                      {editingIds.has(submission.id) && (
-                        <button
-                          onClick={() => setAdminNiches((prev) => ({ ...prev, [submission.id]: (prev[submission.id] ?? submission.suggestedNiches).filter((n) => n !== niche) }))}
-                          className="ml-0.5 text-muted transition-colors hover:text-coral active:scale-90"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                  {editingIds.has(submission.id) && openNichePickerId === submission.id && (
-                    <div className="flex flex-wrap gap-1">
-                      {niches.filter((n) => !(adminNiches[submission.id] ?? submission.suggestedNiches).includes(n)).map((niche) => (
-                        <button
-                          key={niche}
-                          onClick={() => {
-                            setAdminNiches((prev) => ({ ...prev, [submission.id]: [...(prev[submission.id] ?? submission.suggestedNiches), niche] }));
-                            setOpenNichePickerId(null);
-                          }}
-                          className="border border-ocean/30 bg-ocean/5 px-2 py-1 text-xs font-semibold text-ocean transition-colors hover:bg-ocean/10 active:scale-95"
-                        >
-                          + {niche}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {editingIds.has(submission.id) && openNichePickerId !== submission.id && (
-                    <button
-                      onClick={() => setOpenNichePickerId(submission.id)}
-                      className="border border-dashed border-line px-2 py-1 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ocean active:scale-95"
-                    >
-                      + Add niche
-                    </button>
-                  )}
-                </div>
+                {editingIds.has(submission.id) ? (
+                  <div className="mt-3 max-w-[500px]">
+                    <NicheTagInput
+                      value={adminNiches[submission.id] ?? submission.suggestedNiches}
+                      onChange={(niches) => setAdminNiches((prev) => ({ ...prev, [submission.id]: niches }))}
+                      placeholder="Search and add niches…"
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {(adminNiches[submission.id] ?? submission.suggestedNiches).map((niche) => (
+                      <span key={niche} className="inline-flex items-center gap-1 border border-line bg-mint px-2 py-1 text-xs font-semibold text-ink">
+                        {niche}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-4 grid gap-2 sm:grid-cols-2 sm:max-w-[800px]">
                   <DataPoint label="Followers" value={formatFollowers(submission.profile.followers)} />
                   <DataPoint label="Submitted by" value={submission.submitterEmail} />

@@ -1,19 +1,9 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import type { TwitterProfile } from "@/lib/twitter-profile";
+import { allNiches as niches, type Niche } from "@/lib/niches";
 
-export type Niche =
-  | "DeFi"
-  | "Yield"
-  | "Stablecoins"
-  | "RWA"
-  | "Protocol Growth"
-  | "Trading"
-  | "Ethereum"
-  | "Bitcoin"
-  | "Security"
-  | "DAO"
-  | "L2"
-  | "AI x Crypto";
+export type { Niche };
+export { niches };
 
 export type Influencer = {
   id: number;
@@ -37,21 +27,6 @@ export type Influencer = {
   commentary?: string;
   saved?: boolean;
 };
-
-export const niches: Niche[] = [
-  "DeFi",
-  "Yield",
-  "Stablecoins",
-  "RWA",
-  "Protocol Growth",
-  "Trading",
-  "Ethereum",
-  "Bitcoin",
-  "Security",
-  "DAO",
-  "L2",
-  "AI x Crypto"
-];
 
 export type ArchiveStats = {
   totalInfluencers: number;

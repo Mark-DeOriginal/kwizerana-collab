@@ -20,7 +20,8 @@ import {
   X
 } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
-import { type Influencer, niches, type Niche } from "@/lib/influencers";
+import { NicheFilterDropdown } from "@/components/NicheFilterDropdown";
+import { type Influencer, type Niche } from "@/lib/influencers";
 import { formatFollowers } from "@/lib/format";
 
 type SortKey = "match" | "followers";
@@ -360,21 +361,7 @@ function ArchiveView({
 
               <div className="mx-1 h-5 w-px bg-line" />
 
-              {niches.map((niche) => {
-                const active = selectedNiches.includes(niche);
-                return (
-                  <button
-                    key={niche}
-                    onClick={() => toggleNiche(niche)}
-                    className={`flex items-center gap-1.5 h-8 px-2.5 border text-xs font-semibold transition-colors ${
-                      active ? "border-moss bg-mint text-ink" : "border-line bg-white text-muted hover:border-moss"
-                    }`}
-                  >
-                    {niche}
-                    {active && <Check className="h-3 w-3" aria-hidden="true" />}
-                  </button>
-                );
-              })}
+              <NicheFilterDropdown value={selectedNiches} onToggle={toggleNiche} onClear={clearNiches} />
 
               {selectedNiches.length > 0 && (
                 <button className="ml-auto text-xs font-semibold text-ocean transition-colors hover:text-ink" onClick={clearNiches}>
