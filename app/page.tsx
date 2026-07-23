@@ -321,7 +321,7 @@ function ArchiveView({
       </div>
 
       <section className="mt-4 grid h-fit gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="flex flex-col border border-line bg-white/94 shadow-tight backdrop-blur h-[540px]">
+        <div className="flex flex-col border border-line bg-white/94 shadow-tight backdrop-blur h-[740px]">
           <div className="border-b border-line p-4">
             <div className="flex items-center gap-2 border border-line bg-panel px-3 transition-colors focus-within:border-ocean">
               <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
