@@ -653,7 +653,7 @@ export default function AdminReviewPage() {
               </button>
             </div>
             <p className="mt-2 text-sm text-muted">
-              Paste Twitter/X handles separated by commas or newlines. Each will be looked up via the profile API and added to the review queue.
+              Paste Twitter/X handles separated by commas or newlines. They will be added to the review queue.
             </p>
             <textarea
               value={batchText}
