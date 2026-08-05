@@ -67,6 +67,23 @@ const schemaStatements = [
     recent_signal TEXT NOT NULL DEFAULT '',
     risk_flags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]
   )`,
+  `CREATE TABLE IF NOT EXISTS ranking_boards (
+    id TEXT PRIMARY KEY,
+    niche TEXT NOT NULL,
+    sub_niche TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (niche, sub_niche)
+  )`,
+  `CREATE TABLE IF NOT EXISTS rankings (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL REFERENCES ranking_boards(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    influencer_id BIGINT NOT NULL REFERENCES influencers(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (board_id, position)
+  )`,
   `CREATE INDEX IF NOT EXISTS influencers_followers_idx ON influencers (followers DESC)`,
   `CREATE INDEX IF NOT EXISTS influencers_status_idx ON influencers (status)`,
   `CREATE INDEX IF NOT EXISTS submissions_status_idx ON submissions (status)`,

@@ -10,18 +10,21 @@ import {
   Bookmark,
   Check,
   ChevronDown,
+  Crown,
   Download,
   ExternalLink,
   MessageSquare,
   RefreshCcw,
   Search,
   Sparkles,
+  Trophy,
   UserPlus,
   X
 } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
 import { NicheFilterDropdown } from "@/components/NicheFilterDropdown";
 import { type Influencer, type Niche } from "@/lib/influencers";
+import type { RankingBoardWithEntries } from "@/lib/rankings";
 import { formatFollowers } from "@/lib/format";
 
 type SortKey = "match" | "followers";
@@ -59,6 +62,8 @@ export default function Home() {
     } catch {}
     return new Set<number>();
   });
+  const [rankingBoards, setRankingBoards] = useState<RankingBoardWithEntries[]>([]);
+  const [rankingsError, setRankingsError] = useState("");
 
   useEffect(() => {
     localStorage.setItem("kwizerana-favorites", JSON.stringify(Array.from(favoriteIds)));
@@ -120,6 +125,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    void loadRankings();
+  }, []);
+
+  useEffect(() => {
     if (!selectedInfluencer) {
       if (selectedId !== null) setSelectedId(null);
       return;
@@ -152,6 +161,22 @@ export default function Home() {
       setArchiveError("Unable to load profiles. Please check your internet connection and try again.");
     } finally {
       setIsArchiveLoading(false);
+    }
+  };
+
+  const loadRankings = async () => {
+    try {
+      const response = await fetch("/api/rankings", { cache: "no-store" });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load topic leaders.");
+      }
+
+      setRankingBoards(payload.boards ?? []);
+      setRankingsError("");
+    } catch {
+      setRankingsError("Unable to load topic leaders.");
     }
   };
 
@@ -229,6 +254,7 @@ export default function Home() {
           removeFavorite={removeFavorite}
           favoriteInfluencers={favoriteInfluencers}
         />
+        <TopicLeaders boards={rankingBoards} error={rankingsError} />
       </div>
     </div>
   );
@@ -742,5 +768,203 @@ function StatusLine({ label, value }: { label: string; value: string }) {
       <span className="shrink-0 text-muted">{label}</span>
       <span className="text-right font-semibold text-ink">{value}</span>
     </div>
+  );
+}
+
+function TopicLeaders({
+  boards,
+  error
+}: {
+  boards: RankingBoardWithEntries[];
+  error: string;
+}) {
+  const [activeNiche, setActiveNiche] = useState<string | null>(null);
+  const [activeSubNiche, setActiveSubNiche] = useState<string | null>(null);
+
+  const niches = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const board of boards) {
+      const subs = map.get(board.niche) ?? [];
+      if (!subs.includes(board.sub_niche)) subs.push(board.sub_niche);
+      map.set(board.niche, subs);
+    }
+    return Array.from(map.entries());
+  }, [boards]);
+
+  const totalRanked = useMemo(() => boards.reduce((sum, b) => sum + b.entries.length, 0), [boards]);
+
+  const nicheCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of boards) map.set(b.niche, (map.get(b.niche) ?? 0) + b.entries.length);
+    return map;
+  }, [boards]);
+
+  const currentNiche = activeNiche ?? niches[0]?.[0] ?? null;
+  const subNiches = (niches.find(([niche]) => niche === currentNiche)?.[1] ?? []).filter(Boolean);
+  const currentSubNiche = activeSubNiche ?? subNiches[0] ?? null;
+  const activeBoard =
+    subNiches.length === 0
+      ? boards.find((board) => board.niche === currentNiche && board.sub_niche === "") ?? null
+      : boards.find((board) => board.niche === currentNiche && board.sub_niche === currentSubNiche) ?? null;
+
+  return (
+    <section className="mt-4 w-full lg:max-w-[1184px]">
+      <div className="flex flex-col gap-4 border border-line bg-white/94 px-5 py-5 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mint text-ocean ring-1 ring-ocean/15">
+            <Trophy className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold tracking-tight">Topic Leaders</h2>
+              {totalRanked > 0 && (
+                <span className="rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] font-bold text-muted">
+                  {totalRanked} ranked
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-muted">Hand-curated voices leading each conversation.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-t-0 border-line bg-white/94 backdrop-blur">
+        {error && <div className="border-b border-line bg-coral/10 p-4 text-sm font-medium text-ink">{error}</div>}
+
+        {!error && niches.length === 0 && (
+          <div className="p-10 text-center">
+            <Trophy className="mx-auto h-8 w-8 text-muted/40" aria-hidden="true" />
+            <p className="mt-3 font-semibold">No rankings yet.</p>
+            <p className="mt-1 text-sm text-muted">Rankings are published here once admins build the first leaderboards.</p>
+          </div>
+        )}
+
+        {!error && niches.length > 0 && (
+          <>
+            <div className="flex flex-wrap items-center gap-1 border-b border-line px-5 sm:px-6">
+              {niches.map(([niche]) => {
+                const active = niche === currentNiche;
+                const count = nicheCounts.get(niche) ?? 0;
+                return (
+                  <button
+                    key={niche}
+                    onClick={() => {
+                      setActiveNiche(niche);
+                      setActiveSubNiche(null);
+                    }}
+                    className={`-mb-px flex items-center gap-2 border-b-2 px-3 py-3 text-sm font-bold transition-colors ${
+                      active ? "border-ocean text-ink" : "border-transparent text-muted hover:text-ink"
+                    }`}
+                  >
+                    {niche}
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        active ? "bg-mint text-ocean" : "bg-panel text-muted"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {subNiches.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-panel/40 px-5 py-3 sm:px-6">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted">Focus</span>
+                {subNiches.map((sub) => (
+                  <button
+                    key={sub}
+                    onClick={() => setActiveSubNiche(sub)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors active:scale-[0.97] ${
+                      sub === currentSubNiche
+                        ? "border-ocean bg-ocean text-white"
+                        : "border-line bg-white text-muted hover:border-ocean hover:text-ink"
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeBoard && activeBoard.entries.length > 0 ? (
+              <div>
+                <div className="flex items-center justify-between gap-2 border-b border-line px-5 py-2.5 sm:px-6">
+                  <p className="truncate text-xs font-semibold text-muted">
+                    {activeBoard.niche}
+                    {activeBoard.sub_niche ? ` / ${activeBoard.sub_niche}` : ""} leaderboard
+                  </p>
+                </div>
+                <ol>
+                  {activeBoard.entries.map((entry, index) => (
+                    <RankRow key={entry.influencer.id} entry={entry} rank={index + 1} />
+                  ))}
+                </ol>
+              </div>
+            ) : (
+              <div className="p-6 text-center text-sm text-muted">No rankings for this board yet.</div>
+            )}
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RankRow({ entry, rank }: { entry: RankingBoardWithEntries["entries"][number]; rank: number }) {
+  const isPodium = rank <= 3;
+
+  return (
+    <li>
+      <a
+        href={entry.influencer.profile_url}
+        target="_blank"
+        rel="noreferrer"
+        className={`flex items-center gap-3 border-b border-line p-3 transition-colors last:border-b-0 sm:gap-4 sm:p-3.5 ${
+          rank % 2 === 0 ? "bg-panel/40" : "bg-white"
+        } hover:bg-mint/50`}
+      >
+        <span
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${
+            isPodium ? "bg-ink text-white" : "border border-line bg-white text-muted"
+          }`}
+        >
+          {rank}
+        </span>
+        <span
+          className={`relative grid shrink-0 place-items-center overflow-hidden rounded-full bg-ocean font-bold text-white ${
+            isPodium ? "h-12 w-12 text-sm" : "h-10 w-10 text-xs"
+          }`}
+        >
+          {entry.influencer.profile_image_url ? (
+            <Image src={entry.influencer.profile_image_url} alt="" fill className="object-cover" sizes="48px" />
+          ) : (
+            entry.influencer.name
+              .split(" ")
+              .map((part) => part[0])
+              .join("")
+              .slice(0, 2)
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="truncate font-semibold text-ink">{entry.influencer.name}</span>
+            {entry.influencer.verified && <BadgeCheck className="h-4 w-4 shrink-0 text-ocean" aria-label="Verified" />}
+            {rank === 1 && (
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-ink px-2 py-0.5 text-[10px] font-bold text-white">
+                <Crown className="h-3 w-3" />
+                #1
+              </span>
+            )}
+          </span>
+          <span className="block truncate text-sm font-medium text-ocean">@{entry.influencer.handle}</span>
+        </span>
+        <span className="shrink-0 text-right">
+          <span className="block text-sm font-bold text-ink">{formatFollowers(entry.influencer.followers)}</span>
+          <span className="block text-[10px] font-semibold uppercase tracking-wider text-muted">followers</span>
+        </span>
+      </a>
+    </li>
   );
 }

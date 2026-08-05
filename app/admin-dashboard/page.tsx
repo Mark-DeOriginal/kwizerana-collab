@@ -16,10 +16,12 @@ import {
   Database,
   FileClock,
   Pencil,
-  Search
+  Search,
+  Trophy
 } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import type { Permission } from "@/lib/roles";
+import { RankingsTab } from "@/components/RankingsTab";
 
 const ALL_PERMISSIONS: { key: Permission; label: string; description: string }[] = [
   { key: "manage_admins", label: "Can manage admins", description: "Promote and demote other users" },
@@ -68,6 +70,7 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState("");
   const [serverDenied, setServerDenied] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [activeTab, setActiveTab] = useState<"users" | "rankings">("users");
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>([]);
@@ -317,7 +320,36 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mb-6 flex border-b border-line">
+        <button
+          onClick={() => setActiveTab("users")}
+          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+            activeTab === "users"
+              ? "border-ocean text-ink"
+              : "border-transparent text-muted hover:border-line hover:text-ink"
+          }`}
+        >
+          <User className="h-4 w-4" />
+          Users
+        </button>
+        <button
+          onClick={() => setActiveTab("rankings")}
+          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+            activeTab === "rankings"
+              ? "border-ocean text-ink"
+              : "border-transparent text-muted hover:border-line hover:text-ink"
+          }`}
+        >
+          <Trophy className="h-4 w-4" />
+          Rankings
+        </button>
+      </div>
+
+      {activeTab === "rankings" ? (
+        <RankingsTab />
+      ) : (
+        <>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-bold">Users</h2>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -517,6 +549,8 @@ export default function AdminDashboardPage() {
               )}
             </>
           )}
+        </>
+      )}
         </>
       )}
     </div>
