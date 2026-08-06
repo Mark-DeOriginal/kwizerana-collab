@@ -348,7 +348,7 @@ function ArchiveView({
       </div>
 
       <section className="mt-4 grid h-fit gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="flex flex-col border border-line bg-white/94 shadow-tight backdrop-blur h-[740px]">
+        <div className="flex flex-col border border-line bg-white/95 shadow-tight backdrop-blur h-[740px]">
           <div className="border-b border-line p-4">
             <div className="flex items-center gap-2 border border-line bg-panel px-3 transition-colors focus-within:border-ocean">
               <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
@@ -808,8 +808,8 @@ function TopicLeaders({
       : boards.find((board) => board.niche === currentNiche && board.sub_niche === currentSubNiche) ?? null;
 
   return (
-    <section className="mt-4 w-full lg:max-w-[1184px]">
-      <div className="flex flex-col gap-4 border border-line bg-white/94 px-5 py-5 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <section className="mt-4 w-full">
+      <div className="flex flex-col gap-4 border border-line bg-white/95 px-5 py-5 backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div className="flex items-center gap-3">
           <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mint text-ocean ring-1 ring-ocean/15">
             <Trophy className="h-5 w-5" aria-hidden="true" />
@@ -828,7 +828,7 @@ function TopicLeaders({
         </div>
       </div>
 
-      <div className="border border-t-0 border-line bg-white/94 backdrop-blur">
+      <div className="border border-t-0 border-line bg-white/95 backdrop-blur">
         {error && <div className="border-b border-line bg-coral/10 p-4 text-sm font-medium text-ink">{error}</div>}
 
         {!error && niches.length === 0 && (
@@ -926,7 +926,7 @@ function RankRow({ entry, rank }: { entry: RankingBoardWithEntries["entries"][nu
         } hover:bg-mint/50`}
       >
         <span
-          className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-bold ${
+          className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold ${
             isPodium ? "bg-ink text-white" : "border border-line bg-white text-muted"
           }`}
         >

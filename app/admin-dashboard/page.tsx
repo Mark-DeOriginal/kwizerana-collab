@@ -91,9 +91,9 @@ export default function AdminDashboardPage() {
 
   const canViewDashboard = canAccessAdminReview(session?.user?.role, session?.user?.permissions);
 
-  const loadUsers = useCallback(async (showLoading = false) => {
+  const loadUsers = useCallback(async (showLoading = false, silent = false) => {
     if (showLoading) setIsLoading(true);
-    setError("");
+    if (!silent) setError("");
     try {
       const res = await fetch("/api/admin/users");
       if (res.status === 403) {
@@ -111,7 +111,7 @@ export default function AdminDashboardPage() {
         pendingSubmissions: payload.stats?.pendingSubmissions ?? 0
       });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      if (!silent) setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       if (showLoading) setIsLoading(false);
     }
@@ -159,7 +159,7 @@ export default function AdminDashboardPage() {
     if (status !== "authenticated") return;
 
     const interval = setInterval(() => {
-      loadUsers();
+      loadUsers(false, true);
     }, 120000);
 
     return () => clearInterval(interval);
