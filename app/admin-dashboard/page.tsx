@@ -79,6 +79,8 @@ export default function AdminDashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [usersPage, setUsersPage] = useState(1);
   const usersPageSize = 20;
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -95,7 +97,12 @@ export default function AdminDashboardPage() {
     if (showLoading) setIsLoading(true);
     if (!silent) setError("");
     try {
-      const res = await fetch("/api/admin/users");
+      const params = new URLSearchParams();
+      params.set("page", String(usersPage));
+      params.set("limit", String(usersPageSize));
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+
+      const res = await fetch(`/api/admin/users?${params.toString()}`);
       if (res.status === 403) {
         setServerDenied(true);
         return;
@@ -104,9 +111,10 @@ export default function AdminDashboardPage() {
       if (!res.ok) throw new Error(payload.error ?? "Failed to load users.");
       setServerDenied(false);
       setUsers(payload.users ?? []);
+      setTotalUsers(payload.total ?? (payload.users ?? []).length);
       setStats({
-        totalUsers: (payload.users ?? []).length,
-        totalAdmins: (payload.users ?? []).filter((u: DashboardUser) => u.role === "admin").length,
+        totalUsers: payload.stats?.totalUsers ?? payload.total ?? 0,
+        totalAdmins: payload.stats?.totalAdmins ?? 0,
         totalProfiles: payload.stats?.totalProfiles ?? 0,
         pendingSubmissions: payload.stats?.pendingSubmissions ?? 0
       });
@@ -115,7 +123,12 @@ export default function AdminDashboardPage() {
     } finally {
       if (showLoading) setIsLoading(false);
     }
-  }, []);
+  }, [debouncedSearch, usersPage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (status === "authenticated") {
@@ -129,16 +142,10 @@ export default function AdminDashboardPage() {
     }
   }, [status, session, router]);
 
-  const filteredUsers = users.filter((u) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    return u.name?.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-  });
-
-  const usersTotalPages = Math.max(1, Math.ceil(filteredUsers.length / usersPageSize));
+  const usersTotalPages = Math.max(1, Math.ceil(totalUsers / usersPageSize));
   const safeUsersPage = Math.min(usersPage, usersTotalPages);
   const usersStart = (safeUsersPage - 1) * usersPageSize;
-  const pageUsers = filteredUsers.slice(usersStart, usersStart + usersPageSize);
+  const pageUsers = users;
 
   useEffect(() => {
     setUsersPage(1);
@@ -379,14 +386,14 @@ export default function AdminDashboardPage() {
         </div>
       ) : (
         <>
-          {filteredUsers.length === 0 ? (
+          {pageUsers.length === 0 ? (
             <div className="py-20 text-center text-sm text-muted">
-              {searchQuery ? "No users match your search." : "No users found."}
+              {totalUsers === 0 ? "No users found." : "No users match your search."}
             </div>
           ) : (
             <>
               <div className="mb-3 text-xs text-muted">
-                Showing {usersStart + 1}–{Math.min(usersStart + usersPageSize, filteredUsers.length)} of {filteredUsers.length}
+                Showing {totalUsers > 0 ? usersStart + 1 : 0}–{Math.min(usersStart + usersPageSize, totalUsers)} of {totalUsers}
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {pageUsers.map((user) => {
@@ -518,7 +525,7 @@ export default function AdminDashboardPage() {
                   );
                 })}
               </div>
-              {filteredUsers.length > usersPageSize && (
+              {totalUsers > usersPageSize && (
                 <div className="flex flex-wrap items-center justify-center gap-2 pt-4">
                   <button
                     onClick={() => setUsersPage(Math.max(1, safeUsersPage - 1))}

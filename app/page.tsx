@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -45,6 +45,7 @@ const sortOptions: Array<{ label: string; description: string; value: SortKey }>
 
 export default function Home() {
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedNiches, setSelectedNiches] = useState<Niche[]>([]);
   const [minFollowers, setMinFollowers] = useState(0);
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -52,8 +53,10 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [archiveInfluencers, setArchiveInfluencers] = useState<Influencer[]>([]);
+  const [totalArchive, setTotalArchive] = useState(0);
   const [isArchiveLoading, setIsArchiveLoading] = useState(true);
   const [archiveError, setArchiveError] = useState("");
+  const [favoriteInfluencers, setFavoriteInfluencers] = useState<Influencer[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<number>>(() => {
     if (typeof window === "undefined") return new Set<number>();
     try {
@@ -84,45 +87,72 @@ export default function Home() {
     });
   };
 
-  const favoriteInfluencers = useMemo(
-    () => archiveInfluencers.filter((i) => favoriteIds.has(i.id)),
-    [archiveInfluencers, favoriteIds]
-  );
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 400);
+    return () => clearTimeout(timer);
+  }, [query]);
 
-  const filteredInfluencers = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+  const loadArchive = useCallback(async () => {
+    setIsArchiveLoading(true);
 
-    return archiveInfluencers
-      .filter((influencer) => influencer.followers >= minFollowers)
-      .filter((influencer) => !verifiedOnly || influencer.verified)
-      .filter((influencer) => selectedNiches.length === 0 || selectedNiches.some((niche) => influencer.tags.includes(niche)))
-      .filter((influencer) => {
-        if (!normalizedQuery) return true;
-        const searchable = [influencer.handle, influencer.name, influencer.bio, influencer.location, influencer.tags.join(" ")]
-          .join(" ")
-          .toLowerCase();
-        return searchable.includes(normalizedQuery);
-      })
-      .sort((a, b) => {
-        if (sortKey === "followers") return b.followers - a.followers;
-        return b.confidence - a.confidence;
-      });
-  }, [archiveInfluencers, minFollowers, query, selectedNiches, sortKey, verifiedOnly]);
+    try {
+      const params = new URLSearchParams();
+      params.set("page", String(currentPage));
+      params.set("limit", String(pageSize));
+      params.set("sort", sortKey);
+      if (minFollowers > 0) params.set("minFollowers", String(minFollowers));
+      if (verifiedOnly) params.set("verifiedOnly", "1");
+      if (selectedNiches.length > 0) params.set("niches", selectedNiches.join(","));
+      if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
 
-  const totalPages = Math.max(1, Math.ceil(filteredInfluencers.length / pageSize));
-  const safePage = Math.min(currentPage, totalPages);
-  const pageStart = (safePage - 1) * pageSize;
-  const paginatedInfluencers = filteredInfluencers.slice(pageStart, pageStart + pageSize);
-  const selectedInfluencer =
-    paginatedInfluencers.find((item) => item.id === selectedId) ??
-    filteredInfluencers.find((item) => item.id === selectedId) ??
-    paginatedInfluencers[0] ??
-    filteredInfluencers[0] ??
-    null;
+      const response = await fetch(`/api/archive?${params.toString()}`, { cache: "no-store" });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load archive.");
+      }
+
+      setArchiveInfluencers(payload.data?.influencers ?? []);
+      setTotalArchive(payload.data?.pagination?.total ?? 0);
+      setArchiveError("");
+    } catch {
+      setArchiveError("Unable to load profiles. Please check your internet connection and try again.");
+    } finally {
+      setIsArchiveLoading(false);
+    }
+  }, [currentPage, debouncedQuery, minFollowers, selectedNiches, sortKey, verifiedOnly]);
 
   useEffect(() => {
     void loadArchive();
-  }, []);
+  }, [loadArchive]);
+
+  useEffect(() => {
+    if (favoriteIds.size === 0) {
+      setFavoriteInfluencers([]);
+      return;
+    }
+
+    let cancelled = false;
+    const ids = Array.from(favoriteIds);
+
+    fetch(`/api/archive?ids=${ids.join(",")}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (!cancelled) setFavoriteInfluencers(payload.data?.influencers ?? []);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [favoriteIds]);
+
+  const totalPages = Math.max(1, Math.ceil(totalArchive / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStart = (safePage - 1) * pageSize;
+  const paginatedInfluencers = archiveInfluencers;
+  const selectedInfluencer =
+    paginatedInfluencers.find((item) => item.id === selectedId) ?? paginatedInfluencers[0] ?? null;
 
   useEffect(() => {
     void loadRankings();
@@ -144,26 +174,6 @@ export default function Home() {
     setSelectedNiches((current) => (current.includes(niche) ? current.filter((item) => item !== niche) : [...current, niche]));
   };
 
-  const loadArchive = async () => {
-    setIsArchiveLoading(true);
-
-    try {
-      const response = await fetch("/api/archive", { cache: "no-store" });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load archive.");
-      }
-
-      setArchiveInfluencers(payload.data?.influencers ?? []);
-      setArchiveError("");
-    } catch {
-      setArchiveError("Unable to load profiles. Please check your internet connection and try again.");
-    } finally {
-      setIsArchiveLoading(false);
-    }
-  };
-
   const loadRankings = async () => {
     try {
       const response = await fetch("/api/rankings", { cache: "no-store" });
@@ -180,30 +190,49 @@ export default function Home() {
     }
   };
 
-  const exportCsv = () => {
-    const headers = ["Name", "Handle", "Followers", "Verified", "Location", "Language", "Tags", "Engagement", "Commentary", "Last Active", "Profile URL"];
-    const rows = filteredInfluencers.map((influencer) => [
-      influencer.name,
-      influencer.handle,
-      String(influencer.followers),
-      influencer.verified ? "Yes" : "No",
-      influencer.location,
-      influencer.language,
-      influencer.tags.join("; "),
-      influencer.engagement,
-      influencer.commentary ?? "",
-      influencer.lastActive,
-      influencer.profileUrl ?? `https://x.com/${influencer.handle}`
-    ]);
+  const exportCsv = async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set("export", "1");
+      if (minFollowers > 0) params.set("minFollowers", String(minFollowers));
+      if (verifiedOnly) params.set("verifiedOnly", "1");
+      if (selectedNiches.length > 0) params.set("niches", selectedNiches.join(","));
+      if (debouncedQuery.trim()) params.set("q", debouncedQuery.trim());
 
-    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `kwizerana-archive-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+      const response = await fetch(`/api/archive?${params.toString()}`, { cache: "no-store" });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to export archive.");
+      }
+
+      const allInfluencers = (payload.data?.influencers ?? []) as Influencer[];
+      const headers = ["Name", "Handle", "Followers", "Verified", "Location", "Language", "Tags", "Engagement", "Commentary", "Last Active", "Profile URL"];
+      const rows = allInfluencers.map((influencer: Influencer) => [
+        influencer.name,
+        influencer.handle,
+        String(influencer.followers),
+        influencer.verified ? "Yes" : "No",
+        influencer.location,
+        influencer.language,
+        influencer.tags.join("; "),
+        influencer.engagement,
+        influencer.commentary ?? "",
+        influencer.lastActive,
+        influencer.profileUrl ?? `https://x.com/${influencer.handle}`
+      ]);
+
+      const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `kwizerana-archive-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setArchiveError(err instanceof Error ? err.message : "Failed to export archive.");
+    }
   };
 
   return (
@@ -236,7 +265,7 @@ export default function Home() {
             setSortKey(value);
             setCurrentPage(1);
           }}
-          filteredInfluencers={filteredInfluencers}
+          totalArchive={totalArchive}
           paginatedInfluencers={paginatedInfluencers}
           selectedInfluencer={selectedInfluencer}
           setSelectedId={setSelectedId}
@@ -272,7 +301,7 @@ function ArchiveView({
   setVerifiedOnly,
   sortKey,
   setSortKey,
-  filteredInfluencers,
+  totalArchive,
   paginatedInfluencers,
   selectedInfluencer,
   setSelectedId,
@@ -301,7 +330,7 @@ function ArchiveView({
   setVerifiedOnly: (value: boolean) => void;
   sortKey: SortKey;
   setSortKey: (value: SortKey) => void;
-  filteredInfluencers: Influencer[];
+  totalArchive: number;
   paginatedInfluencers: Influencer[];
   selectedInfluencer: Influencer | null;
   setSelectedId: (id: number) => void;
@@ -401,9 +430,9 @@ function ArchiveView({
             <p className="text-sm text-muted">
               Showing{" "}
               <span className="font-semibold text-ink">
-                {filteredInfluencers.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + pageSize, filteredInfluencers.length)}
+                {totalArchive === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + pageSize, totalArchive)}
               </span>{" "}
-              of <span className="font-semibold text-ink">{filteredInfluencers.length}</span> matching accounts.
+              of <span className="font-semibold text-ink">{totalArchive}</span> matching accounts.
             </p>
             <div className="flex items-center gap-2">
               <SortMenu value={sortKey} onChange={setSortKey} />
@@ -791,14 +820,6 @@ function TopicLeaders({
     return Array.from(map.entries());
   }, [boards]);
 
-  const totalRanked = useMemo(() => boards.reduce((sum, b) => sum + b.entries.length, 0), [boards]);
-
-  const nicheCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const b of boards) map.set(b.niche, (map.get(b.niche) ?? 0) + b.entries.length);
-    return map;
-  }, [boards]);
-
   const currentNiche = activeNiche ?? niches[0]?.[0] ?? null;
   const subNiches = (niches.find(([niche]) => niche === currentNiche)?.[1] ?? []).filter(Boolean);
   const currentSubNiche = activeSubNiche ?? subNiches[0] ?? null;
@@ -817,11 +838,6 @@ function TopicLeaders({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold tracking-tight">Topic Leaders</h2>
-              {totalRanked > 0 && (
-                <span className="rounded-full border border-line bg-panel px-2 py-0.5 text-[11px] font-bold text-muted">
-                  {totalRanked} ranked
-                </span>
-              )}
             </div>
             <p className="text-sm text-muted">Hand-curated voices leading each conversation.</p>
           </div>
@@ -844,7 +860,6 @@ function TopicLeaders({
             <div className="flex flex-wrap items-center gap-1 border-b border-line px-5 sm:px-6">
               {niches.map(([niche]) => {
                 const active = niche === currentNiche;
-                const count = nicheCounts.get(niche) ?? 0;
                 return (
                   <button
                     key={niche}
@@ -857,13 +872,6 @@ function TopicLeaders({
                     }`}
                   >
                     {niche}
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                        active ? "bg-mint text-ocean" : "bg-panel text-muted"
-                      }`}
-                    >
-                      {count}
-                    </span>
                   </button>
                 );
               })}

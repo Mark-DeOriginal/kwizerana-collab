@@ -9,7 +9,7 @@ import { fetchTwitterProfile } from "@/lib/twitter-profile";
 
 const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL;
 if (!connectionString) throw new Error("Missing DATABASE_URL");
-const sql = neon(connectionString);
+const sql = neon(connectionString, { fetchOptions: { headersTimeout: 60000, bodyTimeout: 60000 } });
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);

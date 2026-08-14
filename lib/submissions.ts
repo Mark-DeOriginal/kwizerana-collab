@@ -78,16 +78,83 @@ function mapSubmission(row: SubmissionRow): InfluencerSubmission {
   };
 }
 
-export async function listSubmissions() {
+export type SubmissionSortKey = "newest" | "pending" | "approved" | "followers" | "no_commentary";
+
+export type SubmissionListFilters = {
+  search?: string;
+  sortBy?: SubmissionSortKey;
+  page?: number;
+  limit?: number;
+};
+
+export type SubmissionListResult = {
+  submissions: InfluencerSubmission[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export async function listSubmissions(filters: SubmissionListFilters = {}): Promise<SubmissionListResult> {
   await ensureDatabase();
+
+  const { search, sortBy = "newest", page = 1, limit = 15 } = filters;
+  const safeLimit = Math.min(Math.max(limit, 1), 200);
+  const offset = (page - 1) * safeLimit;
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  const q = search?.trim().toLowerCase();
+  if (q) {
+    const likeParam = `$${params.length + 1}`;
+    conditions.push(
+      `(LOWER(s.profile_handle) LIKE ${likeParam} OR LOWER(s.profile_name) LIKE ${likeParam} OR LOWER(s.profile_bio) LIKE ${likeParam} OR LOWER(s.submitter_email) LIKE ${likeParam} OR LOWER(s.note) LIKE ${likeParam} OR LOWER(COALESCE(i.commentary, '')) LIKE ${likeParam})`
+    );
+    params.push(`%${q}%`);
+  }
+
+  const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  let orderSql = "s.created_at DESC";
+  switch (sortBy) {
+    case "pending":
+      orderSql = `CASE WHEN s.status = 'pending' THEN 0 ELSE 1 END, s.created_at DESC`;
+      break;
+    case "approved":
+      orderSql = `CASE WHEN s.status = 'approved' THEN 0 ELSE 1 END, s.created_at DESC`;
+      break;
+    case "followers":
+      orderSql = `s.profile_followers DESC, s.created_at DESC`;
+      break;
+    case "no_commentary":
+      orderSql = `CASE WHEN COALESCE(i.commentary, '') = '' THEN 0 ELSE 1 END, s.created_at DESC`;
+      break;
+    case "newest":
+      orderSql = `s.created_at DESC`;
+      break;
+  }
+
+  const joinSql = `FROM submissions s LEFT JOIN influencers i ON i.source_submission_id = s.id`;
+
+  const [countRow] = await dbQuery<{ count: string }>(
+    `SELECT COUNT(*)::TEXT AS count ${joinSql} ${whereSql}`,
+    params
+  );
+  const total = Number(countRow?.count ?? "0");
+
   const rows = await dbQuery<SubmissionRow>(
-    `SELECT s.*, i.location, i.commentary
-     FROM submissions s
-     LEFT JOIN influencers i ON i.source_submission_id = s.id
-     ORDER BY s.created_at DESC`
+    `SELECT s.*, i.location, i.commentary ${joinSql} ${whereSql} ORDER BY ${orderSql} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, safeLimit, offset]
   );
 
-  return rows.map(mapSubmission);
+  return {
+    submissions: rows.map(mapSubmission),
+    total,
+    page,
+    limit: safeLimit,
+    totalPages: Math.max(1, Math.ceil(total / safeLimit))
+  };
 }
 
 export async function createSubmission(input: {

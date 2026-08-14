@@ -107,7 +107,7 @@ function getSql() {
     throw new Error("Missing database connection string. Set DATABASE_URL to your Neon connection string.");
   }
 
-  return neon(connectionString);
+  return neon(connectionString, { fetchOptions: { headersTimeout: 60000, bodyTimeout: 60000 } });
 }
 
 export async function dbQuery<T>(query: string, params: unknown[] = []) {

@@ -39,6 +39,7 @@ export default function AdminReviewPage() {
   const [reviewPage, setReviewPage] = useState(1);
   const reviewPageSize = 15;
   const [serverDenied, setServerDenied] = useState(false);
+  const [totalSubmissions, setTotalSubmissions] = useState(0);
 
   const goToReviewPage = (page: number) => {
     setReviewPage(page);
@@ -53,13 +54,21 @@ export default function AdminReviewPage() {
   const [sortBy, setSortBy] = useState<ReviewSortKey>("default");
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const loadSubmissions = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage("");
 
     try {
-      const response = await fetch("/api/submissions");
+      const params = new URLSearchParams();
+      params.set("page", String(reviewPage));
+      params.set("limit", String(reviewPageSize));
+      params.set("sort", sortBy === "default" ? "newest" : sortBy);
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+
+      const response = await fetch(`/api/submissions?${params.toString()}`);
 
       if (response.status === 403) {
         setServerDenied(true);
@@ -73,6 +82,7 @@ export default function AdminReviewPage() {
       }
 
       setSubmissions(payload.data ?? []);
+      setTotalSubmissions(payload.pagination?.total ?? 0);
 
       const locations: Record<string, string> = {};
       const commentaries: Record<string, string> = {};
@@ -90,7 +100,12 @@ export default function AdminReviewPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [debouncedSearch, reviewPage, sortBy]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -103,11 +118,6 @@ export default function AdminReviewPage() {
       setIsLoading(false);
     }
   }, [status, session?.user?.role, loadSubmissions]);
-
-  useEffect(() => {
-    const maxPage = Math.max(1, Math.ceil(submissions.length / reviewPageSize));
-    if (reviewPage > maxPage) setReviewPage(maxPage);
-  }, [submissions.length, reviewPage]);
 
   useEffect(() => {
     if (!sortMenuOpen) return;
@@ -409,50 +419,33 @@ export default function AdminReviewPage() {
                 Loading submissions...
               </div>
             )}
-            {!isLoading && submissions.length === 0 && (
-              <div className="border border-line bg-panel p-6 text-center">
-                <Search className="mx-auto h-8 w-8 text-muted/40" />
-                <p className="mt-3 font-semibold">No submissions yet.</p>
-                <p className="mt-1 text-sm text-muted">The review queue is empty. New submissions will appear here.</p>
-              </div>
-            )}
             {(() => {
-              const sorted = [...submissions].sort((a, b) => {
-                switch (sortBy) {
-                  case "pending":
-                    if (a.status === "pending" && b.status !== "pending") return -1;
-                    if (a.status !== "pending" && b.status === "pending") return 1;
-                    return 0;
-                  case "approved":
-                    if (a.status === "approved" && b.status !== "approved") return -1;
-                    if (a.status !== "approved" && b.status === "approved") return 1;
-                    return 0;
-                  case "followers":
-                    return (b.profile.followers ?? 0) - (a.profile.followers ?? 0);
-                  case "newest":
-                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-                  case "no_commentary":
-                    if (!a.commentary && b.commentary) return -1;
-                    if (a.commentary && !b.commentary) return 1;
-                    return 0;
-                  default:
-                    return 0;
-                }
-              });
-
-              const reviewTotalPages = Math.max(1, Math.ceil(sorted.length / reviewPageSize));
+              const reviewTotalPages = Math.max(1, Math.ceil(totalSubmissions / reviewPageSize));
               const safePage = Math.min(reviewPage, reviewTotalPages);
               const start = (safePage - 1) * reviewPageSize;
-              const pageItems = sorted.slice(start, start + reviewPageSize);
               return (
                 <>
-                  {submissions.length > 0 && (
-                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="flex items-center gap-3 text-xs text-muted">
-                        <span>Showing {start + 1}–{Math.min(start + reviewPageSize, sorted.length)} of {sorted.length}</span>
-                        <span>Page <span className="font-semibold text-ink">{safePage}</span> of <span className="font-semibold text-ink">{reviewTotalPages}</span></span>
-                      </div>
-                      <div className="relative" ref={sortMenuRef}>
+                  <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-center gap-3 text-xs text-muted">
+                      <span>Showing {totalSubmissions > 0 ? start + 1 : 0}–{Math.min(start + reviewPageSize, totalSubmissions)} of {totalSubmissions}</span>
+                      <span>Page <span className="font-semibold text-ink">{safePage}</span> of <span className="font-semibold text-ink">{reviewTotalPages}</span></span>
+                    </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <div className="flex items-center gap-2 border border-line bg-panel px-3 transition-colors focus-within:border-ocean">
+                          <Search className="h-3.5 w-3.5 shrink-0 text-muted" aria-hidden="true" />
+                          <input
+                            value={searchQuery}
+                            onChange={(e) => { setSearchQuery(e.target.value); setReviewPage(1); }}
+                            placeholder="Search profiles..."
+                            className="h-8 w-full min-w-[180px] bg-transparent px-1 text-xs outline-none placeholder:text-muted sm:w-52"
+                          />
+                          {searchQuery && (
+                            <button className="shrink-0 text-muted transition-colors hover:text-ink" onClick={() => setSearchQuery("")} aria-label="Clear search">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <div className="relative" ref={sortMenuRef}>
                         <button
                           type="button"
                           onClick={() => setSortMenuOpen((prev) => !prev)}
@@ -496,10 +489,17 @@ export default function AdminReviewPage() {
                             })}
                           </div>
                         )}
+                        </div>
                       </div>
                     </div>
+                  {submissions.length === 0 && !isLoading && (
+                    <div className="border border-line bg-panel p-6 text-center">
+                      <Search className="mx-auto h-8 w-8 text-muted/40" />
+                      <p className="mt-3 font-semibold">{totalSubmissions === 0 ? "No submissions yet." : "No matching profiles."}</p>
+                      <p className="mt-1 text-sm text-muted">{totalSubmissions === 0 ? "The review queue is empty. New submissions will appear here." : "Try a different search term or clear the search field."}</p>
+                    </div>
                   )}
-                  {pageItems.map((submission) => (
+                  {submissions.map((submission) => (
               <article key={submission.id} className="border border-line bg-white p-4 shadow-tight backdrop-blur transition-colors hover:border-ocean/30">
                 <div className="flex flex-wrap items-center gap-3">
                   {submission.profile.profileImageUrl ? (
@@ -607,7 +607,7 @@ export default function AdminReviewPage() {
                 </div>
               </article>
             ))}
-                  {sorted.length > reviewPageSize && (
+                  {totalSubmissions > reviewPageSize && (
                     <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
                       <button
                         onClick={() => goToReviewPage(Math.max(1, safePage - 1))}

@@ -1,53 +1,60 @@
 import { NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import { listArchive, listInfluencersByIds, type Niche } from "@/lib/influencers";
 
-const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL;
-if (!connectionString) throw new Error("Missing DATABASE_URL");
-const sql = neon(connectionString);
+function parsePositiveInt(value: string | null, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const rows = await sql`SELECT
-      i.id, i.handle, i.name, i.bio, i.followers, i.location, i.language,
-      i.verified, i.last_active, i.updated_at, i.confidence, i.engagement,
-      i.audience, i.recent_signal, i.avatar_color, i.profile_image_url, i.profile_url,
-      i.commentary,
-      COALESCE(array_agg(n.niche ORDER BY n.niche) FILTER (WHERE n.niche IS NOT NULL), ARRAY[]::TEXT[]) AS tags
-    FROM influencers i
-    LEFT JOIN influencer_niches n ON n.influencer_id = i.id
-    WHERE i.status = 'active'
-    GROUP BY i.id
-    ORDER BY i.followers DESC, i.id ASC`;
+    const url = new URL(request.url);
 
-    const influencers = rows.map((r: any) => ({
-      id: Number(r.id),
-      handle: r.handle,
-      name: r.name,
-      bio: r.bio,
-      followers: Number(r.followers),
-      location: r.location,
-      language: "English",
-      verified: Boolean(r.verified),
-      lastActive: r.last_active,
-      updatedAt: new Date(r.updated_at).toISOString().slice(0, 10),
-      tags: (r.tags ?? []) as string[],
-      confidence: Number(r.confidence),
-      engagement: r.engagement,
-      audience: r.audience,
-      recentSignal: r.recent_signal,
-      avatarColor: r.avatar_color,
-      profileImageUrl: r.profile_image_url ?? undefined,
-      profileUrl: r.profile_url ?? undefined,
-      commentary: r.commentary || undefined,
-    }));
+    const ids = (url.searchParams.get("ids") ?? "")
+      .split(",")
+      .map((id) => Number(id.trim()))
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    if (ids.length > 0) {
+      const influencers = await listInfluencersByIds(ids);
+      return NextResponse.json({
+        data: {
+          influencers,
+          pagination: { page: 1, limit: ids.length, total: influencers.length, totalPages: 1 },
+          stats: { totalInfluencers: influencers.length, pendingSubmissions: 0, totalUsers: 0, avgConfidence: 0 }
+        }
+      });
+    }
+
+    const isExport = url.searchParams.get("export") === "1" || url.searchParams.get("export") === "true";
+    const page = isExport ? 1 : parsePositiveInt(url.searchParams.get("page"), 1);
+    const limit = isExport ? 100000 : Math.min(200, parsePositiveInt(url.searchParams.get("limit"), 30));
+    const query = url.searchParams.get("q")?.trim() || undefined;
+    const minFollowers = parsePositiveInt(url.searchParams.get("minFollowers"), 0);
+    const verifiedOnly = url.searchParams.get("verifiedOnly") === "1" || url.searchParams.get("verifiedOnly") === "true";
+    const niches = (url.searchParams.get("niches") ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean) as Niche[];
+    const sortBy = url.searchParams.get("sort") === "followers" ? "followers" : "match";
+
+    const result = await listArchive({ query, minFollowers, verifiedOnly, niches, sortBy, page, limit });
 
     return NextResponse.json({
       data: {
-        influencers,
-        stats: { totalInfluencers: influencers.length, pendingSubmissions: 0, totalUsers: 0, avgConfidence: 0 },
-      },
+        influencers: result.influencers,
+        pagination: {
+          page: result.page,
+          limit: result.limit,
+          total: result.total,
+          totalPages: result.totalPages
+        },
+        stats: { totalInfluencers: result.total, pendingSubmissions: 0, totalUsers: 0, avgConfidence: 0 }
+      }
     });
-  } catch {
+  } catch (error) {
+    console.error("GET /api/archive failed:", error);
     return NextResponse.json(
       { error: "Unable to load profiles. Please check your internet connection and try again." },
       { status: 500 }

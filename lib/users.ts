@@ -81,15 +81,59 @@ export async function upsertUser(input: {
   return mapUser(row);
 }
 
-export async function listAllUsers() {
+export type UserListFilters = {
+  search?: string;
+  page?: number;
+  limit?: number;
+};
+
+export type UserListResult = {
+  users: AppUser[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+};
+
+export async function listAllUsers(filters: UserListFilters = {}): Promise<UserListResult> {
   await ensureDatabase();
+
+  const { search, page = 1, limit = 20 } = filters;
+  const safeLimit = Math.min(Math.max(limit, 1), 200);
+  const offset = (page - 1) * safeLimit;
+
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  const q = search?.trim().toLowerCase();
+  if (q) {
+    conditions.push(`(LOWER(email) LIKE $${params.length + 1} OR LOWER(COALESCE(name, '')) LIKE $${params.length + 1})`);
+    params.push(`%${q}%`);
+  }
+
+  const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const [countRow] = await dbQuery<{ count: string }>(
+    `SELECT COUNT(*)::TEXT AS count FROM users ${whereSql}`,
+    params
+  );
+  const total = Number(countRow?.count ?? "0");
+
   const rows = await dbQuery<UserRow>(
     `SELECT id, email, name, image, role, permissions, created_at, updated_at, last_sign_in_at
-     FROM users
-     ORDER BY created_at DESC`
+     FROM users ${whereSql}
+     ORDER BY created_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, safeLimit, offset]
   );
 
-  return rows.map(mapUser);
+  return {
+    users: rows.map(mapUser),
+    total,
+    page,
+    limit: safeLimit,
+    totalPages: Math.max(1, Math.ceil(total / safeLimit))
+  };
 }
 
 export async function updateUserRole(userId: string, role: UserRole, permissions: Permission[]) {

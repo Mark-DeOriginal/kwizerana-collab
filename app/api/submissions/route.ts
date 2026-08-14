@@ -4,20 +4,33 @@ import { neon } from "@neondatabase/serverless";
 import { authOptions } from "@/lib/auth";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { niches, Niche } from "@/lib/influencers";
-import { createSubmission, listSubmissions } from "@/lib/submissions";
+import { createSubmission, listSubmissions, type SubmissionSortKey } from "@/lib/submissions";
 
 const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.NEON_DATABASE_URL;
-const sql = connectionString ? neon(connectionString) : null;
+const sql = connectionString ? neon(connectionString, { fetchOptions: { headersTimeout: 60000, bodyTimeout: 60000 } }) : null;
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
 
   if (!canAccessAdminReview(session?.user?.role, session?.user?.permissions)) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
-  const submissions = await listSubmissions();
-  return NextResponse.json({ data: submissions });
+  const url = new URL(request.url);
+  const page = Math.max(1, Math.floor(Number(url.searchParams.get("page")) || 1));
+  const limit = Math.min(200, Math.max(1, Math.floor(Number(url.searchParams.get("limit")) || 15)));
+  const search = url.searchParams.get("search")?.trim() || undefined;
+  const sortParam = url.searchParams.get("sort") ?? "newest";
+  const sortBy: SubmissionSortKey =
+    sortParam === "pending" || sortParam === "approved" || sortParam === "followers" || sortParam === "no_commentary" || sortParam === "newest"
+      ? sortParam
+      : "newest";
+
+  const result = await listSubmissions({ search, sortBy, page, limit });
+  return NextResponse.json({
+    data: result.submissions,
+    pagination: { page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages }
+  });
 }
 
 export async function POST(request: Request) {
