@@ -20,6 +20,7 @@ import {
   Trophy
 } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
+import { friendlyError, readJson } from "@/lib/client-request";
 import type { Permission } from "@/lib/roles";
 import { RankingsTab } from "@/components/RankingsTab";
 
@@ -107,7 +108,12 @@ export default function AdminDashboardPage() {
         setServerDenied(true);
         return;
       }
-      const payload = await res.json();
+      const payload = (await readJson<{
+        users?: DashboardUser[];
+        total?: number;
+        error?: string;
+        stats?: { totalUsers?: number; totalAdmins?: number; totalProfiles?: number; pendingSubmissions?: number };
+      }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to load users.");
       setServerDenied(false);
       setUsers(payload.users ?? []);
@@ -119,7 +125,7 @@ export default function AdminDashboardPage() {
         pendingSubmissions: payload.stats?.pendingSubmissions ?? 0
       });
     } catch (err: unknown) {
-      if (!silent) setError(err instanceof Error ? err.message : "Something went wrong.");
+      if (!silent) setError(friendlyError(err, "Something went wrong."));
     } finally {
       if (showLoading) setIsLoading(false);
     }
@@ -230,7 +236,7 @@ export default function AdminDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "promote", permissions: selectedPermissions })
       });
-      const payload = await res.json();
+      const payload = (await readJson<{ error?: string }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to promote user.");
       setUsers((prev) => prev.map((u) =>
         u.id === userId ? { ...u, role: "admin" as const, permissions: selectedPermissions } : u
@@ -247,7 +253,7 @@ export default function AdminDashboardPage() {
         }
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(friendlyError(err, "Something went wrong."));
     } finally {
       setActionLoadingId(null);
     }
@@ -261,14 +267,14 @@ export default function AdminDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "demote" })
       });
-      const payload = await res.json();
+      const payload = (await readJson<{ error?: string }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to demote user.");
       setUsers((prev) => prev.map((u) =>
         u.id === userId ? { ...u, role: "member" as const, permissions: [] } : u
       ));
       setStats((prev) => ({ ...prev, totalAdmins: Math.max(0, prev.totalAdmins - 1) }));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(friendlyError(err, "Something went wrong."));
     } finally {
       setActionLoadingId(null);
     }

@@ -4,23 +4,28 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
 import { LogIn } from "lucide-react";
+import { readJson } from "@/lib/client-request";
 
 export default function SignInPage() {
   const { data: session, status } = useSession();
   const [googleAuthReady, setGoogleAuthReady] = useState(false);
   const [databaseReady, setDatabaseReady] = useState(false);
   const [checkedConfig, setCheckedConfig] = useState(false);
+  const [configOffline, setConfigOffline] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/status")
-      .then((response) => response.json())
+      .then((response) => readJson<{ google?: boolean; database?: boolean }>(response))
       .then((payload) => {
+        if (!payload) {
+          setConfigOffline(true);
+          return;
+        }
         setGoogleAuthReady(Boolean(payload.google));
         setDatabaseReady(Boolean(payload.database));
       })
       .catch(() => {
-        setGoogleAuthReady(false);
-        setDatabaseReady(false);
+        setConfigOffline(true);
       })
       .finally(() => setCheckedConfig(true));
   }, []);
@@ -59,7 +64,16 @@ export default function SignInPage() {
               {status === "loading" ? "Checking session..." : "Continue with Google"}
             </button>
 
-            {checkedConfig && !googleAuthReady && (
+            {checkedConfig && configOffline && (
+              <div className="mt-4 border border-coral/40 bg-coral/10 p-4 text-sm leading-6">
+                <p className="font-semibold">Couldn&apos;t check sign-in availability.</p>
+                <p className="mt-2 text-muted">
+                  You appear to be offline. Check your internet connection and try again.
+                </p>
+              </div>
+            )}
+
+            {checkedConfig && !configOffline && !googleAuthReady && (
               <div className="mt-4 border border-coral/40 bg-coral/10 p-4 text-sm leading-6">
                 <p className="font-semibold">Google sign-in is not available yet.</p>
                 <p className="mt-2 text-muted">

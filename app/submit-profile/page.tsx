@@ -8,8 +8,9 @@ import { RefreshCcw, Search, Sparkles, UserPlus } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
 import { NicheTagInput } from "@/components/NicheTagInput";
 import type { Niche } from "@/lib/niches";
-import { formatFollowers } from "@/lib/format";
+import { formatFollowers, truncateBio } from "@/lib/format";
 import type { TwitterProfile } from "@/lib/twitter-profile";
+import { friendlyError, readJson } from "@/lib/client-request";
 
 const previewTimeoutMs = 30000;
 
@@ -99,7 +100,7 @@ export default function SubmitProfilePage() {
       const response = await fetch(`/api/twitter/profile?profile=${encodeURIComponent(profileUrl)}`, {
         signal: controller.signal
       });
-      const payload = (await response.json()) as PreviewErrorPayload & { data?: TwitterProfile };
+      const payload = (await readJson<PreviewErrorPayload & { data?: TwitterProfile }>(response)) ?? {};
 
       if (!response.ok) {
         throw payload;
@@ -108,11 +109,16 @@ export default function SubmitProfilePage() {
       setPreview(payload.data ?? null);
     } catch (error) {
       setPreview(null);
-      const normalized = error instanceof Error
-        ? normalizePreviewError({ error: error.message })
-        : normalizePreviewError((error as PreviewErrorPayload) ?? {});
+
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setPreviewError("Preview timed out");
+        setPreviewDetail("The profile lookup took too long. Please try again.");
+        return;
+      }
+
+      const normalized = normalizePreviewError((error as PreviewErrorPayload) ?? {});
       setPreviewError(normalized.title);
-      setPreviewDetail(normalized.detail);
+      setPreviewDetail(friendlyError(error, normalized.detail || ""));
     } finally {
       clearTimeout(timeoutId);
       setIsPreviewLoading(false);
@@ -134,16 +140,16 @@ export default function SubmitProfilePage() {
           email: session?.user?.email
         })
       });
-      const payload = await response.json();
+      const payload = (await readJson<{ error?: string; data?: { profile?: { handle?: string } } }>(response)) ?? {};
 
       if (!response.ok) {
         throw new Error(payload.error ?? "Submission failed.");
       }
 
-      setPreview(payload.data?.profile ?? preview);
-      setSubmissionMessage(`Submitted @${payload.data.profile.handle} for admin review.`);
+      setPreview(payload.data?.profile ? (payload.data.profile as TwitterProfile) : preview);
+      setSubmissionMessage(payload.data?.profile?.handle ? `Submitted @${payload.data.profile.handle} for admin review.` : "Submitted for admin review.");
     } catch (error) {
-      setSubmissionMessage(error instanceof Error ? error.message : "Submission failed.");
+      setSubmissionMessage(friendlyError(error, "Submission failed."));
     } finally {
       setIsSubmitting(false);
     }
@@ -232,7 +238,7 @@ export default function SubmitProfilePage() {
               </div>
             )}
             {preview && (
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 max-w-full space-y-3">
                 <div className="flex items-center gap-3">
                   {preview.profileImageUrl ? (
                     <Image src={preview.profileImageUrl} alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded-full object-cover" />
@@ -246,7 +252,7 @@ export default function SubmitProfilePage() {
                     <p className="text-sm font-medium text-ocean">@{preview.handle}</p>
                   </div>
                 </div>
-                <p className="text-sm leading-6 text-muted">{preview.bio}</p>
+                <p className="break-words line-clamp-3 text-sm leading-6 text-muted">{truncateBio(preview.bio)}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <DataPoint label="Followers" value={formatFollowers(preview.followers)} />
                   <DataPoint label="Verified" value={preview.verified ? "Yes" : "No"} />

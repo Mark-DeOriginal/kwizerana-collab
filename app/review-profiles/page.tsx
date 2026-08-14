@@ -8,9 +8,11 @@ import { BadgeCheck, Check, ChevronDown, ExternalLink, FileCheck2, Loader2, LogI
 import { DataPoint } from "@/components/DataPoint";
 import { NicheTagInput } from "@/components/NicheTagInput";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
-import { formatFollowers } from "@/lib/format";
+import { formatFollowers, truncateBio } from "@/lib/format";
 import { type Niche } from "@/lib/niches";
 import type { InfluencerSubmission } from "@/lib/submissions";
+import type { TwitterProfile } from "@/lib/twitter-profile";
+import { friendlyError, readJson } from "@/lib/client-request";
 
 type ReviewSortKey = "default" | "pending" | "approved" | "followers" | "newest" | "no_commentary";
 
@@ -75,7 +77,11 @@ export default function AdminReviewPage() {
         return;
       }
 
-      const payload = await response.json();
+      const payload = (await readJson<{
+        data?: InfluencerSubmission[];
+        pagination?: { total?: number };
+        error?: string;
+      }>(response)) ?? {};
 
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to load submissions.");
@@ -96,7 +102,7 @@ export default function AdminReviewPage() {
       setAdminCommentary((prev) => ({ ...commentaries, ...prev }));
       setAdminNiches((prev) => ({ ...nichesMap, ...prev }));
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load submissions.");
+      setErrorMessage(friendlyError(error, "Failed to load submissions."));
     } finally {
       setIsLoading(false);
     }
@@ -201,9 +207,9 @@ export default function AdminReviewPage() {
 
     try {
       const response = await fetch(`/api/admin/submissions/${id}/refresh`, { method: "POST" });
-      const payload = await response.json();
+      const payload = (await readJson<{ error?: string; data?: TwitterProfile }>(response)) ?? {};
 
-      if (!response.ok) {
+      if (!response.ok || !payload.data) {
         throw new Error(payload.error ?? "Refresh failed.");
       }
 
@@ -228,7 +234,7 @@ export default function AdminReviewPage() {
         };
       }));
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : "Refresh failed.");
+      setErrorMessage(friendlyError(err, "Refresh failed."));
     } finally {
       setRefreshingIds((prev) => {
         const next = new Set(prev);
@@ -322,7 +328,7 @@ export default function AdminReviewPage() {
           succeeded = true;
           break;
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Request failed";
+          const msg = friendlyError(err, "Request failed");
           const isRateLimit = msg.toLowerCase().includes("rate limit") || msg.toLowerCase().includes("429");
           if (isRateLimit && attempt < maxRetries - 1) {
             await sleep(3000);
@@ -500,7 +506,7 @@ export default function AdminReviewPage() {
                     </div>
                   )}
                   {submissions.map((submission) => (
-              <article key={submission.id} className="border border-line bg-white p-4 shadow-tight backdrop-blur transition-colors hover:border-ocean/30">
+              <article key={submission.id} className="max-w-full border border-line bg-white p-4 shadow-tight backdrop-blur transition-colors hover:border-ocean/30">
                 <div className="flex flex-wrap items-center gap-3">
                   {submission.profile.profileImageUrl ? (
                     <Image src={submission.profile.profileImageUrl} alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded-full object-cover" />
@@ -518,7 +524,7 @@ export default function AdminReviewPage() {
                   @{submission.profile.handle}
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
-                <p className="mt-3 text-sm leading-6 text-muted">{submission.profile.bio}</p>
+                <p className="mt-3 break-words line-clamp-3 text-sm leading-6 text-muted">{truncateBio(submission.profile.bio)}</p>
                 {editingIds.has(submission.id) ? (
                   <div className="mt-3 max-w-[500px]">
                     <NicheTagInput

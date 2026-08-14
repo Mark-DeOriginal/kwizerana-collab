@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { RankingBoard, RankingBoardWithEntries } from "@/lib/rankings";
 import { formatFollowers } from "@/lib/format";
+import { friendlyError, readJson } from "@/lib/client-request";
 
 type SearchResult = {
   id: number;
@@ -57,13 +58,13 @@ export function RankingsTab() {
     setError("");
     try {
       const res = await fetch("/api/rankings/boards");
-      const payload = await res.json();
+      const payload = (await readJson<{ boards?: RankingBoard[]; topLevelNiches?: string[]; rankDepth?: number; error?: string }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to load rankings.");
       setBoards(payload.boards ?? []);
       setTopLevelNiches(payload.topLevelNiches ?? []);
       setRankDepth(payload.rankDepth ?? 10);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(friendlyError(err, "Something went wrong."));
     } finally {
       setLoading(false);
     }
@@ -79,14 +80,15 @@ export function RankingsTab() {
     setError("");
     setJustSaved(false);
     fetch(`/api/rankings/boards/${selectedBoardId}`)
-      .then((res) => res.json())
+      .then((res) => readJson<{ board?: RankingBoardWithEntries; error?: string }>(res))
       .then((payload) => {
+        if (!payload) throw new Error("Failed to load board.");
         if (!payload.board) throw new Error(payload.error ?? "Failed to load board.");
         setBoard(payload.board);
         setSlots(
           Array.from({ length: rankDepth }, (_, i) => {
             const pos = i + 1;
-            const entry = (payload.board.entries ?? []).find((e: { position: number }) => e.position === pos);
+            const entry = (payload.board?.entries ?? []).find((e: { position: number }) => e.position === pos);
             const inf = entry?.influencer as SearchResult | undefined;
             return { position: pos, influencer: inf ?? null };
           })
@@ -96,7 +98,7 @@ export function RankingsTab() {
         setSearchResults({});
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Failed to load board.");
+        setError(friendlyError(err, "Failed to load board."));
       })
       .finally(() => setLoading(false));
   }, [selectedBoardId, rankDepth]);
@@ -112,15 +114,15 @@ export function RankingsTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ niche, sub_niche: newSubNiche.trim() })
       });
-      const payload = await res.json();
+      const payload = (await readJson<{ board?: RankingBoard; error?: string }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to create board.");
       await loadBoards();
-      setSelectedBoardId(payload.board.id);
+      setSelectedBoardId(payload.board?.id ?? null);
       setShowCreate(false);
       setNewNiche("");
       setNewSubNiche("");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to create board.");
+      setError(friendlyError(err, "Failed to create board."));
     } finally {
       setCreating(false);
     }
@@ -139,15 +141,15 @@ export function RankingsTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entries })
       });
-      const payload = await res.json();
+      const payload = (await readJson<{ board?: RankingBoardWithEntries; error?: string }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to save ranking.");
-      setBoard(payload.board);
+      setBoard(payload.board ?? null);
       await loadBoards();
       setJustSaved(true);
       if (savedTimer.current) clearTimeout(savedTimer.current);
       savedTimer.current = setTimeout(() => setJustSaved(false), 2500);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to save ranking.");
+      setError(friendlyError(err, "Failed to save ranking."));
     } finally {
       setSaving(false);
     }
@@ -159,14 +161,14 @@ export function RankingsTab() {
     setError("");
     try {
       const res = await fetch(`/api/rankings/boards/${selectedBoardId}`, { method: "DELETE" });
-      const payload = await res.json();
+      const payload = (await readJson<{ error?: string }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to delete board.");
       setSelectedBoardId(null);
       setBoard(null);
       setSlots([]);
       await loadBoards();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to delete board.");
+      setError(friendlyError(err, "Failed to delete board."));
     }
   };
 

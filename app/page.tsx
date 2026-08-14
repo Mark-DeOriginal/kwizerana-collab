@@ -25,7 +25,8 @@ import { DataPoint } from "@/components/DataPoint";
 import { NicheFilterDropdown } from "@/components/NicheFilterDropdown";
 import { type Influencer, type Niche } from "@/lib/influencers";
 import type { RankingBoardWithEntries } from "@/lib/rankings";
-import { formatFollowers } from "@/lib/format";
+import { formatFollowers, truncateBio } from "@/lib/format";
+import { friendlyError, readJson } from "@/lib/client-request";
 
 type SortKey = "match" | "followers";
 
@@ -136,9 +137,9 @@ export default function Home() {
     const ids = Array.from(favoriteIds);
 
     fetch(`/api/archive?ids=${ids.join(",")}`, { cache: "no-store" })
-      .then((response) => response.json())
+      .then((response) => readJson(response))
       .then((payload) => {
-        if (!cancelled) setFavoriteInfluencers(payload.data?.influencers ?? []);
+        if (!cancelled && payload) setFavoriteInfluencers((payload as { data?: { influencers?: Influencer[] } }).data?.influencers ?? []);
       })
       .catch(() => {});
 
@@ -231,7 +232,7 @@ export default function Home() {
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setArchiveError(err instanceof Error ? err.message : "Failed to export archive.");
+      setArchiveError(friendlyError(err, "Failed to export archive."));
     }
   };
 
@@ -636,7 +637,7 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
         active ? "border-ocean bg-mint/65" : "border-line bg-white hover:border-ocean hover:bg-panel"
       }`}
     >
-      <div className="min-w-0">
+      <div className="min-w-0 max-w-full">
         <div className="flex items-start gap-3">
           <Avatar influencer={influencer} size="sm" />
           <div className="min-w-0">
@@ -647,7 +648,7 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
             <p className="text-sm font-medium text-ocean">@{influencer.handle}</p>
           </div>
         </div>
-        <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted">{influencer.bio}</p>
+        <p className="mt-3 line-clamp-2 break-words text-sm leading-6 text-muted">{truncateBio(influencer.bio)}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {influencer.tags.map((tag) => (
             <span key={tag} className="border border-line bg-panel px-2 py-1 text-xs font-semibold text-ink">
@@ -677,7 +678,7 @@ function ProfilePanel({ influencer, isFavorited, onAddFavorite }: { influencer: 
 
   return (
     <aside className="h-fit border border-line bg-white/95 shadow-tight backdrop-blur">
-      <div className="border-b border-line p-4">
+      <div className="max-w-full border-b border-line p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <Avatar influencer={influencer} />
@@ -690,7 +691,7 @@ function ProfilePanel({ influencer, isFavorited, onAddFavorite }: { influencer: 
             </div>
           </div>
         </div>
-        <p className="mt-4 text-sm leading-6 text-muted">{influencer.bio}</p>
+        <p className="mt-4 break-words line-clamp-3 text-sm leading-6 text-muted">{truncateBio(influencer.bio)}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 p-4">
