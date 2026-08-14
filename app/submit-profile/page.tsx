@@ -24,7 +24,7 @@ function normalizePreviewError(error: PreviewErrorPayload) {
   if (error.code === "TIMEOUT") {
     return {
       title: "Preview timed out",
-      message: "twitterapi.io took too long to respond. Please try again.",
+      message: error.error ?? "The provider took too long to respond. Please try again.",
       detail: error.hint ?? "The provider may be slow right now."
     };
   }
@@ -40,7 +40,7 @@ function normalizePreviewError(error: PreviewErrorPayload) {
   if (error.code === "RATE_LIMIT") {
     return {
       title: "Provider limit reached",
-      message: error.error ?? "twitterapi.io rate limited the request.",
+      message: error.error ?? "The provider rate limited the request.",
       detail: error.hint ?? "This can happen because of free-plan limits or too many requests in a short period."
     };
   }
@@ -48,8 +48,16 @@ function normalizePreviewError(error: PreviewErrorPayload) {
   if (error.code === "AUTH") {
     return {
       title: "Provider access issue",
-      message: error.error ?? "twitterapi.io rejected the request.",
+      message: error.error ?? "The provider rejected the request.",
       detail: error.hint ?? "This may be an API key issue or a plan restriction on the endpoint."
+    };
+  }
+
+  if (error.code === "PAYMENT_REQUIRED") {
+    return {
+      title: "Provider credits exhausted",
+      message: error.error ?? "The provider account has no remaining credits or balance.",
+      detail: error.hint ?? "Top up credits or upgrade the plan on the provider dashboard."
     };
   }
 

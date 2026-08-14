@@ -4,7 +4,7 @@ A curated archive of crypto Twitter/X influencers, built for community-driven di
 
 ## What is Kwizerana Collab?
 
-Kwizerana Collab is a web application that maintains a searchable archive of crypto-related Twitter/X influencers. It combines automated profile data (via the twitterapi.io API) with community-submitted profiles and admin review to ensure quality.
+Kwizerana Collab is a web application that maintains a searchable archive of crypto-related Twitter/X influencers. It combines automated profile data (via the XFlux API) with community-submitted profiles and admin review to ensure quality.
 
 **Key features:**
 
@@ -12,7 +12,7 @@ Kwizerana Collab is a web application that maintains a searchable archive of cry
 - **Profile submission** — Anyone can submit a Twitter/X profile for inclusion
 - **Admin review queue** — Admins review, edit, approve, or reject submissions
 - **Batch submit** — Admins can add multiple profiles at once via comma-separated handles
-- **Live profile updates** — Pull fresh data from twitterapi.io to keep profiles current
+- **Live profile updates** — Pull fresh data from the X data provider to keep profiles current
 - **Niche tagging** — Profiles are categorized by crypto niche (DeFi, Bitcoin, Trading, etc.)
 - **Favorites** — Save profiles to a local favorites list
 - **Export CSV** — Download filtered results as CSV
@@ -23,7 +23,7 @@ Kwizerana Collab is a web application that maintains a searchable archive of cry
 - **Database:** Neon PostgreSQL (serverless)
 - **Auth:** NextAuth.js with Google OAuth
 - **Styling:** Tailwind CSS
-- **Profile data:** twitterapi.io API
+- **Profile data:** XFlux API (with twitterapi.io fallback)
 
 ## Getting Started
 
@@ -31,7 +31,7 @@ Kwizerana Collab is a web application that maintains a searchable archive of cry
 
 - Node.js 18+
 - A Neon PostgreSQL database
-- A twitterapi.io API key (optional — fallback profiles are used if not configured)
+- An XFlux or twitterapi.io API key (optional — fallback profiles are used if not configured)
 - Google OAuth credentials (for admin authentication)
 
 ### Installation
@@ -58,7 +58,10 @@ cp .env.example .env.local
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
 | `ADMIN_EMAILS` | Comma-separated emails that get admin access |
-| `TWITTERAPI_IO_API_KEY` | twitterapi.io API key (optional) |
+| `XFLUX_API_KEY` | XFlux API key (primary provider, optional) |
+| `XFLUX_BASE_URL` | `https://www.xfluxapi.com/api/v1` |
+| `XFLUX_USER_LOOKUP_PATH` | `/users/:username` |
+| `TWITTERAPI_IO_API_KEY` | twitterapi.io API key (fallback provider, optional) |
 | `TWITTERAPI_IO_BASE_URL` | `https://api.twitterapi.io` |
 | `TWITTERAPI_IO_USER_LOOKUP_PATH` | `/twitter/user/info` |
 
@@ -81,7 +84,7 @@ The main page shows all approved influencers with filters for search, follower t
 Anyone can submit a profile from the **Submit profile** page:
 
 1. Paste a Twitter/X profile link or handle
-2. Preview the profile data fetched from twitterapi.io
+2. Preview the profile data fetched from the X data provider
 3. Select relevant crypto niches
 4. Submit for review
 
@@ -92,12 +95,12 @@ Admins access the **Review profiles** page where they can:
 - **Approve** — Adds the profile to the public archive
 - **Reject** — Permanently deletes the submission
 - **Edit** — Modify location, commentary, and niche tags
-- **Update** — Pull fresh profile data from twitterapi.io
+- **Update** — Pull fresh profile data from the X data provider
 - **Batch submit** — Paste comma-separated handles to add multiple profiles at once
 
 ### Batch Submit
 
-Click **Batch submit** on the review page, paste Twitter handles (comma or newline separated, with or without `@`), and submit. Each profile is looked up via twitterapi.io and added to the review queue. Rate-limited profiles are automatically retried.
+Click **Batch submit** on the review page, paste Twitter handles (comma or newline separated, with or without `@`), and submit. Each profile is looked up via the X data provider and added to the review queue. Rate-limited profiles are automatically retried.
 
 ## Scripts
 
