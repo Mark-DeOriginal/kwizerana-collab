@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
   if (sql) {
     const handleMatch = String(body.profileUrl).match(/(?:x\.com|twitter\.com)\/@?([A-Za-z0-9_]+)/);
-    const extractedHandle = handleMatch?.[1]?.toLowerCase();
+    const extractedHandle = handleMatch?.[1]?.toLowerCase() || String(body.profileUrl).trim().replace(/^@/, "").toLowerCase().match(/^([A-Za-z0-9_]+)$/)?.[1];
 
     if (extractedHandle) {
       const existingInfluencer = await sql`SELECT id FROM influencers WHERE LOWER(handle) = ${extractedHandle} LIMIT 1`;

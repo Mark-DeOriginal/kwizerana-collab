@@ -166,6 +166,24 @@ export async function createSubmission(input: {
   await ensureDatabase();
 
   const profile = await fetchTwitterProfile(input.profileUrl);
+
+  const handleLower = profile.handle.toLowerCase();
+  const [existingArchived] = await dbQuery<{ id: string }>(
+    `SELECT id FROM influencers WHERE LOWER(handle) = $1 LIMIT 1`,
+    [handleLower]
+  );
+  if (existingArchived) {
+    throw new Error("This profile already exists in the archive.");
+  }
+
+  const [existingSubmission] = await dbQuery<{ id: string }>(
+    `SELECT id FROM submissions WHERE LOWER(profile_handle) = $1 AND status IN ('pending', 'approved', 'needs_review') LIMIT 1`,
+    [handleLower]
+  );
+  if (existingSubmission) {
+    throw new Error("This profile has already been submitted and is under review.");
+  }
+
   const suggestedNiches = inferNiches(profile, input.niches);
   const riskFlags = [
     profile.followers > 0 && profile.followers < 10000 ? "Below 10k followers." : "",

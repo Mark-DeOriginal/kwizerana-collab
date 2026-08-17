@@ -85,6 +85,7 @@ export default function SubmitProfilePage() {
   const [previewError, setPreviewError] = useState("");
   const [previewDetail, setPreviewDetail] = useState("");
   const [submissionMessage, setSubmissionMessage] = useState("");
+  const [submissionType, setSubmissionType] = useState<"success" | "error" | "">("");
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -129,6 +130,7 @@ export default function SubmitProfilePage() {
     event.preventDefault();
     setIsSubmitting(true);
     setSubmissionMessage("");
+    setSubmissionType("");
 
     try {
       const response = await fetch("/api/submissions", {
@@ -143,13 +145,17 @@ export default function SubmitProfilePage() {
       const payload = (await readJson<{ error?: string; data?: { profile?: { handle?: string } } }>(response)) ?? {};
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Submission failed.");
+        setSubmissionMessage(friendlyError(payload, payload.error ?? "Submission failed."));
+        setSubmissionType("error");
+        return;
       }
 
       setPreview(payload.data?.profile ? (payload.data.profile as TwitterProfile) : preview);
       setSubmissionMessage(payload.data?.profile?.handle ? `Submitted @${payload.data.profile.handle} for admin review.` : "Submitted for admin review.");
+      setSubmissionType("success");
     } catch (error) {
       setSubmissionMessage(friendlyError(error, "Submission failed."));
+      setSubmissionType("error");
     } finally {
       setIsSubmitting(false);
     }
@@ -177,6 +183,8 @@ export default function SubmitProfilePage() {
                     setProfileUrl(event.target.value);
                     setPreviewError("");
                     setPreviewDetail("");
+                    setSubmissionMessage("");
+                    setSubmissionType("");
                   }}
                   className="h-10 border border-line bg-panel px-3 outline-none transition-colors focus:border-ocean"
                   placeholder="https://x.com/username"
@@ -216,7 +224,9 @@ export default function SubmitProfilePage() {
             </div>
 
             {submissionMessage && (
-              <p className="mt-4 border border-moss/40 bg-mint p-3 text-sm font-semibold text-ink">{submissionMessage}</p>
+              <p className={`mt-4 border p-3 text-sm font-semibold text-ink ${
+                submissionType === "success" ? "border-moss/40 bg-mint" : "border-coral/40 bg-coral/10"
+              }`}>{submissionMessage}</p>
             )}
           </form>
 
