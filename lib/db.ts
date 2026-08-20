@@ -89,7 +89,9 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS submissions_status_idx ON submissions (status)`,
   `CREATE INDEX IF NOT EXISTS submissions_created_at_idx ON submissions (created_at DESC)`,
   `ALTER TABLE influencers ADD COLUMN IF NOT EXISTS commentary TEXT NOT NULL DEFAULT ''`,
-  `ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
+  `ALTER TABLE influencers ADD COLUMN IF NOT EXISTS last_scraped_at TIMESTAMPTZ`,
+  `ALTER TABLE influencers ADD COLUMN IF NOT EXISTS scrape_notes TEXT DEFAULT ''`
 ];
 
 export function getDatabaseUrl() {

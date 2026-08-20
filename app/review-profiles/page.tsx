@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession } from "next-auth/react";
-import { BadgeCheck, Check, ChevronDown, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, X, ListPlus, ArrowUpDown } from "lucide-react";
+import { BadgeCheck, Check, ChevronDown, ExternalLink, FileCheck2, Loader2, LogIn, Pencil, RefreshCcw, Save, Search, ShieldCheck, X, ListPlus, ArrowUpDown, Pause, Play } from "lucide-react";
 import { DataPoint } from "@/components/DataPoint";
 import { NicheTagInput } from "@/components/NicheTagInput";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
@@ -53,6 +53,12 @@ export default function AdminReviewPage() {
   const [isBatchSubmitting, setIsBatchSubmitting] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [batchResults, setBatchResults] = useState<Array<{ handle: string; status: "ok" | "duplicate" | "error"; message: string }>>([]);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [isUpdatingProfiles, setIsUpdatingProfiles] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<{ current: number; total: number; currentHandle: string } | null>(null);
+  const [updateResults, setUpdateResults] = useState<Array<{ handle: string; status: "ok" | "error"; message: string }>>([]);
+  const updateStartIndexRef = useRef(0);
   const [sortBy, setSortBy] = useState<ReviewSortKey>("default");
   const sortMenuRef = useRef<HTMLDivElement>(null);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -355,6 +361,87 @@ export default function AdminReviewPage() {
     .map((h) => h.trim().replace(/^@/, ""))
     .filter((h) => /^[A-Za-z0-9_]{1,15}$/.test(h)).length;
 
+  const handleUpdateAllProfiles = async () => {
+    setIsUpdatingProfiles(true);
+    setIsPaused(false);
+    setErrorMessage("");
+
+    let allHandles: string[] = [];
+    try {
+      const res = await fetch("/api/admin/profiles/refresh");
+      const payload = await readJson<{ data?: string[] }>(res);
+      allHandles = payload?.data ?? [];
+    } catch {
+      setErrorMessage("Failed to load influencer list.");
+      setIsUpdatingProfiles(false);
+      return;
+    }
+
+    if (allHandles.length === 0) {
+      setErrorMessage("No influencer profiles found in the database.");
+      setIsUpdatingProfiles(false);
+      return;
+    }
+
+    const results = [...updateResults];
+    const startIndex = updateStartIndexRef.current;
+
+    for (let i = startIndex; i < allHandles.length; i++) {
+      if (isPaused) {
+        updateStartIndexRef.current = i;
+        break;
+      }
+
+      const handle = allHandles[i];
+      setUpdateProgress({ current: i + 1, total: allHandles.length, currentHandle: handle });
+
+      try {
+        const response = await fetch("/api/admin/profiles/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ handle }),
+        });
+        const payload = await readJson<{ error?: string; data?: TwitterProfile }>(response);
+
+        if (response.ok && payload?.data) {
+          results.push({ handle, status: "ok", message: payload.data.name || handle });
+        } else {
+          results.push({ handle, status: "error", message: payload?.error || "Unknown error" });
+        }
+      } catch (err) {
+        results.push({ handle, status: "error", message: friendlyError(err, "Request failed") });
+      }
+
+      setUpdateResults([...results]);
+
+      if (i < allHandles.length - 1) {
+        await sleep(1200);
+      }
+    }
+
+    if (!isPaused) {
+      updateStartIndexRef.current = 0;
+    }
+
+    setUpdateProgress(null);
+    setIsUpdatingProfiles(false);
+    if (!isPaused) {
+      setIsPaused(false);
+      await loadSubmissions();
+    }
+  };
+
+  const handlePauseUpdate = () => {
+    setIsPaused(true);
+    setIsUpdatingProfiles(false);
+  };
+
+  const handleResumeUpdate = () => {
+    setIsPaused(false);
+    setIsUpdatingProfiles(true);
+    handleUpdateAllProfiles();
+  };
+
   if (status === "loading") {
     return (
       <div className="flex min-h-[40vh] items-center justify-center px-4 py-6 text-ink sm:px-6 lg:px-8">
@@ -407,6 +494,13 @@ export default function AdminReviewPage() {
               >
                 <ListPlus className="h-4 w-4" />
                 Batch submit
+              </button>
+              <button
+                onClick={() => { setShowUpdateModal(true); setUpdateResults([]); setUpdateProgress(null); setIsPaused(false); setIsUpdatingProfiles(false); updateStartIndexRef.current = 0; }}
+                className="flex h-10 w-fit items-center gap-2 border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean active:scale-[0.97]"
+              >
+                <RefreshCcw className="h-4 w-4" />
+                Update profiles
               </button>
               <button onClick={() => void loadSubmissions()} className="flex h-10 w-fit items-center gap-2 border border-line bg-white px-3 text-sm font-semibold transition-colors hover:border-ocean active:scale-[0.97]">
                 <RefreshCcw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -720,6 +814,111 @@ export default function AdminReviewPage() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUpdateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-xl border border-line bg-white p-6 shadow-tight">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Update all profiles</h2>
+              <button
+                onClick={() => {
+                  if (isUpdatingProfiles) setIsPaused(true);
+                  setShowUpdateModal(false);
+                  setIsUpdatingProfiles(false);
+                  setIsPaused(false);
+                  updateStartIndexRef.current = 0;
+                }}
+                className="text-muted transition-colors hover:text-ink active:scale-[0.97]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mt-2 text-sm text-muted">
+              This will update every profile with their current info from X.
+            </p>
+
+            {!isUpdatingProfiles && !isPaused && updateResults.length === 0 && (
+              <p className="mt-4 text-sm text-muted">
+                Click <span className="font-semibold text-ink">Start update</span> to refresh all influencer profiles in the database.
+              </p>
+            )}
+
+            {updateProgress && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between text-xs text-muted">
+                  <span>
+                    Updating <span className="font-semibold text-ink">{updateProgress.current}</span> of <span className="font-semibold text-ink">{updateProgress.total}</span>
+                  </span>
+                  <span className="font-mono text-ocean font-semibold">@{updateProgress.currentHandle}</span>
+                </div>
+                <div className="mt-2 h-2 w-full bg-panel overflow-hidden">
+                  <div
+                    className="h-full bg-ocean transition-all duration-300"
+                    style={{ width: `${(updateProgress.current / updateProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {updateResults.length > 0 && (
+              <div className="mt-4 border border-line bg-panel p-4 text-sm">
+                <div className="flex items-center gap-2 font-semibold">
+                  <FileCheck2 className="h-4 w-4 text-moss" />
+                  {isPaused ? "Paused" : updateProgress ? "In progress..." : "Complete"} —{" "}
+                  {updateResults.filter((r) => r.status === "ok").length} updated, {updateResults.filter((r) => r.status === "error").length} failed
+                </div>
+                <div className="mt-3 h-32 overflow-y-auto text-xs space-y-1">
+                  {updateResults.map((r) => (
+                    <div key={r.handle} className={`flex items-center gap-2 ${r.status === "ok" ? "text-moss" : "text-coral"}`}>
+                      <span className="font-semibold">@{r.handle}</span>
+                      <span className="text-muted">— {r.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  if (isUpdatingProfiles) {
+                    handlePauseUpdate();
+                  } else if (isPaused) {
+                    handleResumeUpdate();
+                  } else {
+                    setShowUpdateModal(false);
+                  }
+                }}
+                className="flex h-10 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold transition-colors hover:border-ocean active:scale-[0.97]"
+              >
+                {isUpdatingProfiles ? (
+                  <>
+                    <Pause className="h-4 w-4" />
+                    Pause
+                  </>
+                ) : isPaused ? (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Resume
+                  </>
+                ) : (
+                  "Close"
+                )}
+              </button>
+              {!isUpdatingProfiles && !isPaused && (
+                <button
+                  onClick={() => void handleUpdateAllProfiles()}
+                  className="flex h-10 items-center gap-2 border border-ocean bg-ocean px-4 text-sm font-semibold text-white transition-colors hover:bg-ink active:scale-[0.97]"
+                >
+                  <RefreshCcw className="h-4 w-4" />
+                  Start update
+                </button>
+              )}
             </div>
           </div>
         </div>
