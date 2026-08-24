@@ -53,6 +53,103 @@ export async function getUserByEmail(email?: string | null) {
   return row ? mapUser(row) : null;
 }
 
+export async function getUserById(id: string) {
+  if (!id) return null;
+
+  await ensureDatabase();
+  const [row] = await dbQuery<UserRow>(
+    `SELECT id, email, name, image, role, permissions, created_at, updated_at, last_sign_in_at
+     FROM users
+     WHERE id = $1`,
+    [id]
+  );
+
+  return row ? mapUser(row) : null;
+}
+
+export type CredentialUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  role: UserRole;
+  permissions: Permission[];
+  password_hash: string | null;
+  email_verified: boolean;
+  totp_enabled: boolean;
+  totp_secret_encrypted: string | null;
+  anti_phishing_code: string;
+  created_at: string;
+};
+
+export async function getUserCredentialsByEmail(email?: string | null): Promise<CredentialUser | null> {
+  if (!email) return null;
+
+  await ensureDatabase();
+  const rows = await dbQuery<CredentialUser>(
+    `SELECT id, email, name, image, role, permissions, password_hash, email_verified,
+            totp_enabled, totp_secret_encrypted, anti_phishing_code, created_at
+     FROM users
+     WHERE email = $1`,
+    [email.toLowerCase()]
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function getUserCredentialsById(id: string): Promise<CredentialUser | null> {
+  if (!id) return null;
+
+  await ensureDatabase();
+  const rows = await dbQuery<CredentialUser>(
+    `SELECT id, email, name, image, role, permissions, password_hash, email_verified,
+            totp_enabled, totp_secret_encrypted, anti_phishing_code, created_at
+     FROM users
+     WHERE id = $1`,
+    [id]
+  );
+
+  return rows[0] ?? null;
+}
+
+export async function createPasswordUser(input: {
+  email: string;
+  name?: string | null;
+  passwordHash: string;
+}): Promise<CredentialUser> {
+  await ensureDatabase();
+
+  const normalizedEmail = input.email.toLowerCase();
+  const role = resolveUserRole(normalizedEmail);
+
+  const rows = await dbQuery<CredentialUser>(
+    `INSERT INTO users (id, email, name, role, password_hash, email_verified)
+     VALUES ($1, $2, $3, $4, $5, FALSE)
+     ON CONFLICT (email) DO NOTHING
+     RETURNING id, email, name, image, role, permissions, password_hash, email_verified,
+               totp_enabled, totp_secret_encrypted, anti_phishing_code, created_at`,
+    [crypto.randomUUID(), normalizedEmail, input.name ?? null, role, input.passwordHash]
+  );
+
+  return rows[0];
+}
+
+export async function setUserPassword(userId: string, passwordHash: string): Promise<void> {
+  await ensureDatabase();
+  await dbQuery(
+    `UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`,
+    [userId, passwordHash]
+  );
+}
+
+export async function markEmailVerified(userId: string): Promise<void> {
+  await ensureDatabase();
+  await dbQuery(
+    `UPDATE users SET email_verified = TRUE, updated_at = NOW() WHERE id = $1`,
+    [userId]
+  );
+}
+
 export async function upsertUser(input: {
   email: string;
   name?: string | null;

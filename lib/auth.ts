@@ -1,7 +1,9 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { ALL_PERMISSIONS, isAdminEmail, resolveUserRole } from "@/lib/roles";
-import { getUserByEmail, upsertUser } from "@/lib/users";
+import { getUserByEmail, getUserCredentialsById, markEmailVerified, upsertUser } from "@/lib/users";
+import { consumeLoginTicket } from "@/lib/auth/tickets";
 
 export function hasGoogleAuthConfig() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
@@ -11,22 +13,56 @@ export const authOptions: NextAuthOptions = {
   session: {
     strategy: "jwt"
   },
-  providers: hasGoogleAuthConfig()
-    ? [
-        GoogleProvider({
-          clientId: process.env.GOOGLE_CLIENT_ID!,
-          clientSecret: process.env.GOOGLE_CLIENT_SECRET!
-        })
-      ]
-    : [],
+  providers: [
+    ...(hasGoogleAuthConfig()
+      ? [
+          GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID!,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET!
+          })
+        ]
+      : []),
+    CredentialsProvider({
+      id: "credentials",
+      name: "Email & Password",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        ticket: { label: "Login ticket", type: "text" }
+      },
+      async authorize(credentials) {
+        const email = credentials?.email;
+        const ticket = credentials?.ticket;
+
+        if (!email || !ticket) return null;
+
+        const userId = await consumeLoginTicket(ticket);
+        if (!userId) return null;
+
+        const user = await getUserCredentialsById(userId);
+        if (!user || !user.email_verified) return null;
+        if (user.email.toLowerCase() !== email.toLowerCase()) return null;
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image
+        };
+      }
+    })
+  ],
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
       if (user.email) {
-        await upsertUser({
+        const dbUser = await upsertUser({
           email: user.email,
           name: user.name,
           image: user.image
         });
+
+        if (account?.provider === "google") {
+          await markEmailVerified(dbUser.id);
+        }
       }
 
       return true;
