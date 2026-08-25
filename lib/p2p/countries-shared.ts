@@ -62,3 +62,17 @@ export const PAYMENT_METHOD_CATEGORY_LABELS: Record<PaymentMethodCategory, strin
   mobile_money: "Mobile Money",
   digital_wallet: "Digital Wallet"
 };
+
+export function getCurrencyMethods(currency: string): PaymentMethodOption[] {
+  const seen = new Set<string>();
+  const methods: PaymentMethodOption[] = [];
+  for (const country of COUNTRIES) {
+    if (country.currency !== currency) continue;
+    for (const m of country.methods) {
+      if (seen.has(m.name)) continue;
+      seen.add(m.name);
+      methods.push(m);
+    }
+  }
+  return methods;
+}

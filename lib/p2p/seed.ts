@@ -1,6 +1,7 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import { CRYPTO_CURRENCIES, FIAT_CURRENCIES, SEED_RATES } from "@/lib/p2p/currencies-shared";
 import { SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
+import { getCurrencyMethods } from "@/lib/p2p/countries-shared";
 
 declare global {
   var __p2pSeeded: Promise<void> | undefined;
@@ -43,6 +44,81 @@ async function seedP2PData(): Promise<void> {
        ON CONFLICT (slug) DO NOTHING`,
       [m.slug, m.name, m.category, m.risk_level, m.hold_period_minutes]
     );
+  }
+
+  await seedDefaultVendors();
+}
+
+// ── Kwizerana DAO — one market-making vendor per fiat currency ──────────────
+async function seedDefaultVendors(): Promise<void> {
+  // Remove the legacy single-vendor seed (replaced by per-currency vendors).
+  await dbQuery(`DELETE FROM users WHERE id = 'kwizerana-dao-vendor'`);
+
+  for (const c of FIAT_CURRENCIES) {
+    const code = c.code;
+    const vendorId = `kwizerana-dao-${code.toLowerCase()}`;
+    const vendorName = `Kwizerana DAO - ${code}`;
+    const email = `dao-${code.toLowerCase()}@kwizerana.xyz`;
+    const rate = SEED_RATES[code] ?? 1;
+
+    await dbQuery(
+      `INSERT INTO users (id, email, name, role, email_verified,
+          p2p_advertiser_status, p2p_advertiser_level, p2p_verified_tier,
+          p2p_completion_rate_30d, p2p_total_trades, p2p_completed_trades,
+          p2p_cumulative_counterparties, p2p_volume_30d, p2p_avg_release_seconds, p2p_trust_score)
+       VALUES ($1, $2, $3, 'member', TRUE, 'verified', 'veteran', 'gold', 100, 5000, 5000, 1000, 5000000, 120, 100)
+       ON CONFLICT (id) DO UPDATE
+       SET name = EXCLUDED.name,
+           email_verified = TRUE,
+           p2p_advertiser_status = 'verified',
+           p2p_advertiser_level = 'veteran',
+           p2p_verified_tier = 'gold'`,
+      [vendorId, email, vendorName]
+    );
+
+    let pmRows = await dbQuery<{ id: string }>(
+      `SELECT id::TEXT AS id FROM p2p_payment_methods WHERE user_id = $1 ORDER BY id ASC`,
+      [vendorId]
+    );
+
+    if (pmRows.length === 0) {
+      for (const m of getCurrencyMethods(code)) {
+        const inserted = await dbQuery<{ id: string }>(
+          `INSERT INTO p2p_payment_methods (user_id, method_type, method_name, details, account_holder_name, is_verified)
+           VALUES ($1, $2, $3, '{}', $4, TRUE)
+           RETURNING id::TEXT AS id`,
+          [vendorId, m.category, m.name, vendorName]
+        );
+        pmRows.push(inserted[0]);
+      }
+    }
+
+    const pmIds = pmRows.map((r) => r.id);
+
+    const existingAds = await dbQuery<{ count: string }>(
+      `SELECT COUNT(*)::TEXT AS count FROM p2p_ads WHERE user_id = $1`,
+      [vendorId]
+    );
+
+    if (Number(existingAds[0]?.count ?? "0") === 0) {
+      const sellPrice = Number((rate * 1.01).toFixed(2));
+      const buyPrice = Number((rate * 0.99).toFixed(2));
+      const minAmount = Math.round(rate * 50);
+      const maxAmount = Math.round(rate * 100000);
+
+      for (const crypto of CRYPTO_CURRENCIES) {
+        await dbQuery(
+          `INSERT INTO p2p_ads (user_id, ad_type, crypto_currency, chain, fiat_currency, price_type, price_value, min_amount, max_amount, payment_method_ids, status)
+           VALUES ($1, 'sell', $2, 'avalanche', $3, 'fixed', $4, $5, $6, $7::bigint[], 'active')`,
+          [vendorId, crypto, code, sellPrice, minAmount, maxAmount, pmIds]
+        );
+        await dbQuery(
+          `INSERT INTO p2p_ads (user_id, ad_type, crypto_currency, chain, fiat_currency, price_type, price_value, min_amount, max_amount, payment_method_ids, status)
+           VALUES ($1, 'buy', $2, 'avalanche', $3, 'fixed', $4, $5, $6, $7::bigint[], 'active')`,
+          [vendorId, crypto, code, buyPrice, minAmount, maxAmount, pmIds]
+        );
+      }
+    }
   }
 }
 

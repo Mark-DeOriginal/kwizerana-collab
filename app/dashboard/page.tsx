@@ -120,15 +120,6 @@ export default function DashboardPage() {
     }
   }, [status, load]);
 
-  if (status === "loading") {
-    return (
-      <div className="px-4 py-24 text-center text-sm text-muted sm:px-6 lg:px-8">
-        <Loader2 className="mx-auto h-6 w-6 animate-spin text-ocean" />
-        <p className="mt-3">Loading dashboard…</p>
-      </div>
-    );
-  }
-
   if (status === "unauthenticated") {
     return (
       <div className="px-4 py-24 text-ink sm:px-6 lg:px-8">
@@ -145,15 +136,6 @@ export default function DashboardPage() {
             </Link>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (loading && !data) {
-    return (
-      <div className="px-4 py-24 text-center text-sm text-muted sm:px-6 lg:px-8">
-        <Loader2 className="mx-auto h-6 w-6 animate-spin text-ocean" />
-        <p className="mt-3">Loading dashboard…</p>
       </div>
     );
   }
@@ -185,53 +167,48 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {data && (
-          <>
-            {/* Top grid: wallet + stats */}
-            <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-              <WalletPanel wallets={data.wallets} onChanged={load} />
-              <StatsPanel stats={data.stats} />
-            </div>
+        {/* Top grid: wallet + stats */}
+        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          <WalletPanel wallets={data?.wallets ?? []} loading={loading && !data} onChanged={load} />
+          <StatsPanel stats={data?.stats} loading={loading && !data} />
+        </div>
 
-            {/* Ticker */}
-            <TickerStrip rates={rates} />
+        <TickerStrip rates={rates} />
 
-            {/* Active trades + activity */}
-            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-              <Card title="Active trades" action={<Link href="/p2p-marketplace" className="text-xs font-semibold text-ocean hover:underline">View all</Link>}>
-                <EmptyState
-                  icon={<Clock className="h-5 w-5" />}
-                  title="No active trades"
-                  subtitle="Your in-progress trades will appear here with live status and countdown timers."
-                  cta={<Link href="/p2p-marketplace" className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean">Start trading<ArrowRight className="h-4 w-4" /></Link>}
-                />
-              </Card>
-              <ActivityPanel notifications={data.notifications} />
-            </div>
+        {/* Active trades + activity */}
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          <Card title="Active trades" action={<Link href="/p2p-marketplace" className="text-xs font-semibold text-ocean hover:underline">View all</Link>}>
+            <EmptyState
+              icon={<Clock className="h-5 w-5" />}
+              title="No active trades"
+              subtitle="Your in-progress trades will appear here with live status and countdown timers."
+              cta={<Link href="/p2p-marketplace" className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean">Start trading<ArrowRight className="h-4 w-4" /></Link>}
+            />
+          </Card>
+          <ActivityPanel notifications={data?.notifications ?? []} loading={loading && !data} />
+        </div>
 
-            {/* Security + payment methods */}
-            <div className="mt-4 grid gap-4 lg:grid-cols-2">
-              <SecurityPanel security={data.security} />
-              <PaymentMethodsPanel methods={data.paymentMethods} />
-            </div>
+        {/* Security + payment methods */}
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <SecurityPanel security={data?.security} loading={loading && !data} />
+          <PaymentMethodsPanel methods={data?.paymentMethods ?? []} loading={loading && !data} />
+        </div>
 
-            {/* Trade history + counterparties + ads + disputes */}
-            <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Card title="Trade history">
-                <EmptyState icon={<History className="h-5 w-5" />} title="No trades yet" subtitle="Your completed trades and their details will show here." />
-              </Card>
-              <Card title="Counterparties">
-                <EmptyState icon={<Users className="h-5 w-5" />} title="No counterparties" subtitle="People you've traded with will appear here." />
-              </Card>
-              <Card title="My ads">
-                <EmptyState icon={<Megaphone className="h-5 w-5" />} title="No ads yet" subtitle="Create buy or sell offers to start trading." cta={<Link href="/p2p-marketplace" className="text-sm font-semibold text-ocean hover:underline">Post an ad</Link>} />
-              </Card>
-              <Card title="Disputes">
-                <EmptyState icon={<Scale className="h-5 w-5" />} title="No disputes" subtitle="Any open or resolved disputes will appear here." />
-              </Card>
-            </div>
-          </>
-        )}
+        {/* Trade history + counterparties + ads + disputes */}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Card title="Trade history">
+            <EmptyState icon={<History className="h-5 w-5" />} title="No trades yet" subtitle="Your completed trades and their details will show here." />
+          </Card>
+          <Card title="Counterparties">
+            <EmptyState icon={<Users className="h-5 w-5" />} title="No counterparties" subtitle="People you've traded with will appear here." />
+          </Card>
+          <Card title="My ads">
+            <EmptyState icon={<Megaphone className="h-5 w-5" />} title="No ads yet" subtitle="Create buy or sell offers to start trading." cta={<Link href="/p2p-marketplace" className="text-sm font-semibold text-ocean hover:underline">Post an ad</Link>} />
+          </Card>
+          <Card title="Disputes">
+            <EmptyState icon={<Scale className="h-5 w-5" />} title="No disputes" subtitle="Any open or resolved disputes will appear here." />
+          </Card>
+        </div>
       </div>
     </div>
   );
@@ -252,7 +229,7 @@ function QuickAction({ href, label, icon, primary, soon }: { href: string; label
   );
 }
 
-function WalletPanel({ wallets, onChanged }: { wallets: UserWallet[]; onChanged: () => void }) {
+function WalletPanel({ wallets, onChanged, loading }: { wallets: UserWallet[]; onChanged: () => void; loading?: boolean }) {
   const [showManual, setShowManual] = useState(false);
   const [chain, setChain] = useState("tron");
   const [address, setAddress] = useState("");
@@ -293,6 +270,17 @@ function WalletPanel({ wallets, onChanged }: { wallets: UserWallet[]; onChanged:
   async function remove(id: string) {
     await fetch(`/api/p2p/wallets/${id}`, { method: "DELETE" });
     onChanged();
+  }
+
+  if (loading) {
+    return (
+      <Card title="Wallet & balance">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading linked wallets…
+        </div>
+      </Card>
+    );
   }
 
   return (
@@ -376,7 +364,18 @@ function WalletPanel({ wallets, onChanged }: { wallets: UserWallet[]; onChanged:
   );
 }
 
-function StatsPanel({ stats }: { stats: P2PStats }) {
+function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean }) {
+  if (loading || !stats) {
+    return (
+      <Card title="Trading reputation">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading stats…
+        </div>
+      </Card>
+    );
+  }
+
   const items = [
     { label: "Completion rate", value: `${formatAmount(stats.completionRate30d)}%`, icon: <CheckCircle2 className="h-4 w-4" /> },
     { label: "Total trades", value: formatAmount(stats.totalTrades), icon: <History className="h-4 w-4" /> },
@@ -432,7 +431,18 @@ function TickerStrip({ rates }: { rates: CurrencyRate[] }) {
   );
 }
 
-function ActivityPanel({ notifications }: { notifications: P2PNotification[] }) {
+function ActivityPanel({ notifications, loading }: { notifications: P2PNotification[]; loading?: boolean }) {
+  if (loading) {
+    return (
+      <Card title="Recent activity">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading activity…
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card title="Recent activity">
       {notifications.length === 0 ? (
@@ -451,7 +461,18 @@ function ActivityPanel({ notifications }: { notifications: P2PNotification[] }) 
   );
 }
 
-function SecurityPanel({ security }: { security: SecuritySummary }) {
+function SecurityPanel({ security, loading }: { security?: SecuritySummary; loading?: boolean }) {
+  if (loading || !security) {
+    return (
+      <Card title="Security">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading security…
+        </div>
+      </Card>
+    );
+  }
+
   const items = [
     { label: "Two-factor authentication", ok: security.twoFactorEnabled },
     { label: "Anti-phishing code", ok: security.antiPhishingSet },
@@ -485,7 +506,18 @@ function SecurityPanel({ security }: { security: SecuritySummary }) {
   );
 }
 
-function PaymentMethodsPanel({ methods }: { methods: UserPaymentMethod[] }) {
+function PaymentMethodsPanel({ methods, loading }: { methods: UserPaymentMethod[]; loading?: boolean }) {
+  if (loading) {
+    return (
+      <Card title="Payment methods">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading payment methods…
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card
       title="Payment methods"

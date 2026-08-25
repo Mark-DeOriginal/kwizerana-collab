@@ -159,7 +159,12 @@ function TwoFactorPanel({ status, hasPassword, onChanged }: { status: TwoFactorS
   }
 
   if (status === null) {
-    return <p className="text-sm text-muted">Loading…</p>;
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted">
+        <Loader2 className="h-4 w-4 animate-spin text-ocean" />
+        Loading two-factor status…
+      </div>
+    );
   }
 
   if (backupCodes) {

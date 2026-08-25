@@ -40,5 +40,8 @@
     "tailwindcss": "^3.4.4",
     "tsx": "^4.23.12",
     "typescript": "^5.5.3"
+  },
+  "overrides": {
+    "@coinbase/cdp-sdk": "1.48.2"
   }
 }

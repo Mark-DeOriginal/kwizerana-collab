@@ -156,10 +156,6 @@ export default function PaymentMethodsPage() {
     }
   }
 
-  if (loading) {
-    return <p className="text-sm text-muted">Loading…</p>;
-  }
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -313,7 +309,12 @@ export default function PaymentMethodsPage() {
         </form>
       )}
 
-      {methods.length === 0 && !formOpen ? (
+      {loading ? (
+        <div className="flex items-center gap-3 border border-line bg-white p-6 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading payment methods…
+        </div>
+      ) : methods.length === 0 && !formOpen ? (
         <div className="border border-dashed border-line bg-panel p-8 text-center">
           <CreditCard className="mx-auto h-8 w-8 text-muted" />
           <p className="mt-3 text-sm font-semibold">No payment methods yet</p>

@@ -5,6 +5,7 @@ export type Chain = {
 };
 
 export const SUPPORTED_CHAINS: Chain[] = [
+  { value: "avalanche", label: "Avalanche C-Chain", symbol: "AVAX" },
   { value: "ethereum", label: "Ethereum", symbol: "ETH" },
   { value: "bsc", label: "BNB Smart Chain", symbol: "BNB" },
   { value: "polygon", label: "Polygon", symbol: "MATIC" },
@@ -21,7 +22,7 @@ export function validateWalletAddress(chain: string, address: string): string | 
   if (!a) return "Wallet address is required.";
   if (a.length < 26 || a.length > 48) return "That doesn't look like a valid wallet address.";
 
-  if (chain === "ethereum" || chain === "bsc" || chain === "polygon") {
+  if (chain === "ethereum" || chain === "bsc" || chain === "polygon" || chain === "avalanche") {
     if (!/^0x[a-fA-F0-9]{40}$/.test(a)) {
       return "Invalid EVM address — must be 0x followed by 40 hex characters.";
     }
