@@ -113,6 +113,8 @@ const schemaStatements = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS p2p_volume_30d NUMERIC NOT NULL DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS p2p_avg_release_seconds INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS p2p_trust_score INTEGER NOT NULL DEFAULT 50`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS p2p_available_crypto NUMERIC NOT NULL DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS p2p_available_fiat NUMERIC NOT NULL DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS p2p_is_online BOOLEAN NOT NULL DEFAULT FALSE`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS p2p_online_hours TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS anti_phishing_code TEXT NOT NULL DEFAULT ''`,
@@ -335,9 +337,13 @@ const schemaStatements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
 
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt TEXT`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt_image TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_user_id TEXT`,
+  `ALTER TABLE p2p_advertiser_applications ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb`,
+
   // ── P2P Marketplace: indexes ─────────────────────────────────────────────
-  `CREATE INDEX IF NOT EXISTS p2p_ads_crypto_idx ON p2p_ads(crypto_currency)`,
-  `CREATE INDEX IF NOT EXISTS p2p_ads_fiat_idx ON p2p_ads(fiat_currency)`,
+  `CREATE INDEX IF NOT EXISTS p2p_ads_crypto_idx ON p2p_ads(crypto_currency)`,  `CREATE INDEX IF NOT EXISTS p2p_ads_fiat_idx ON p2p_ads(fiat_currency)`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_status_idx ON p2p_ads(status)`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_user_idx ON p2p_ads(user_id)`,
   `CREATE INDEX IF NOT EXISTS p2p_trades_buyer_idx ON p2p_trades(buyer_id)`,

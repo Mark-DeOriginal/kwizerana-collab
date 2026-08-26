@@ -29,3 +29,15 @@ export async function getUnreadNotificationCount(userId: string): Promise<number
   );
   return Number(rows[0]?.count ?? "0");
 }
+
+export async function createNotification(
+  userId: string,
+  input: { type: string; title: string; body: string; data?: Record<string, unknown> }
+): Promise<void> {
+  await ensureDatabase();
+  await dbQuery(
+    `INSERT INTO p2p_notifications (user_id, notification_type, title, body, data)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [userId, input.type, input.title, input.body, JSON.stringify(input.data ?? {})]
+  );
+}

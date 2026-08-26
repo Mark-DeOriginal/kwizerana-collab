@@ -47,7 +47,6 @@ type AdRow = {
   price_margin: string | null;
   min_amount: string;
   max_amount: string;
-  payment_method_ids: string[] | number[];
   vendor_id: string;
   vendor_name: string;
   p2p_advertiser_status: string;
@@ -68,7 +67,6 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
     `SELECT a.id::TEXT AS id, a.ad_type, a.crypto_currency, a.fiat_currency, a.price_type,
             a.price_value::TEXT AS price_value, a.price_margin::TEXT AS price_margin,
             a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
-            a.payment_method_ids,
             u.id AS vendor_id, u.name AS vendor_name,
             u.p2p_advertiser_status, u.p2p_advertiser_level, u.p2p_verified_tier,
             u.p2p_completion_rate_30d, u.p2p_total_trades, u.p2p_avg_release_seconds
@@ -79,19 +77,23 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
     [adType, asset, fiat]
   );
 
-  const uniquePmIds = Array.from(
-    new Set(rows.flatMap((row) => (row.payment_method_ids ?? []).map((id) => String(id))))
-  );
+  // The vendor's receiving options are ALL of their saved payment methods.
+  const vendorIds = Array.from(new Set(rows.map((row) => row.vendor_id)));
 
-  const methodMap = new Map<string, OfferPaymentMethod>();
-  if (uniquePmIds.length > 0) {
-    const pmRows = await dbQuery<OfferPaymentMethod>(
-      `SELECT id::TEXT AS id, method_type, method_name
+  const methodsByVendor = new Map<string, OfferPaymentMethod[]>();
+  if (vendorIds.length > 0) {
+    const pmRows = await dbQuery<OfferPaymentMethod & { user_id: string }>(
+      `SELECT id::TEXT AS id, user_id, method_type, method_name
        FROM p2p_payment_methods
-       WHERE id = ANY($1::bigint[])`,
-      [uniquePmIds]
+       WHERE user_id = ANY($1)
+       ORDER BY id ASC`,
+      [vendorIds]
     );
-    for (const pm of pmRows) methodMap.set(pm.id, pm);
+    for (const pm of pmRows) {
+      const list = methodsByVendor.get(pm.user_id) ?? [];
+      list.push({ id: pm.id, method_type: pm.method_type, method_name: pm.method_name });
+      methodsByVendor.set(pm.user_id, list);
+    }
   }
 
   const offers: Offer[] = rows.map((row) => ({
@@ -114,9 +116,7 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
       totalTrades: Number(row.p2p_total_trades),
       avgReleaseSeconds: Number(row.p2p_avg_release_seconds)
     },
-    payment_methods: (row.payment_method_ids ?? [])
-      .map((id) => methodMap.get(String(id)))
-      .filter((m): m is OfferPaymentMethod => Boolean(m))
+    payment_methods: methodsByVendor.get(row.vendor_id) ?? []
   }));
 
   offers.sort((a, b) =>

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const limit = Math.min(200, Math.max(1, Math.floor(Number(url.searchParams.get("limit")) || 20)));
   const search = url.searchParams.get("search")?.trim() || undefined;
 
-  const result = await listAllUsers({ search, page, limit });
+  const result = await listAllUsers({ search, page, limit, excludeVendorAccounts: true });
   const users = result.users.map((u) => ({
     ...u,
     isSuperAdmin: isAdminEmail(u.email)
@@ -37,6 +37,9 @@ export async function GET(request: Request) {
   const [adminCount] = await dbQuery<{ count: string }>(
     `SELECT COUNT(*)::TEXT AS count FROM users WHERE role = 'admin'`
   );
+  const [vendorAppCount] = await dbQuery<{ count: string }>(
+    `SELECT COUNT(*)::TEXT AS count FROM p2p_advertiser_applications WHERE status = 'pending'`
+  );
 
   return NextResponse.json({
     users,
@@ -48,7 +51,8 @@ export async function GET(request: Request) {
       totalUsers: result.total,
       totalAdmins: Number(adminCount?.count ?? "0"),
       totalProfiles: Number(profileCount?.count ?? "0"),
-      pendingSubmissions: Number(submissionCount?.count ?? "0")
+      pendingSubmissions: Number(submissionCount?.count ?? "0"),
+      pendingVendorApps: Number(vendorAppCount?.count ?? "0")
     }
   });
 }

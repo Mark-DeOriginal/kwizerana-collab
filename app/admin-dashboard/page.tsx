@@ -17,6 +17,7 @@ import {
   FileClock,
   Pencil,
   Search,
+  Store,
   Trophy
 } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
@@ -47,6 +48,7 @@ type Stats = {
   totalAdmins: number;
   totalProfiles: number;
   pendingSubmissions: number;
+  pendingVendorApps: number;
 };
 
 function relativeTime(dateStr: string) {
@@ -66,12 +68,12 @@ export default function AdminDashboardPage() {
   const { data: session, status, update } = useSession();
   const router = useRouter();
   const [users, setUsers] = useState<DashboardUser[]>([]);
-  const [stats, setStats] = useState<Stats>({ totalUsers: 0, totalAdmins: 0, totalProfiles: 0, pendingSubmissions: 0 });
+  const [stats, setStats] = useState<Stats>({ totalUsers: 0, totalAdmins: 0, totalProfiles: 0, pendingSubmissions: 0, pendingVendorApps: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [serverDenied, setServerDenied] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"users" | "rankings">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "rankings" | "vendors">("users");
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>([]);
@@ -112,7 +114,7 @@ export default function AdminDashboardPage() {
         users?: DashboardUser[];
         total?: number;
         error?: string;
-        stats?: { totalUsers?: number; totalAdmins?: number; totalProfiles?: number; pendingSubmissions?: number };
+        stats?: { totalUsers?: number; totalAdmins?: number; totalProfiles?: number; pendingSubmissions?: number; pendingVendorApps?: number };
       }>(res)) ?? {};
       if (!res.ok) throw new Error(payload.error ?? "Failed to load users.");
       setServerDenied(false);
@@ -122,7 +124,8 @@ export default function AdminDashboardPage() {
         totalUsers: payload.stats?.totalUsers ?? payload.total ?? 0,
         totalAdmins: payload.stats?.totalAdmins ?? 0,
         totalProfiles: payload.stats?.totalProfiles ?? 0,
-        pendingSubmissions: payload.stats?.pendingSubmissions ?? 0
+        pendingSubmissions: payload.stats?.pendingSubmissions ?? 0,
+        pendingVendorApps: payload.stats?.pendingVendorApps ?? 0
       });
     } catch (err: unknown) {
       if (!silent) setError(friendlyError(err, "Something went wrong."));
@@ -290,7 +293,7 @@ export default function AdminDashboardPage() {
         <p className="mt-1 text-sm text-muted">Manage users, roles, and permissions.</p>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
         <div className="border border-line bg-white p-4">
           <div className="flex items-center gap-2 text-xs font-medium text-muted">
             <User className="h-3.5 w-3.5" />
@@ -319,6 +322,13 @@ export default function AdminDashboardPage() {
           </div>
           <p className="mt-2 text-2xl font-bold">{stats.pendingSubmissions}</p>
         </div>
+        <div className="border border-line bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-medium text-muted">
+            <Store className="h-3.5 w-3.5" />
+            Pending vendor apps
+          </div>
+          <p className="mt-2 text-2xl font-bold">{stats.pendingVendorApps}</p>
+        </div>
       </div>
 
       {error && (
@@ -346,6 +356,17 @@ export default function AdminDashboardPage() {
           Users
         </button>
         <button
+          onClick={() => setActiveTab("vendors")}
+          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+            activeTab === "vendors"
+              ? "border-ocean text-ink"
+              : "border-transparent text-muted hover:border-line hover:text-ink"
+          }`}
+        >
+          <Store className="h-4 w-4" />
+          Vendor Applications
+        </button>
+        <button
           onClick={() => setActiveTab("rankings")}
           className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
             activeTab === "rankings"
@@ -360,6 +381,8 @@ export default function AdminDashboardPage() {
 
       {activeTab === "rankings" ? (
         <RankingsTab />
+      ) : activeTab === "vendors" ? (
+        <VendorApplicationsTab />
       ) : (
         <>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -565,6 +588,156 @@ export default function AdminDashboardPage() {
         </>
       )}
         </>
+      )}
+    </div>
+  );
+}
+
+type VendorApplication = {
+  id: string;
+  userId: string;
+  userEmail: string;
+  userName: string | null;
+  userImage: string | null;
+  applicationType: string;
+  requestedLevel: string;
+  status: string;
+  details: {
+    cryptoCurrencies?: string[];
+    fiatCurrencies?: string[];
+    paymentMethodIds?: string[];
+    bio?: string;
+  };
+  reviewedAt: string | null;
+  createdAt: string;
+};
+
+function VendorApplicationsTab() {
+  const [applications, setApplications] = useState<VendorApplication[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"pending" | "approved" | "rejected">("pending");
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async (status: string) => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/vendor-applications?status=${status}`);
+      const data = await readJson<{ applications?: VendorApplication[]; error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to load applications.");
+      setApplications(data?.applications ?? []);
+    } catch (err: unknown) {
+      setError(friendlyError(err, "Something went wrong."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load(filter);
+  }, [filter, load]);
+
+  async function reviewApplication(appId: string, action: "approve" | "reject") {
+    setActionId(appId);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/vendor-applications/${appId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const data = await readJson<{ error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Action failed.");
+      setApplications((prev) => prev.filter((a) => a.id !== appId));
+    } catch (err: unknown) {
+      setError(friendlyError(err, "Something went wrong."));
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <h2 className="text-lg font-bold">Vendor Applications</h2>
+        <div className="flex gap-1.5">
+          {(["pending", "approved", "rejected"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setFilter(s)}
+              className={`h-8 px-3 text-xs font-bold capitalize transition-colors ${
+                filter === s ? "bg-ink text-white" : "border border-line bg-white text-muted hover:text-ink"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>
+      )}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-muted" />
+        </div>
+      ) : applications.length === 0 ? (
+        <div className="py-20 text-center text-sm text-muted">
+          No {filter} applications.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {applications.map((app) => (
+            <div key={app.id} className="border border-line bg-white p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold">{app.userName ?? app.userEmail}</p>
+                    <span className="text-xs text-muted">{app.userEmail}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">Applied {relativeTime(app.createdAt)}</p>
+                  {app.details.cryptoCurrencies && (
+                    <p className="mt-1.5 text-xs text-muted">
+                      Wants to trade: <span className="font-semibold text-ink">{app.details.cryptoCurrencies.join(", ")}</span>
+                      {" "}in <span className="font-semibold text-ink">{app.details.fiatCurrencies?.join(", ") ?? "—"}</span>
+                    </p>
+                  )}
+                  {app.details.bio && (
+                    <p className="mt-1 text-xs text-muted">&quot;{app.details.bio}&quot;</p>
+                  )}
+                </div>
+                {filter === "pending" && (
+                  <div className="flex shrink-0 gap-2">
+                    <button
+                      onClick={() => void reviewApplication(app.id, "approve")}
+                      disabled={actionId === app.id}
+                      className="flex h-8 items-center gap-1 bg-moss px-3 text-xs font-bold text-white transition-colors hover:bg-moss/90 disabled:opacity-60"
+                    >
+                      {actionId === app.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      Approve
+                    </button>
+                    <button
+                      onClick={() => void reviewApplication(app.id, "reject")}
+                      disabled={actionId === app.id}
+                      className="flex h-8 items-center gap-1 border border-coral/30 bg-white px-3 text-xs font-bold text-coral transition-colors hover:bg-coral/5 disabled:opacity-60"
+                    >
+                      <X className="h-3 w-3" />
+                      Reject
+                    </button>
+                  </div>
+                )}
+                {filter !== "pending" && (
+                  <span className={`shrink-0 text-xs font-bold uppercase ${filter === "approved" ? "text-moss" : "text-coral"}`}>
+                    {app.status}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

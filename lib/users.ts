@@ -182,6 +182,7 @@ export type UserListFilters = {
   search?: string;
   page?: number;
   limit?: number;
+  excludeVendorAccounts?: boolean;
 };
 
 export type UserListResult = {
@@ -195,7 +196,7 @@ export type UserListResult = {
 export async function listAllUsers(filters: UserListFilters = {}): Promise<UserListResult> {
   await ensureDatabase();
 
-  const { search, page = 1, limit = 20 } = filters;
+  const { search, page = 1, limit = 20, excludeVendorAccounts } = filters;
   const safeLimit = Math.min(Math.max(limit, 1), 200);
   const offset = (page - 1) * safeLimit;
 
@@ -206,6 +207,10 @@ export async function listAllUsers(filters: UserListFilters = {}): Promise<UserL
   if (q) {
     conditions.push(`(LOWER(email) LIKE $${params.length + 1} OR LOWER(COALESCE(name, '')) LIKE $${params.length + 1})`);
     params.push(`%${q}%`);
+  }
+
+  if (excludeVendorAccounts) {
+    conditions.push(`owner_user_id IS NULL`);
   }
 
   const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";

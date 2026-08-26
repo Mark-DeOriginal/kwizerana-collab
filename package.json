@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "tsc --noEmit && next lint",
     "format": "bunx biome format --write",
-    "db:setup": "node scripts/setup-db.mjs"
+    "db:setup": "node scripts/setup-db.mjs",
+    "deploy:escrow": "node scripts/deploy-escrow.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

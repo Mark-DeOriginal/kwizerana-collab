@@ -30,13 +30,30 @@ function toNumber(value: unknown): number {
 
 export async function getP2PStats(userId: string): Promise<P2PStats> {
   await ensureDatabase();
-  const rows = await dbQuery<Record<string, unknown>>(
-    `SELECT p2p_total_trades, p2p_completed_trades, p2p_completion_rate_30d, p2p_volume_30d,
-            p2p_avg_release_seconds, p2p_cumulative_counterparties, p2p_trust_score,
-            p2p_advertiser_status, p2p_advertiser_level, p2p_verified_tier,
-            p2p_first_trade_at, p2p_is_online
-     FROM users WHERE id = $1`,
+
+  // Check if user owns any vendor accounts (e.g. Kwizerana DAO)
+  const ownedRows = await dbQuery<{ id: string }>(
+    `SELECT id::TEXT AS id FROM users WHERE owner_user_id = $1`,
     [userId]
+  );
+  const ownedIds = ownedRows.map((r) => r.id);
+  const queryIds = [userId, ...ownedIds];
+
+  const rows = await dbQuery<Record<string, unknown>>(
+    `SELECT SUM(p2p_total_trades)::NUMERIC AS p2p_total_trades,
+            SUM(p2p_completed_trades)::NUMERIC AS p2p_completed_trades,
+            ROUND(SUM(p2p_completed_trades)::NUMERIC / NULLIF(SUM(p2p_total_trades), 0) * 100, 1) AS p2p_completion_rate_30d,
+            SUM(p2p_volume_30d)::NUMERIC AS p2p_volume_30d,
+            ROUND(AVG(p2p_avg_release_seconds))::INTEGER AS p2p_avg_release_seconds,
+            SUM(p2p_cumulative_counterparties)::NUMERIC AS p2p_cumulative_counterparties,
+            MAX(p2p_trust_score)::INTEGER AS p2p_trust_score,
+            MAX(p2p_advertiser_status) AS p2p_advertiser_status,
+            MAX(p2p_advertiser_level) AS p2p_advertiser_level,
+            MAX(p2p_verified_tier) AS p2p_verified_tier,
+            MIN(p2p_first_trade_at) AS p2p_first_trade_at,
+            BOOL_OR(p2p_is_online) AS p2p_is_online
+     FROM users WHERE id = ANY($1)`,
+    [queryIds]
   );
   const r = rows[0] ?? {};
 
