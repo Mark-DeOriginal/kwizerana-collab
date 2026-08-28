@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
 import { applyTradeAction, getTrade, type TradeAction } from "@/lib/p2p/trades";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
+
+async function getSuperAdmin(): Promise<boolean> {
+  const session = await getServerSession(authOptions);
+  return isAdminEmail(session?.user?.email);
+}
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   const userId = await getCurrentUserId();
@@ -11,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   }
 
   try {
-    const trade = await getTrade(userId, params.id);
+    const trade = await getTrade(userId, params.id, undefined, await getSuperAdmin());
     return NextResponse.json({ trade });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Trade not found." }, { status: 404 });
@@ -46,7 +54,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   };
 
   try {
-    const trade = await applyTradeAction(userId, params.id, action as TradeAction, input);
+    const trade = await applyTradeAction(userId, params.id, action as TradeAction, input, await getSuperAdmin());
     return NextResponse.json({ trade });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to update trade." }, { status: 400 });

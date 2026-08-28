@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
 import { createTrade, listTrades } from "@/lib/p2p/trades";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
+
+async function getSuperAdmin(): Promise<boolean> {
+  const session = await getServerSession(authOptions);
+  return isAdminEmail(session?.user?.email);
+}
 
 export async function GET() {
   const userId = await getCurrentUserId();
@@ -10,7 +18,7 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  const trades = await listTrades(userId);
+  const trades = await listTrades(userId, await getSuperAdmin());
   return NextResponse.json({ trades });
 }
 
@@ -40,7 +48,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const trade = await createTrade(userId, { adId, cryptoAmount, paymentMethodId, buyerWalletAddress });
+    const trade = await createTrade(userId, { adId, cryptoAmount, paymentMethodId, buyerWalletAddress }, await getSuperAdmin());
     return NextResponse.json({ trade }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to create trade." }, { status: 400 });

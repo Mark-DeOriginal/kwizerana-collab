@@ -88,6 +88,8 @@ export type Trade = {
   escrow_refund_tx: string | null;
   escrow_release_to: string | null;
   my_role: "buyer" | "seller";
+  can_act_as_buyer: boolean;
+  can_act_as_seller: boolean;
 };
 
 export type TradeStatus =
@@ -175,10 +177,12 @@ const TRADE_SELECT = `
       FROM p2p_escrow e WHERE e.trade_id = t.id ORDER BY e.id DESC LIMIT 1
     ) esc ON TRUE`;
 
-function mapTrade(row: TradeRow, userId: string, ownedVendorIds?: Set<string>): Trade {
+function mapTrade(row: TradeRow, userId: string, ownedVendorIds?: Set<string>, isSuperAdmin = false): Trade {
   const isOwnedVendor = (id: string) => ownedVendorIds?.has(id) ?? false;
   const myRole: "buyer" | "seller" =
     row.buyer_id === userId || isOwnedVendor(row.buyer_id) ? "buyer" : "seller";
+  const canActAsBuyer = isUserOrOwned(userId, row.buyer_id, ownedVendorIds) || isSuperAdmin;
+  const canActAsSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds) || isSuperAdmin;
   const { payment_details, ...rest } = row;
   return {
     ...rest,
@@ -186,7 +190,9 @@ function mapTrade(row: TradeRow, userId: string, ownedVendorIds?: Set<string>): 
     fiat_amount: toNumber(row.fiat_amount),
     price_at_trade: toNumber(row.price_at_trade),
     payment_details: parseDetails(payment_details),
-    my_role: myRole
+    my_role: myRole,
+    can_act_as_buyer: canActAsBuyer,
+    can_act_as_seller: canActAsSeller
   };
 }
 
@@ -196,7 +202,8 @@ function isUserOrOwned(userId: string, targetId: string, ownedVendorIds?: Set<st
 
 export async function createTrade(
   userId: string,
-  input: { adId: string; cryptoAmount: number; paymentMethodId?: string | null; buyerWalletAddress?: string | null }
+  input: { adId: string; cryptoAmount: number; paymentMethodId?: string | null; buyerWalletAddress?: string | null },
+  isSuperAdmin = false
 ): Promise<Trade> {
   await ensureDatabase();
 
@@ -271,10 +278,10 @@ export async function createTrade(
   });
 
   const ownedVendorIds = await getOwnedVendorIds(userId);
-  return getTrade(userId, tradeId, ownedVendorIds);
+  return getTrade(userId, tradeId, ownedVendorIds, isSuperAdmin);
 }
 
-export async function getTrade(userId: string, tradeId: string, ownedVendorIds?: Set<string>): Promise<Trade> {
+export async function getTrade(userId: string, tradeId: string, ownedVendorIds?: Set<string>, isSuperAdmin = false): Promise<Trade> {
   await ensureDatabase();
   if (!ownedVendorIds) ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];
@@ -284,10 +291,10 @@ export async function getTrade(userId: string, tradeId: string, ownedVendorIds?:
   );
   const row = rows[0];
   if (!row) throw new Error("Trade not found.");
-  return mapTrade(row, userId, ownedVendorIds);
+  return mapTrade(row, userId, ownedVendorIds, isSuperAdmin);
 }
 
-export async function listTrades(userId: string): Promise<Trade[]> {
+export async function listTrades(userId: string, isSuperAdmin = false): Promise<Trade[]> {
   await ensureDatabase();
   const expired = await dbQuery<{ id: string }>(
     `UPDATE p2p_trades SET status = 'expired', updated_at = NOW()
@@ -301,7 +308,7 @@ export async function listTrades(userId: string): Promise<Trade[]> {
     `${TRADE_SELECT} WHERE t.buyer_id = ANY($1) OR t.seller_id = ANY($1) ORDER BY t.created_at DESC`,
     [allIds]
   );
-  return rows.map((row) => mapTrade(row, userId, ownedVendorIds));
+  return rows.map((row) => mapTrade(row, userId, ownedVendorIds, isSuperAdmin));
 }
 
 export type TradeAction = "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund";
@@ -345,7 +352,8 @@ export async function applyTradeAction(
   userId: string,
   tradeId: string,
   action: TradeAction,
-  input: TradeActionInput = {}
+  input: TradeActionInput = {},
+  isSuperAdmin = false
 ): Promise<Trade> {
   await ensureDatabase();
   const ownedVendorIds = await getOwnedVendorIds(userId);
@@ -357,8 +365,8 @@ export async function applyTradeAction(
   const row = rows[0];
   if (!row) throw new Error("Trade not found.");
 
-  const isBuyer = isUserOrOwned(userId, row.buyer_id, ownedVendorIds);
-  const isSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds);
+  const isBuyer = isUserOrOwned(userId, row.buyer_id, ownedVendorIds) || isSuperAdmin;
+  const isSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds) || isSuperAdmin;
   const status = row.status;
   const escrowFunded = row.escrow_status === "funded";
 
@@ -396,7 +404,7 @@ export async function applyTradeAction(
       break;
     }
     case "cancel": {
-      if (status !== "created" && status !== "escrow_locked") {
+      if (status !== "created" && status !== "escrow_locked" && status !== "payment_sent") {
         throw new Error("This order can no longer be cancelled. The escrow must be refunded instead.");
       }
       newStatus = "cancelled";
@@ -455,8 +463,8 @@ export async function applyTradeAction(
            p2p_completion_rate_30d = ROUND((p2p_completed_trades + 1)::numeric / (p2p_total_trades + 1) * 100, 1),
            p2p_cumulative_counterparties = p2p_cumulative_counterparties + 1,
            updated_at = NOW()
-       WHERE id = $2 OR id = $3`,
-      [tradeId, row.buyer_id, row.seller_id]
+       WHERE id = $1 OR id = $2`,
+      [row.buyer_id, row.seller_id]
     );
   }
 
@@ -481,7 +489,7 @@ export async function applyTradeAction(
     await syncTradeNotification(tradeId);
   }
 
-  return getTrade(userId, tradeId, ownedVendorIds);
+  return getTrade(userId, tradeId, ownedVendorIds, isSuperAdmin);
 }
 
 /** Marks an expired-but-funded order as needing a refund once the seller refunds. */

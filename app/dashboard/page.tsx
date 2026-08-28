@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
@@ -8,26 +8,30 @@ import {
   ArrowUpRight,
   BadgeCheck,
   Banknote,
+  Check,
   CheckCircle2,
+  ChevronRight,
   Clock,
+  Copy,
   History,
   Landmark,
   Loader2,
   LogIn,
   Megaphone,
   MessageSquare,
+  Pencil,
   Plus,
+  RefreshCw,
   Scale,
   ShieldCheck,
   Star,
+  Trash2,
   TrendingUp,
   Users,
-  Wallet,
-  X
+  Wallet
 } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
-import { SUPPORTED_CHAINS, chainLabel } from "@/lib/p2p/wallets-shared";
 import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
 import type { UserWallet } from "@/lib/p2p/wallets";
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
@@ -37,6 +41,10 @@ import type { VendorStatus } from "@/lib/p2p/vendor";
 import { ACTIVE_TRADE_STATUSES, type Trade } from "@/lib/p2p/trades";
 import { OrderDetailView, TradeOrderCard } from "@/components/p2p/order-detail-view";
 import { Modal } from "@/components/p2p/modal";
+import { useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
+import { useAccount, useDisconnect, useReadContract } from "wagmi";
+import { formatUnits } from "viem";
+import { AVALANCHE_TOKENS, ERC20_ABI, explorerAddressUrl } from "@/lib/web3/escrow";
 
 type DashboardData = {
   stats: P2PStats;
@@ -100,9 +108,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
+const load = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) {
+      setLoading(true);
+      setError("");
+    }
     try {
       const [dashRes, ratesRes] = await Promise.all([
         fetch("/api/p2p/dashboard", { cache: "no-store" }),
@@ -112,14 +122,15 @@ export default function DashboardPage() {
       const ratesData = await readJson<{ rates: CurrencyRate[] }>(ratesRes);
 
       if (!dashRes.ok || !dash) {
-        throw new Error(dash?.error ?? "Unable to load dashboard.");
+        if (!opts.silent) throw new Error(dash?.error ?? "Unable to load dashboard.");
+        return;
       }
       setData(dash as DashboardData);
       setRates(ratesData?.rates ?? []);
     } catch {
-      setError("Unable to load your dashboard. Please try again.");
+      if (!opts.silent) setError("Unable to load your dashboard. Please try again.");
     } finally {
-      setLoading(false);
+      if (!opts.silent) setLoading(false);
     }
   }, []);
 
@@ -129,14 +140,44 @@ export default function DashboardPage() {
     }
   }, [status, load]);
 
-  // Auto-refresh when there are active trades
+  // Real-time silent updates: poll a cheap fingerprint and only pay for a full
+  // dashboard reload when something actually changed.
+  const lastDigestRef = useRef<string | null>(null);
+  const digestSeededRef = useRef(false);
+
   useEffect(() => {
-    if (status !== "authenticated" || !data) return;
-    const hasActive = data.trades.some((t) => ["created", "pending_payment", "payment_sent"].includes(t.status));
-    if (!hasActive) return;
-    const id = setInterval(() => void load(), 15000);
-    return () => clearInterval(id);
-  }, [status, data, load]);
+    if (status !== "authenticated") return;
+
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/p2p/updates", { cache: "no-store" });
+        const data = await readJson<{ changedAt?: string }>(res);
+        if (!res.ok || !data?.changedAt) return;
+        if (!digestSeededRef.current) {
+          digestSeededRef.current = true;
+          lastDigestRef.current = data.changedAt;
+          return;
+        }
+        if (data.changedAt !== lastDigestRef.current) {
+          lastDigestRef.current = data.changedAt;
+          void load({ silent: true });
+        }
+      } catch {
+        // Silent — polling must never surface errors to the UI.
+      }
+    };
+
+    const id = setInterval(() => void poll(), 12000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    void poll();
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [status, load]);
 
   if (status === "unauthenticated") {
     return (
@@ -187,7 +228,7 @@ export default function DashboardPage() {
 
         {/* Top grid: wallet + stats */}
         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-          <WalletPanel wallets={data?.wallets ?? []} loading={loading && !data} onChanged={load} />
+          <WalletPanel loading={loading && !data} />
           <StatsPanel stats={data?.stats} loading={loading && !data} />
         </div>
 
@@ -208,7 +249,7 @@ export default function DashboardPage() {
         {/* Security + payment methods */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <SecurityPanel security={data?.security} loading={loading && !data} />
-          <PaymentMethodsPanel methods={data?.paymentMethods ?? []} loading={loading && !data} />
+          <PaymentMethodsPanel methods={data?.paymentMethods ?? []} loading={loading && !data} onChanged={load} />
         </div>
 
         {/* Trade history + counterparties + ads + disputes */}
@@ -246,136 +287,171 @@ function QuickAction({ href, label, icon, primary, soon }: { href: string; label
   );
 }
 
-function WalletPanel({ wallets, onChanged, loading }: { wallets: UserWallet[]; onChanged: () => void; loading?: boolean }) {
-  const [showManual, setShowManual] = useState(false);
-  const [chain, setChain] = useState("tron");
-  const [address, setAddress] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+function formatWalletBalance(amount: bigint | undefined): string {
+  if (amount === undefined) return "—";
+  const n = Number(formatUnits(amount, 6));
+  if (!Number.isFinite(n)) return "0.00";
+  return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
 
-  const manualChains = SUPPORTED_CHAINS.filter((c) => c.value === "tron" || c.value === "solana");
+function WalletPanel({ loading }: { loading?: boolean }) {
+  const { address, isConnected, chain } = useAccount();
+  const { disconnect } = useDisconnect();
+  const [token, setToken] = useState<"USDC" | "USDT">("USDC");
+  const [copied, setCopied] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  async function submitManual(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    setBusy(true);
-    const res = await fetch("/api/p2p/wallets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chain, address })
-    });
-    const data = await readJson<{ error?: string }>(res);
-    setBusy(false);
-    if (!res.ok) {
-      setError(data?.error ?? "Unable to add wallet.");
-      return;
+  const tokens = [["USDC", AVALANCHE_TOKENS.USDC], ["USDT", AVALANCHE_TOKENS.USDT]] as const;
+  const primary = tokens.find(([symbol]) => symbol === token) ?? tokens[0];
+  const secondary = tokens.find(([symbol]) => symbol !== token) ?? tokens[1];
+
+  const { data: primaryBalance, refetch: refetchPrimary, isFetching: primaryFetching, isError: primaryError } = useReadContract({
+    address: primary[1] as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: isConnected && Boolean(address), refetchInterval: 30000 }
+  });
+
+  const { data: secondaryBalance, refetch: refetchSecondary, isFetching: secondaryFetching, isError: secondaryError } = useReadContract({
+    address: secondary[1] as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: isConnected && Boolean(address), refetchInterval: 30000 }
+  });
+
+  async function refresh() {
+    if (!isConnected || !address) return;
+    setRefreshing(true);
+    await Promise.all([refetchPrimary(), refetchSecondary()]);
+    setRefreshing(false);
+  }
+
+  async function copyAddress() {
+    if (!address) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable — ignore.
     }
-    setAddress("");
-    setShowManual(false);
-    onChanged();
-  }
-
-  async function setPrimary(id: string) {
-    await fetch(`/api/p2p/wallets/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "set_primary" })
-    });
-    onChanged();
-  }
-
-  async function remove(id: string) {
-    await fetch(`/api/p2p/wallets/${id}`, { method: "DELETE" });
-    onChanged();
   }
 
   if (loading) {
     return (
-      <Card title="Wallet & balance">
+      <Card title="Your wallet">
         <div className="flex items-center gap-3 text-sm text-muted">
           <Loader2 className="h-5 w-5 animate-spin text-ocean" />
-          Loading linked wallets…
+          Loading your wallet…
         </div>
       </Card>
     );
   }
 
-  return (
-    <Card title="Wallet & balance">
-      <div className="mb-4">
-        <ConnectWalletButton />
-        <p className="mt-2 text-xs text-muted">
-          Connect MetaMask, WalletConnect, Coinbase, or another EVM wallet. Your address is saved automatically.
-        </p>
-      </div>
-
-      {wallets.length === 0 ? (
+  if (!isConnected || !address) {
+    return (
+      <Card title="Your wallet">
         <EmptyState
           icon={<Wallet className="h-5 w-5" />}
-          title="No wallets linked yet"
-          subtitle="Connect a wallet above to get started, or add a Tron or Solana address manually below."
+          title="No wallet connected"
+          subtitle="Connect your wallet to see your USDC and USDT balances on Avalanche."
+          cta={<ConnectWalletButton />}
         />
-      ) : (
-        <ul className="space-y-2">
-          {wallets.map((w) => (
-            <li key={w.id} className="flex items-center justify-between gap-3 border border-line bg-panel px-3 py-2">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 text-sm font-semibold">
-                  {chainLabel(w.chain)}
-                  {w.is_primary && (
-                    <span className="rounded-full bg-mint px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-moss">Primary</span>
-                  )}
-                </p>
-                <p className="truncate font-mono text-xs text-muted">{shortAddress(w.wallet_address)}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1">
-                {!w.is_primary && (
-                  <button onClick={() => void setPrimary(w.id)} className="h-8 px-2 text-xs font-semibold text-ocean transition-colors hover:text-ink">
-                    Set primary
-                  </button>
-                )}
-                <button onClick={() => void remove(w.id)} className="flex h-8 w-8 items-center justify-center text-muted transition-colors hover:text-coral" aria-label="Remove wallet">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      </Card>
+    );
+  }
 
-      <div className="mt-4 border-t border-line pt-3">
-        <button onClick={() => setShowManual((s) => !s)} className="text-xs font-semibold text-ocean transition-colors hover:underline">
-          {showManual ? "Cancel" : "Add a Tron or Solana address manually"}
+  const primaryLoading = primaryFetching && primaryBalance === undefined;
+  const secondaryLoading = secondaryFetching && secondaryBalance === undefined;
+
+  return (
+    <Card
+      title="Your wallet"
+      action={
+        <button
+          onClick={() => void refresh()}
+          disabled={refreshing}
+          className="flex h-8 items-center gap-1.5 border border-line bg-white px-2.5 text-xs font-semibold text-muted transition-colors hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+          aria-label="Refresh balances"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh
         </button>
-        {showManual && (
-          <form onSubmit={submitManual} className="mt-3 space-y-3 border border-line bg-panel p-4">
-            <div className="grid gap-3 sm:grid-cols-[160px_1fr]">
-              <div>
-                <label htmlFor="manualChain" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Network</label>
-                <select id="manualChain" value={chain} onChange={(e) => setChain(e.target.value)} className="h-10 w-full border border-line bg-white px-2 text-sm outline-none focus:border-ocean">
-                  {manualChains.map((c) => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="manualAddress" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Wallet address</label>
-                <input
-                  id="manualAddress"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="T… or Solana base58 address"
-                  className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
-                />
-              </div>
-            </div>
-            {error && <p className="text-sm font-semibold text-coral">{error}</p>}
-            <button type="submit" disabled={busy} className="flex h-9 items-center gap-2 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60">
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              Add wallet
+      }
+    >
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2 border border-line bg-panel px-3 py-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-moss">
+            <span className="h-2 w-2 rounded-full bg-moss" />
+            Connected · {chain?.name ?? "Avalanche"}
+          </div>
+          <button onClick={() => disconnect()} className="text-xs font-semibold text-muted transition-colors hover:text-coral">
+            Disconnect
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border border-line bg-panel px-3 py-2">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Address</p>
+            <p className="truncate font-mono text-sm font-semibold text-ink">{shortAddress(address)}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={() => void copyAddress()}
+              className="flex h-8 items-center gap-1.5 border border-line bg-white px-2 text-xs font-semibold text-muted transition-colors hover:text-ink"
+              aria-label="Copy address"
+            >
+              {copied ? <Check className="h-3.5 w-3.5 text-moss" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? "Copied" : "Copy"}
             </button>
-          </form>
-        )}
+            <a
+              href={explorerAddressUrl(address)}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-8 w-8 items-center justify-center border border-line bg-white text-muted transition-colors hover:border-ocean hover:text-ocean"
+              aria-label="View on explorer"
+            >
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        </div>
+
+        <div className="border border-line bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Balance</p>
+            <select
+              value={token}
+              onChange={(e) => setToken(e.target.value as "USDC" | "USDT")}
+              className="h-8 border border-line bg-white px-2 text-sm font-semibold outline-none transition-colors focus:border-ocean"
+              aria-label="Select token"
+            >
+              {tokens.map(([symbol]) => (
+                <option key={symbol} value={symbol}>{symbol}</option>
+              ))}
+            </select>
+          </div>
+
+          <p className="mt-3 font-mono text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+            {primaryLoading ? <Loader2 className="h-6 w-6 animate-spin text-muted" /> : primaryError ? "—" : formatWalletBalance(primaryBalance)}
+          </p>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted">{token} · Avalanche</p>
+
+          {!secondaryError && (
+            <button
+              onClick={() => setToken(secondary[0])}
+              className="mt-3 flex w-full items-center justify-between gap-2 border-t border-line pt-3 text-left transition-colors hover:opacity-80"
+              aria-label={`View ${secondary[0]} balance`}
+            >
+              <span className="text-xs font-semibold text-muted">Also in this wallet</span>
+              <span className="flex items-center gap-1.5 font-mono text-sm font-semibold text-ink">
+                {secondaryLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" /> : `${formatWalletBalance(secondaryBalance)} ${secondary[0]}`}
+                <ChevronRight className="h-3.5 w-3.5 text-muted" />
+              </span>
+            </button>
+          )}
+        </div>
       </div>
     </Card>
   );
@@ -523,7 +599,70 @@ function SecurityPanel({ security, loading }: { security?: SecuritySummary; load
   );
 }
 
-function PaymentMethodsPanel({ methods, loading }: { methods: UserPaymentMethod[]; loading?: boolean }) {
+function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPaymentMethod[]; loading?: boolean; onChanged: () => void }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ accountHolderName: "", accountIdentifier: "", note: "" });
+
+  useEffect(() => {
+    if (!confirmingId) return;
+    const id = setTimeout(() => setConfirmingId(null), 3000);
+    return () => clearTimeout(id);
+  }, [confirmingId]);
+
+  function startEdit(method: UserPaymentMethod) {
+    const details = method.details as { accountIdentifier?: string; note?: string };
+    setEditingId(method.id);
+    setConfirmingId(null);
+    setError("");
+    setForm({
+      accountHolderName: method.account_holder_name ?? "",
+      accountIdentifier: details.accountIdentifier ?? "",
+      note: details.note ?? ""
+    });
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingId) return;
+    const method = methods.find((m) => m.id === editingId);
+    if (!method) return;
+    setBusyId(editingId);
+    setError("");
+    const existingDetails = (method.details ?? {}) as Record<string, unknown>;
+    const res = await fetch(`/api/p2p/payment-methods/${editingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        method_type: method.method_type,
+        method_name: method.method_name,
+        account_holder_name: form.accountHolderName || null,
+        details: { ...existingDetails, accountIdentifier: form.accountIdentifier, note: form.note }
+      })
+    });
+    const data = await readJson<{ error?: string }>(res);
+    setBusyId(null);
+    if (!res.ok) {
+      setError(data?.error ?? "Unable to update this payment method.");
+      return;
+    }
+    setEditingId(null);
+    onChanged();
+  }
+
+  async function remove(id: string) {
+    setBusyId(id);
+    setError("");
+    const res = await fetch(`/api/p2p/payment-methods/${id}`, { method: "DELETE" });
+    setBusyId(null);
+    if (!res.ok) return;
+    if (editingId === id) setEditingId(null);
+    setConfirmingId(null);
+    onChanged();
+  }
+
   if (loading) {
     return (
       <Card title="Payment methods">
@@ -552,12 +691,71 @@ function PaymentMethodsPanel({ methods, loading }: { methods: UserPaymentMethod[
           {methods.slice(0, 4).map((m) => {
             const details = m.details as { accountIdentifier?: string };
             return (
-              <li key={m.id} className="flex items-center justify-between border border-line bg-panel px-3 py-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{m.method_name}</p>
-                  {details.accountIdentifier && <p className="truncate font-mono text-xs text-muted">{details.accountIdentifier}</p>}
+              <li key={m.id} className="border border-line bg-panel">
+                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{m.method_name}</p>
+                    {details.accountIdentifier && <p className="truncate font-mono text-xs text-muted">{details.accountIdentifier}</p>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {m.is_verified && <span className="text-[10px] font-semibold uppercase text-moss">Verified</span>}
+                    <button onClick={() => startEdit(m)} disabled={busyId === m.id} className="flex h-7 w-7 items-center justify-center border border-line bg-white text-muted transition-colors hover:border-ocean hover:text-ocean disabled:opacity-50" aria-label="Update payment method">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    {confirmingId === m.id ? (
+                      <button onClick={() => void remove(m.id)} disabled={busyId === m.id} className="flex h-7 items-center border border-coral bg-coral px-2 text-[11px] font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-50">
+                        {busyId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Confirm?"}
+                      </button>
+                    ) : (
+                      <button onClick={() => { setConfirmingId(m.id); setEditingId(null); }} disabled={busyId === m.id} className="flex h-7 w-7 items-center justify-center border border-line bg-white text-muted transition-colors hover:border-coral hover:text-coral disabled:opacity-50" aria-label="Remove payment method">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                {m.is_verified && <span className="text-[10px] font-semibold uppercase text-moss">Verified</span>}
+
+                {editingId === m.id && (
+                  <form onSubmit={(e) => void save(e)} className="space-y-3 border-t border-line bg-white p-3">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Account holder name</label>
+                      <input
+                        value={form.accountHolderName}
+                        onChange={(e) => setForm((f) => ({ ...f, accountHolderName: e.target.value }))}
+                        className="h-10 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+                        placeholder="Name on the account (optional)"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Account number / identifier</label>
+                      <input
+                        value={form.accountIdentifier}
+                        onChange={(e) => setForm((f) => ({ ...f, accountIdentifier: e.target.value }))}
+                        required
+                        className="h-10 w-full border border-line bg-white px-3 font-mono text-sm outline-none transition-colors focus:border-ocean"
+                        placeholder="Account number, phone number, or wallet address"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Note</label>
+                      <input
+                        value={form.note}
+                        onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+                        className="h-10 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+                        placeholder="Branch, or other details (optional)"
+                      />
+                    </div>
+                    {error && <p className="text-xs font-semibold text-coral">{error}</p>}
+                    <div className="flex items-center gap-2">
+                      <button type="submit" disabled={busyId === m.id} className="flex h-9 items-center gap-2 bg-ink px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60">
+                        {busyId === m.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        Save changes
+                      </button>
+                      <button type="button" onClick={() => setEditingId(null)} className="h-9 border border-line px-3 text-sm font-semibold text-muted transition-colors hover:text-ink">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
               </li>
             );
           })}
@@ -887,11 +1085,24 @@ function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; lo
 
       {selected && (
         <Modal open onClose={() => setSelectedId(null)} title={`Trade ${selected.trade_ref}`} maxWidth="max-w-xl">
-          <OrderDetailView trade={selected} onRefresh={onChanged} />
+          <LiveTradeModal trade={selected} onChanged={onChanged} />
         </Modal>
       )}
     </div>
   );
+}
+
+// Keeps the open order modal silently fresh (8s single-trade poll) until it ends.
+function LiveTradeModal({ trade, onChanged }: { trade: Trade; onChanged: () => void }) {
+  const [live, setLive] = useState<Trade>(trade);
+
+  useEffect(() => {
+    setLive((prev) => (prev.id === trade.id ? prev : trade));
+  }, [trade]);
+
+  useTradeSubscription(trade.id, (t) => setLive(t), { enabled: !isTerminalTrade(live.status) });
+
+  return <OrderDetailView trade={live} onRefresh={onChanged} />;
 }
 
 function TradeHistoryPanel({ trades, loading, onChanged }: { trades: Trade[]; loading?: boolean; onChanged: () => void }) {

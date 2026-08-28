@@ -40,7 +40,7 @@ export async function GET() {
     listUserPaymentMethods(userId),
     listNotifications(userId, 8),
     getVendorStatus(userId),
-    listTrades(userId)
+    listTrades(userId, isSuperAdmin)
   ]);
 
   return NextResponse.json({

@@ -12,6 +12,7 @@ import { COUNTRIES, PAYMENT_METHOD_CATEGORY_LABELS, type Country } from "@/lib/p
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import type { Offer } from "@/lib/p2p/offers";
 import type { Trade } from "@/lib/p2p/trades";
+import { usePoll, useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
 import { OrderDetailView } from "@/components/p2p/order-detail-view";
 
 type Side = "buy" | "sell";
@@ -617,12 +618,22 @@ function TradeClient() {
   const loadTrades = useCallback(async () => {
     const res = await fetch("/api/p2p/trades", { cache: "no-store" });
     const data = await readJson<{ trades: Trade[] }>(res);
-    if (res.ok) setActiveTrades(data?.trades ?? []);
+    if (!res.ok) return;
+    const list = data?.trades ?? [];
+    const stamp = list.map((t) => `${t.id}:${t.status}:${t.escrow_status ?? ""}:${t.buyer_paid_at ?? ""}:${t.created_at}`).join("|");
+    if (stamp === tradesStampRef.current) return;
+    tradesStampRef.current = stamp;
+    setActiveTrades(list);
   }, []);
+
+  const tradesStampRef = useRef("");
 
   useEffect(() => {
     if (status === "authenticated") void loadTrades();
   }, [status, loadTrades]);
+
+  // Silent list refresh while visible — new/dropped trades appear without interaction.
+  usePoll(() => void loadTrades(), { intervalMs: 15000, enabled: status === "authenticated" });
 
   const activeTradesByAd = useMemo(() => {
     const map = new Map<string, Trade>();
@@ -634,17 +645,16 @@ function TradeClient() {
     return map;
   }, [activeTrades]);
 
-  const refreshTrade = useCallback(async (tradeId: string) => {
+  useTradeSubscription(activeTrade?.id, (t) => setActiveTrade(t), {
+    enabled: Boolean(activeTrade) && !isTerminalTrade(activeTrade?.status ?? "")
+  });
+
+  // Instant refresh after an explicit action in the order modal (polling handles the rest).
+  const refetchActiveTrade = useCallback(async (tradeId: string) => {
     const res = await fetch(`/api/p2p/trades/${tradeId}`, { cache: "no-store" });
     const data = await readJson<{ trade?: Trade }>(res);
     if (res.ok && data?.trade) setActiveTrade(data.trade);
   }, []);
-
-  useEffect(() => {
-    if (!activeTrade || ["completed", "cancelled", "expired", "disputed"].includes(activeTrade.status)) return;
-    const timer = setInterval(() => void refreshTrade(activeTrade.id), 10000);
-    return () => clearInterval(timer);
-  }, [activeTrade, refreshTrade]);
 
   // Restore an in-progress trade after a refresh (e.g. /trade?trade=123).
   useEffect(() => {
@@ -783,7 +793,7 @@ function TradeClient() {
                     void loadTrades();
                   }}
                   onRefresh={() => {
-                    void refreshTrade(activeTrade.id);
+                    void refetchActiveTrade(activeTrade.id);
                     void loadTrades();
                   }}
                 />

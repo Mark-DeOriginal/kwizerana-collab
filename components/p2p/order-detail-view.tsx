@@ -130,7 +130,13 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const [showDispute, setShowDispute] = useState(false);
   const [disputeCountdown, setDisputeCountdown] = useState(0);
 
-  const isBuyer = trade.my_role === "buyer";
+  const allowRoleSwitch = trade.can_act_as_buyer && trade.can_act_as_seller;
+  const [viewRole, setViewRole] = useState<"buyer" | "seller">(trade.my_role === "buyer" ? "buyer" : "seller");
+  useEffect(() => {
+    setViewRole(trade.my_role === "buyer" ? "buyer" : "seller");
+  }, [trade.id, trade.my_role]);
+
+  const isBuyer = viewRole === "buyer";
   const counterparty = isBuyer ? trade.seller_name : trade.buyer_name;
   const accountIdentifier = (trade.payment_details as { accountIdentifier?: string }).accountIdentifier;
   const escrowFunded = trade.escrow_status === "funded" || trade.escrow_status === "released" || trade.escrow_status === "claimed";
@@ -232,6 +238,26 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   return (
     <div className="space-y-4">
       <EscrowModeNotice />
+
+      {allowRoleSwitch && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border border-ocean/30 bg-ocean/5 px-4 py-2.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Testing — act as</p>
+          <div className="flex overflow-hidden border border-line">
+            <button
+              onClick={() => setViewRole("buyer")}
+              className={`px-3 py-1.5 text-xs font-semibold transition-colors ${isBuyer ? "bg-ink text-white" : "bg-white text-muted hover:text-ink"}`}
+            >
+              Buyer · {trade.buyer_name}
+            </button>
+            <button
+              onClick={() => setViewRole("seller")}
+              className={`px-3 py-1.5 text-xs font-semibold transition-colors ${!isBuyer ? "bg-ink text-white" : "bg-white text-muted hover:text-ink"}`}
+            >
+              Vendor · {trade.seller_name}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-white p-4">
@@ -345,7 +371,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               onCompleted={(txHash) => void doAction("accept", { wallet_address: address, tx_hash: txHash })}
               onError={setError}
             />
-            <CancelButton busy={busy} onClick={() => void doAction("cancel")} />
+            <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
           </>
         )}
 
@@ -356,16 +382,19 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
               <p className="text-muted">Your order was sent to {counterparty}. You'll be notified once they approve it and lock the escrow.</p>
             </div>
-            <CancelButton busy={busy} onClick={() => void doAction("cancel")} />
+            <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
           </>
         )}
 
         {/* Seller: escrow_locked → awaiting buyer payment */}
         {!isBuyer && trade.status === "escrow_locked" && (
-          <div className="flex items-start gap-2 border border-ocean/30 bg-ocean/5 p-3 text-sm">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
-            <p className="text-muted">Escrow funded. Waiting for {counterparty} to send {fn(trade.fiat_amount)} {trade.fiat_currency} and upload their receipt.</p>
-          </div>
+          <>
+            <div className="flex items-start gap-2 border border-ocean/30 bg-ocean/5 p-3 text-sm">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
+              <p className="text-muted">Escrow funded. Waiting for {counterparty} to send {fn(trade.fiat_amount)} {trade.fiat_currency} and upload their receipt.</p>
+            </div>
+            <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+          </>
         )}
 
         {/* Buyer: escrow_locked → pay fiat + upload receipt */}
@@ -407,9 +436,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 Submit payment receipt
-              </button>
-              <button onClick={() => { setShowReceipt(false); setReceiptPreview(null); setReceiptFile(null); }} disabled={busy} className="h-9 border border-line px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60">
-                Back
               </button>
             </div>
           ) : (
@@ -486,26 +512,26 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           <p className="text-xs text-muted">The seller holds the escrowed crypto and will refund it to their wallet.</p>
         )}
 
-        {/* Cancel on escrow_locked (order was funded but buyer hasn't paid) */}
-        {(trade.status === "escrow_locked") && isBuyer && (
-          <CancelButton busy={busy} onClick={() => void doAction("cancel")} hint="The seller will need to refund the escrow." />
+        {/* Cancel on escrow_locked — buyer hasn't paid yet (seller cancel lives in their funding block) */}
+        {isBuyer && trade.status === "escrow_locked" && (
+          <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
         )}
 
-        {/* Dispute — payment_sent after countdown */}
-        {trade.status === "payment_sent" && !showDispute && (
+        {/* Dispute — payment_sent, buyer only (the seller reviews the receipt instead) */}
+        {trade.status === "payment_sent" && isBuyer && !showDispute && (
           disputeReady ? (
-            <button onClick={() => setShowDispute(true)} className="h-10 w-full border border-coral text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white">
+            <button onClick={() => setShowDispute(true)} className="flex h-10 w-full items-center justify-center border border-coral text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white">
               Submit dispute
             </button>
           ) : (
             <button disabled className="flex h-10 w-full items-center justify-center gap-2 border border-line bg-panel text-sm font-semibold text-muted">
-              <Clock className="h-4 w-4" />
+              <Clock className="h-4 w-4 shrink-0" />
               Submit dispute in {formatCountdown(disputeCountdown)}
             </button>
           )
         )}
 
-        {showDispute && (
+        {showDispute && isBuyer && trade.status === "payment_sent" && (
           <div className="flex flex-col gap-2 border border-coral/40 bg-coral/5 p-3">
             <p className="text-sm font-semibold text-coral">Describe the issue</p>
             <textarea
@@ -552,11 +578,46 @@ function Row({ label, value, note }: { label: string; value: React.ReactNode; no
   );
 }
 
-function CancelButton({ busy, onClick, hint }: { busy: boolean; onClick: () => void; hint?: string }) {
+function CancelTradeButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  const [armed, setArmed] = useState(false);
+  const [count, setCount] = useState(6);
+
+  useEffect(() => {
+    if (!armed || count <= 0) return;
+    const id = setTimeout(() => setCount((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [armed, count]);
+
+  if (!armed) {
+    return (
+      <button
+        onClick={() => { setArmed(true); setCount(6); }}
+        disabled={busy}
+        className="flex h-10 w-full items-center justify-center gap-2 border border-line text-sm font-semibold text-muted transition-colors hover:border-coral hover:text-coral disabled:opacity-60"
+      >
+        Cancel trade
+      </button>
+    );
+  }
+
+  if (count > 0) {
+    return (
+      <button
+        disabled
+        className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 border border-coral/40 bg-coral/5 text-sm font-semibold text-coral"
+      >
+        {count} · Yes, cancel trade
+      </button>
+    );
+  }
+
   return (
-    <button onClick={onClick} disabled={busy} className="flex h-10 w-full items-center justify-center gap-2 border border-line text-sm font-semibold text-muted transition-colors hover:border-coral hover:text-coral disabled:opacity-60">
-      Cancel order
-      {hint && <span className="text-xs font-normal text-muted/70">· {hint}</span>}
+    <button
+      onClick={onClick}
+      disabled={busy}
+      className="flex h-10 w-full items-center justify-center gap-2 bg-coral text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60"
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Yes, cancel trade"}
     </button>
   );
 }
