@@ -32,16 +32,21 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const action = String(body.action ?? "");
-  const receipt = body.receipt ? String(body.receipt) : undefined;
-  const receiptImage = body.receipt_image ? String(body.receipt_image) : undefined;
-
-  const validActions: TradeAction[] = ["lock", "mark_paid", "release", "cancel"];
+  const validActions: TradeAction[] = ["accept", "mark_paid", "release", "claim", "cancel", "refund"];
   if (!validActions.includes(action as TradeAction)) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
 
+  const input = {
+    receipt: body.receipt ? String(body.receipt) : undefined,
+    receiptImage: body.receipt_image ? String(body.receipt_image) : undefined,
+    walletAddress: body.wallet_address ? String(body.wallet_address) : undefined,
+    txHash: body.tx_hash ? String(body.tx_hash) : undefined,
+    destAddress: body.dest_address ? String(body.dest_address) : undefined
+  };
+
   try {
-    const trade = await applyTradeAction(userId, params.id, action as TradeAction, receipt, receiptImage);
+    const trade = await applyTradeAction(userId, params.id, action as TradeAction, input);
     return NextResponse.json({ trade });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to update trade." }, { status: 400 });

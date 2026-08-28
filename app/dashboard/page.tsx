@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   Clock,
   History,
-  ImagePlus,
   Landmark,
   Loader2,
   LogIn,
@@ -27,7 +26,6 @@ import {
   X
 } from "lucide-react";
 import { readJson } from "@/lib/client-request";
-import { compressImage } from "@/lib/p2p/compress-image";
 import { ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
 import { SUPPORTED_CHAINS, chainLabel } from "@/lib/p2p/wallets-shared";
 import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
@@ -36,7 +34,9 @@ import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import type { P2PNotification } from "@/lib/p2p/notifications";
 import type { CurrencyRate } from "@/lib/p2p/currencies-shared";
 import type { VendorStatus } from "@/lib/p2p/vendor";
-import type { Trade } from "@/lib/p2p/trades";
+import { ACTIVE_TRADE_STATUSES, type Trade } from "@/lib/p2p/trades";
+import { OrderDetailView, TradeOrderCard } from "@/components/p2p/order-detail-view";
+import { Modal } from "@/components/p2p/modal";
 
 type DashboardData = {
   stats: P2PStats;
@@ -576,8 +576,9 @@ function PaymentMethodsPanel({ methods, loading }: { methods: UserPaymentMethod[
 
 const TRADE_STATUS_LABELS: Record<string, string> = {
   created: "Awaiting escrow",
-  pending_payment: "Awaiting payment",
+  escrow_locked: "Awaiting payment",
   payment_sent: "Payment sent",
+  released: "Payment confirmed",
   completed: "Completed",
   cancelled: "Cancelled",
   expired: "Expired",
@@ -851,57 +852,10 @@ function VendorApplicationForm({ busy, error, applying, setApplying, bio, setBio
   );
 }
 
-const ACTIVE_TRADE_STATUSES = ["created", "pending_payment", "payment_sent"];
-
 function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; loading?: boolean; onChanged: () => void }) {
-  const active = trades.filter((t) => ACTIVE_TRADE_STATUSES.includes(t.status));
-  const [payingId, setPayingId] = useState<string | null>(null);
-  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [disputingId, setDisputingId] = useState<string | null>(null);
-  const [disputeReason, setDisputeReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState("");
-
-  async function doAction(tradeId: string, action: string, receiptImage?: string) {
-    setBusy(true);
-    setActionError("");
-    const res = await fetch(`/api/p2p/trades/${tradeId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, receipt_image: receiptImage })
-    });
-    const data = await readJson<{ error?: string }>(res);
-    setBusy(false);
-    setPayingId(null);
-    setReceiptPreview(null);
-    setReceiptFile(null);
-    if (!res.ok) {
-      setActionError(data?.error ?? "Action failed.");
-      return;
-    }
-    onChanged();
-  }
-
-  async function doDispute(tradeId: string) {
-    if (!disputeReason.trim()) return;
-    setBusy(true);
-    setActionError("");
-    const res = await fetch(`/api/p2p/trades/${tradeId}/dispute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason: disputeReason.trim() })
-    });
-    const data = await readJson<{ error?: string }>(res);
-    setBusy(false);
-    setDisputingId(null);
-    setDisputeReason("");
-    if (!res.ok) {
-      setActionError(data?.error ?? "Dispute failed.");
-      return;
-    }
-    onChanged();
-  }
+  const active = trades.filter((t) => (ACTIVE_TRADE_STATUSES as string[]).includes(t.status));
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = active.find((t) => t.id === selectedId) ?? null;
 
   if (loading) {
     return (
@@ -925,106 +879,17 @@ function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; lo
 
   return (
     <div className="space-y-2">
-      {actionError && <p className="text-xs font-semibold text-coral">{actionError}</p>}
       <ul className="space-y-2">
-        {active.map((t) => {
-          const counterparty = t.my_role === "buyer" ? t.seller_name : t.buyer_name;
-          return (
-            <li key={t.id} className="border border-line bg-panel px-3 py-2.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">
-                    {t.my_role === "buyer" ? "Buying from" : "Selling to"} <span className="text-ocean">{counterparty}</span>
-                  </p>
-                  <p className="text-xs text-muted">
-                    {formatAmount(t.crypto_amount)} {t.crypto_currency} · {formatAmount(t.fiat_amount)} {t.fiat_currency} · {statusLabel(t.status)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Link href={`/p2p-marketplace/trade?trade=${t.id}`} className="h-8 border border-line px-3 text-xs font-semibold text-ocean transition-colors hover:bg-ocean/10">View</Link>
-                  {t.my_role === "seller" && t.status === "payment_sent" && (
-                    <button onClick={() => void doAction(t.id, "release")} disabled={busy} className="h-8 bg-ink px-3 text-xs font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60">Release {t.crypto_currency}</button>
-                  )}
-                  {t.my_role === "buyer" && (t.status === "created" || t.status === "pending_payment") && (payingId === t.id ? (
-                    <span className="flex items-center gap-1.5">
-                      {receiptPreview ? (
-                        <div className="relative h-8 w-8 shrink-0 border border-line">
-                          <img src={receiptPreview} alt="Receipt" className="h-full w-full object-cover" />
-                          <button
-                            onClick={() => { setReceiptPreview(null); setReceiptFile(null); }}
-                            className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center bg-ink text-white"
-                          >
-                            <X className="h-2.5 w-2.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <label className="flex h-8 cursor-pointer items-center gap-1 border border-dashed border-line bg-white px-2 text-xs text-muted transition-colors hover:border-ocean hover:text-ink">
-                          <ImagePlus className="h-3 w-3" />
-                          Upload
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              setReceiptFile(file);
-                              try {
-                                const compressed = await compressImage(file);
-                                setReceiptPreview(compressed);
-                              } catch {
-                                setReceiptFile(null);
-                              }
-                            }}
-                          />
-                        </label>
-                      )}
-                      <button
-                        onClick={() => { if (receiptPreview) void doAction(t.id, "mark_paid", receiptPreview); }}
-                        disabled={busy || !receiptPreview}
-                        className="h-8 bg-ink px-2 text-xs font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
-                      >
-                        Confirm
-                      </button>
-                    </span>
-                  ) : (
-                    <button onClick={() => { setPayingId(t.id); setReceiptPreview(null); setReceiptFile(null); }} disabled={busy} className="h-8 bg-ink px-3 text-xs font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60">Mark paid</button>
-                  ))}
-                  {(t.status === "created" || t.status === "pending_payment") && (
-                    <button onClick={() => void doAction(t.id, "cancel")} disabled={busy} className="h-8 border border-line px-3 text-xs font-semibold text-muted transition-colors hover:text-coral disabled:opacity-60">Cancel</button>
-                  )}
-                  {t.status === "payment_sent" && (disputingId === t.id ? (
-                    <span className="flex items-center gap-1.5">
-                      <input value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="Describe the issue…" className="h-8 w-36 border border-line bg-white px-2 text-xs outline-none focus:border-ocean" />
-                      <button onClick={() => void doDispute(t.id)} disabled={busy || !disputeReason.trim()} className="h-8 bg-coral px-2 text-xs font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60">Submit</button>
-                    </span>
-                  ) : (
-                    t.status === "payment_sent" && <button onClick={() => { setDisputingId(t.id); setDisputeReason(""); }} disabled={busy} className="h-8 border border-line px-3 text-xs font-semibold text-muted transition-colors hover:text-coral disabled:opacity-60">Dispute</button>
-                  ))}
-                </div>
-              </div>
-              {t.payment_reference && (
-                <p className="mt-1.5 text-xs text-muted">Payment reference: <span className="font-mono font-semibold text-ink">{t.payment_reference}</span></p>
-              )}
-              {t.my_role === "buyer" && (
-                <p className="mt-1.5 text-xs text-muted">
-                  Send fiat to: <span className="font-semibold text-ink">{t.payment_method_name ?? "—"}</span>
-                  {t.payment_account_holder && <> · {t.payment_account_holder}</>}
-                  {(t.payment_details as { accountIdentifier?: string }).accountIdentifier && (
-                    <> · <span className="font-mono">{(t.payment_details as { accountIdentifier?: string }).accountIdentifier}</span></>
-                  )}
-                </p>
-              )}
-              {t.my_role === "seller" && t.status === "payment_sent" && t.receipt_image && (
-                <div className="mt-1.5 text-xs text-muted">
-                  <span>Buyer&apos;s receipt:</span>
-                  <img src={t.receipt_image} alt="Payment receipt" className="mt-1 max-h-32 border border-line object-contain" />
-                </div>
-              )}
-            </li>
-          );
-        })}
+        {active.map((t) => (
+          <TradeOrderCard key={t.id} trade={t} onOpen={() => setSelectedId(t.id)} />
+        ))}
       </ul>
+
+      {selected && (
+        <Modal open onClose={() => setSelectedId(null)} title={`Trade ${selected.trade_ref}`} maxWidth="max-w-xl">
+          <OrderDetailView trade={selected} onRefresh={onChanged} />
+        </Modal>
+      )}
     </div>
   );
 }

@@ -339,8 +339,17 @@ const schemaStatements = [
 
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt_image TEXT`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS escrow_locked_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS funded_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS claim_tx_hash TEXT`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS refund_tx_hash TEXT`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS release_to TEXT`,
+  `ALTER TABLE p2p_notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_user_id TEXT`,
   `ALTER TABLE p2p_advertiser_applications ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb`,
+  `UPDATE p2p_trades SET status = 'escrow_locked', updated_at = NOW()
+     WHERE status = 'pending_payment'`,
 
   // ── P2P Marketplace: indexes ─────────────────────────────────────────────
   `CREATE INDEX IF NOT EXISTS p2p_ads_crypto_idx ON p2p_ads(crypto_currency)`,  `CREATE INDEX IF NOT EXISTS p2p_ads_fiat_idx ON p2p_ads(fiat_currency)`,

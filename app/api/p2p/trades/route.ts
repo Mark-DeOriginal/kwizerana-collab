@@ -30,6 +30,7 @@ export async function POST(request: Request) {
   const adId = String(body.adId ?? "");
   const cryptoAmount = Number(body.cryptoAmount);
   const paymentMethodId = body.paymentMethodId ? String(body.paymentMethodId) : null;
+  const buyerWalletAddress = body.buyerWalletAddress ? String(body.buyerWalletAddress) : null;
 
   if (!adId) {
     return NextResponse.json({ error: "Missing vendor." }, { status: 400 });
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const trade = await createTrade(userId, { adId, cryptoAmount, paymentMethodId });
+    const trade = await createTrade(userId, { adId, cryptoAmount, paymentMethodId, buyerWalletAddress });
     return NextResponse.json({ trade }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to create trade." }, { status: 400 });

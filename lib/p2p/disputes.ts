@@ -1,5 +1,5 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
-import { createNotification } from "@/lib/p2p/notifications";
+import { createNotification, updateTradeNotification } from "@/lib/p2p/notifications";
 
 export type Dispute = {
   id: string;
@@ -48,6 +48,10 @@ export async function createDispute(
     title: "Trade disputed",
     body: `A dispute was opened on your trade. Support will review it shortly.`,
     data: { tradeId: input.tradeId }
+  });
+  await updateTradeNotification(input.tradeId, {
+    title: "Order under dispute",
+    body: `This order is now under dispute review. Support will decide the outcome.`
   });
 
   return inserted[0];

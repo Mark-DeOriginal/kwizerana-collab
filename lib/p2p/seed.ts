@@ -180,7 +180,7 @@ export async function linkUnlinkedDAOVendors(): Promise<void> {
   if (!adminUserId) return;
 
   await dbQuery(
-    `UPDATE users SET owner_user_id = $2, updated_at = NOW()
+    `UPDATE users SET owner_user_id = $1, updated_at = NOW()
      WHERE id LIKE 'kwizerana-dao-%' AND owner_user_id IS NULL`,
     [adminUserId]
   );
