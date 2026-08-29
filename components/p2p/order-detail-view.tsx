@@ -380,7 +380,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           <>
             <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
               <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
-              <p className="text-muted">Your order was sent to {counterparty}. You'll be notified once they approve it and lock the escrow.</p>
+              <p className="text-muted">Your order was sent to {counterparty}. You&apos;ll be notified once they approve it and lock the escrow.</p>
             </div>
             <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
           </>
@@ -443,7 +443,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               onClick={() => setShowReceipt(true)}
               className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean"
             >
-              I've sent the payment
+              I&apos;ve sent the payment
               <ArrowRight className="h-4 w-4" />
             </button>
           )
@@ -457,7 +457,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               onCompleted={(txHash) => void doAction("release", { tx_hash: txHash })}
               onError={setError}
             />
-            <p className="text-xs text-muted">Only release after you've confirmed the {fn(trade.fiat_amount)} {trade.fiat_currency} arrived in your account.</p>
+            <p className="text-xs text-muted">Only release after you&apos;ve confirmed the {fn(trade.fiat_amount)} {trade.fiat_currency} arrived in your account.</p>
           </>
         )}
 
@@ -465,7 +465,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         {isBuyer && trade.status === "payment_sent" && (
           <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
             <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
-            <p className="text-muted">Receipt submitted. {counterparty} is reviewing it. You can submit a dispute after 1 hour if there's no response.</p>
+            <p className="text-muted">Receipt submitted. {counterparty} is reviewing it. You can submit a dispute after 1 hour if there&apos;s no response.</p>
           </div>
         )}
 

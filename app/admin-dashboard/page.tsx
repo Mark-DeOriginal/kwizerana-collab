@@ -149,7 +149,7 @@ export default function AdminDashboardPage() {
     if (status === "authenticated" && !canAccessAdminReview(session?.user?.role, session?.user?.permissions)) {
       router.replace("/");
     }
-  }, [status, session, router]);
+  }, [status, session?.user?.role, session?.user?.permissions, router]);
 
   const usersTotalPages = Math.max(1, Math.ceil(totalUsers / usersPageSize));
   const safeUsersPage = Math.min(usersPage, usersTotalPages);

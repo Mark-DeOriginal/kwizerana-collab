@@ -129,7 +129,7 @@ export default function AdminReviewPage() {
     } else {
       setIsLoading(false);
     }
-  }, [status, session?.user?.role, loadSubmissions]);
+  }, [status, session?.user?.role, session?.user?.permissions, loadSubmissions]);
 
   useEffect(() => {
     if (!sortMenuOpen) return;
