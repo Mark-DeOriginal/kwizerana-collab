@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ArrowLeft, ArrowRight, BadgeCheck, Check, ChevronDown, Clock, ImagePlus, Loader2, LogIn, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, ChevronDown, Clock, ImagePlus, Loader2, LogIn, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { compressImage } from "@/lib/p2p/compress-image";
 import { CRYPTO_CURRENCIES, type Currency } from "@/lib/p2p/currencies-shared";
@@ -306,7 +306,6 @@ function OfferList({
   offers,
   loading,
   onSelect,
-  onRefresh,
   activeTradesByAd,
   onResume
 }: {
@@ -320,7 +319,6 @@ function OfferList({
   offers: Offer[];
   loading: boolean;
   onSelect: (offer: Offer) => void;
-  onRefresh: () => void;
   activeTradesByAd: Map<string, Trade>;
   onResume: (trade: Trade) => void;
 }) {
@@ -365,15 +363,6 @@ function OfferList({
           </select>
           <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
         </div>
-        <button
-          onClick={onRefresh}
-          disabled={loading}
-          className="ml-auto flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-ink disabled:cursor-default"
-          aria-label="Refresh vendors"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          <span>{loading ? "Loading…" : `${offers.length} ${offers.length === 1 ? "vendor" : "vendors"}`}</span>
-        </button>
       </div>
 
       {/* Vendor list */}
@@ -613,7 +602,7 @@ function TradeClient() {
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [activeTrade, setActiveTrade] = useState<Trade | null>(null);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
-  const offersCache = useRef<Map<string, Offer[]>>(new Map());
+  const offersStampRef = useRef("");
 
   const loadTrades = useCallback(async () => {
     const res = await fetch("/api/p2p/trades", { cache: "no-store" });
@@ -682,34 +671,32 @@ function TradeClient() {
       });
   }, [status]);
 
-  const loadOffers = useCallback(
-    async (force = false) => {
-      const key = `${side}:${asset}:${fiat}`;
-      if (!force) {
-        const cached = offersCache.current.get(key);
-        if (cached) {
-          setOffers(cached);
-          setOffersLoading(false);
-          return;
-        }
-      }
-      setOffersLoading(true);
-      try {
-        const res = await fetch(`/api/p2p/offers?side=${side}&asset=${asset}&fiat=${fiat}`, { cache: "no-store" });
-        const data = await readJson<{ offers: Offer[] }>(res);
-        const list = data?.offers ?? [];
-        offersCache.current.set(key, list);
+  const loadOffers = useCallback(async () => {
+    setOffersLoading(true);
+    try {
+      const res = await fetch(`/api/p2p/offers?side=${side}&asset=${asset}&fiat=${fiat}`, { cache: "no-store" });
+      const data = await readJson<{ offers: Offer[] }>(res);
+      const list = data?.offers ?? [];
+      const stamp = list
+        .map((o) => `${o.id}:${o.price_value}:${o.price_margin ?? ""}:${o.min_amount}:${o.max_amount}:${o.ad_type}:${o.vendor.id}:${o.vendor.advertiserStatus}:${o.vendor.completionRate}:${o.vendor.totalTrades}:${o.vendor.avgReleaseSeconds}`)
+        .join("|");
+      if (stamp !== offersStampRef.current) {
+        offersStampRef.current = stamp;
         setOffers(list);
-      } finally {
-        setOffersLoading(false);
       }
-    },
-    [side, asset, fiat]
-  );
+    } finally {
+      setOffersLoading(false);
+    }
+  }, [side, asset, fiat]);
 
   useEffect(() => {
     if (status === "authenticated") void loadOffers();
   }, [status, loadOffers]);
+
+  // Vendors auto-refresh silently — new/updated offer lists appear without a refresh button.
+  usePoll(() => {
+    if (status === "authenticated") void loadOffers();
+  }, { intervalMs: 15000, enabled: status === "authenticated" });
 
   const fiatOptions = useMemo(() => currencies.filter((c) => c.is_fiat).map((c) => ({ code: c.code })), [currencies]);
 
@@ -769,9 +756,8 @@ function TradeClient() {
                 fiatOptions={fiatOptions}
                 onFiatChange={setFiat}
                 offers={offers}
-                loading={offersLoading}
+                loading={offersLoading && offers.length === 0}
                 onSelect={(offer) => { setActiveTrade(null); setSelectedOffer(offer); }}
-                onRefresh={() => void loadOffers(true)}
                 activeTradesByAd={activeTradesByAd}
                 onResume={(trade) => {
                   setActiveTrade(trade);

@@ -252,16 +252,10 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
           <PaymentMethodsPanel methods={data?.paymentMethods ?? []} loading={loading && !data} onChanged={load} />
         </div>
 
-        {/* Trade history + counterparties + ads + disputes */}
+{/* Trade history + disputes */}
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Card title="Trade history">
             <TradeHistoryPanel trades={data?.trades ?? []} loading={loading && !data} onChanged={load} />
-          </Card>
-          <Card title="Counterparties">
-            <EmptyState icon={<Users className="h-5 w-5" />} title="No counterparties" subtitle="People you've traded with will appear here." />
-          </Card>
-          <Card title="My ads">
-            <EmptyState icon={<Megaphone className="h-5 w-5" />} title="No ads yet" subtitle="Create buy or sell offers to start trading." cta={<Link href="/p2p-marketplace" className="text-sm font-semibold text-ocean hover:underline">Post an ad</Link>} />
           </Card>
           <Card title="Disputes">
             <EmptyState icon={<Scale className="h-5 w-5" />} title="No disputes" subtitle="Any open or resolved disputes will appear here." />
