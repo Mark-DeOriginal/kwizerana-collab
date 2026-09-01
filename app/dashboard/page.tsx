@@ -801,21 +801,6 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
     const isManaged = Boolean(isSuperAdmin);
     return (
       <Card title="Vendor" action={<span className="flex items-center gap-1 text-xs font-semibold text-moss"><BadgeCheck className="h-4 w-4" />Active</span>}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm leading-6">
-            <p className="font-semibold">{isManaged ? "You manage the Kwizerana DAO vendors" : "You\u2019re a vendor"}</p>
-            <p className="text-muted">
-              Level: <span className="capitalize">{vendor.advertiserLevel}</span> · Selling up to{" "}
-              <span className="font-semibold text-ink">{formatAmount(vendor.availableCrypto)} USDT</span> · Buying with up to{" "}
-              <span className="font-semibold text-ink">${formatAmount(vendor.availableFiat)}</span>
-            </p>
-          </div>
-          <Link href="/p2p-marketplace/trade" className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean">
-            {isManaged ? "Manage listings" : "View your listings"}
-            <ArrowUpRight className="h-4 w-4" />
-          </Link>
-        </div>
-
         {!isManaged && (
           <div className="mt-4 border-t border-line pt-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Receiving payment options</p>
@@ -835,6 +820,8 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
             </Link>
           </div>
         )}
+
+        <InventoryEditor onChanged={onChanged} managed={isManaged} />
 
         {isManaged && (
           <div className="mt-4 border-t border-line pt-3">
@@ -1161,5 +1148,143 @@ function TradeHistoryPanel({ trades, loading, onChanged }: { trades: Trade[]; lo
         );
       })}
     </ul>
+  );
+}
+
+type InventoryEntry = {
+  crypto_currency: string;
+  declared_balance: number;
+  updated_at: string | null;
+};
+
+const INVENTORY_TOKENS = ["USDT", "USDC"];
+
+function InventoryEditor({ onChanged, managed }: { onChanged: () => void; managed?: boolean }) {
+  const [managedVendors, setManagedVendors] = useState<{ id: string; name: string }[]>([]);
+  const [vendorId, setVendorId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [balances, setBalances] = useState<Record<string, string>>({ USDT: "", USDC: "" });
+
+  const applyInventory = (list: InventoryEntry[]) => {
+    setBalances((prev) => {
+      const next = { ...prev };
+      for (const code of INVENTORY_TOKENS) {
+        const entry = list.find((e) => e.crypto_currency === code);
+        next[code] = entry ? String(entry.declared_balance) : prev[code] ?? "";
+      }
+      return next;
+    });
+  };
+
+  const loadInventory = useCallback(async (vid?: string) => {
+    const qs = managed && vid ? `?user_id=${encodeURIComponent(vid)}` : "";
+    const res = await fetch(`/api/p2p/vendor/inventory${qs}`);
+    const data = await readJson<{ inventory?: InventoryEntry[]; managed_vendors?: { id: string; name: string }[] }>(res);
+    if (res.ok && data?.inventory) {
+      applyInventory(data.inventory);
+      if (data.managed_vendors?.length) {
+        setManagedVendors(data.managed_vendors);
+        setVendorId((prev) => (data.managed_vendors!.some((v) => v.id === prev) ? prev : data.managed_vendors![0].id));
+      }
+    }
+  }, [managed]);
+
+  useEffect(() => {
+    void loadInventory();
+  }, [loadInventory]);
+
+  useEffect(() => {
+    if (managed && vendorId) void loadInventory(vendorId);
+  }, [vendorId, managed, loadInventory]);
+
+  const save = async () => {
+    const balancesToSave: Record<string, number> = {};
+    for (const code of INVENTORY_TOKENS) {
+      const raw = balances[code];
+      if (raw === undefined || raw === "") continue;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) {
+        setError(`Enter a valid ${code} amount.`);
+        return;
+      }
+      balancesToSave[code] = value;
+    }
+    if (Object.keys(balancesToSave).length === 0) {
+      setError("Enter an amount for at least one token.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const body: Record<string, unknown> = { balances: balancesToSave };
+      if (managed && vendorId) body.user_id = vendorId;
+      const res = await fetch("/api/p2p/vendor/inventory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await readJson<{ inventory?: InventoryEntry[]; error?: string }>(res);
+      if (!res.ok) {
+        setError(data?.error ?? "Unable to update inventory.");
+        return;
+      }
+      if (data?.inventory) applyInventory(data.inventory);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showVendorSelect = managed && managedVendors.length > 0;
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Inventory for sale</p>
+      <p className="mt-1 text-xs text-muted">
+        Set how much USDC and USDT {managed ? "each vendor" : "you"} have available to sell. Buyers see this as the listing limit, and it updates as trades complete.
+      </p>
+
+      {showVendorSelect && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
+          <select
+            value={vendorId}
+            onChange={(e) => setVendorId(e.target.value)}
+            className="h-9 border border-line bg-white px-2 text-sm outline-none focus:border-ocean"
+          >
+            {managedVendors.map((v) => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {INVENTORY_TOKENS.map((code) => (
+          <label key={code} className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">{code} for sale</span>
+            <input
+              value={balances[code] ?? ""}
+              onChange={(e) => setBalances((prev) => ({ ...prev, [code]: e.target.value }))}
+              type="number"
+              min="0"
+              step="any"
+              placeholder="0"
+              className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+            />
+          </label>
+        ))}
+      </div>
+
+      <button
+        onClick={() => void save()}
+        disabled={busy || (showVendorSelect && !vendorId)}
+        className="mt-2 flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+      </button>
+      {error && <p className="mt-1 text-xs font-semibold text-coral">{error}</p>}
+    </div>
   );
 }

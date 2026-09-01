@@ -129,6 +129,10 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const [disputeReason, setDisputeReason] = useState("");
   const [showDispute, setShowDispute] = useState(false);
   const [disputeCountdown, setDisputeCountdown] = useState(0);
+  const [showDecline, setShowDecline] = useState(false);
+  const [declineFeedback, setDeclineFeedback] = useState("");
+  const [confirmBalance, setConfirmBalance] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const allowRoleSwitch = trade.can_act_as_buyer && trade.can_act_as_seller;
   const [viewRole, setViewRole] = useState<"buyer" | "seller">(trade.my_role === "buyer" ? "buyer" : "seller");
@@ -158,6 +162,23 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   }, [trade.status, trade.buyer_paid_at]);
 
   const disputeReady = trade.status === "payment_sent" && disputeCountdown === 0;
+
+  // Pre-fill the vendor's remaining balance for this token after a completed trade.
+  const confirmEligible = trade.status === "completed" && !trade.inventory_confirmed_at && !isBuyer;
+  const prefillInventory = useCallback(async () => {
+    if (!confirmEligible) return;
+    const res = await fetch("/api/p2p/vendor/inventory");
+    const data = await readJson<{ inventory?: { crypto_currency: string; declared_balance: number }[] }>(res);
+    if (res.ok && data?.inventory) {
+      const entry = data.inventory.find((e) => e.crypto_currency === trade.crypto_currency);
+      if (entry) setConfirmBalance(String(entry.declared_balance));
+    }
+    setShowConfirm(true);
+  }, [confirmEligible, trade.crypto_currency]);
+
+  useEffect(() => {
+    void prefillInventory();
+  }, [prefillInventory]);
 
   const doAction = useCallback(
     async (action: string, payload: Record<string, unknown> = {}): Promise<boolean> => {
@@ -206,6 +227,28 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
     setShowDispute(false);
     setDisputeReason("");
     onRefresh();
+  };
+
+  const doConfirmInventory = async (declaredBalance: string) => {
+    const value = Number(declaredBalance);
+    if (!Number.isFinite(value) || value < 0) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/p2p/trades/${trade.id}/confirm-inventory`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ declared_balance: value })
+      });
+      const data = await readJson<{ error?: string }>(res);
+      if (!res.ok) {
+        setError(data?.error ?? "Unable to confirm inventory.");
+        return;
+      }
+      onRefresh();
+    } finally {
+      setBusy(false);
+    }
   };
 
   const formatCountdown = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
@@ -311,6 +354,36 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
       {terminalBanner}
 
+      {/* Post-completion inventory confirm */}
+      {showConfirm && confirmEligible && (
+        <div className="border border-mint/40 bg-mint/10 p-4 text-sm">
+          <p className="flex items-center gap-1.5 font-semibold">
+            <Check className="h-4 w-4 text-moss" /> Confirm remaining inventory
+          </p>
+          <p className="mt-1 text-muted">
+            This trade sold {fn(trade.crypto_amount, 6)} {trade.crypto_currency}. Confirm how much {trade.crypto_currency} you still have for sale.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={confirmBalance}
+              onChange={(e) => setConfirmBalance(e.target.value)}
+              placeholder={`Remaining ${trade.crypto_currency} for sale`}
+              className="h-9 w-40 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+            />
+            <button
+              onClick={() => void doConfirmInventory(confirmBalance)}
+              disabled={busy || confirmBalance === ""}
+              className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Order summary */}
       <div className="space-y-2 border border-line bg-white p-4 text-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">Order summary</p>
@@ -371,18 +444,79 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               onCompleted={(txHash) => void doAction("accept", { wallet_address: address, tx_hash: txHash })}
               onError={setError}
             />
+            {!showDecline ? (
+              <button
+                onClick={() => setShowDecline(true)}
+                disabled={busy}
+                className="flex h-10 w-full items-center justify-center gap-2 border border-coral/40 text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white disabled:opacity-60"
+              >
+                Decline this order
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2 border border-coral/40 bg-coral/5 p-3">
+                <p className="text-sm font-semibold text-coral">Why are you declining?</p>
+                <textarea
+                  value={declineFeedback}
+                  onChange={(e) => setDeclineFeedback(e.target.value)}
+                  placeholder="Tell the buyer why this order can't proceed (e.g. out of inventory)..."
+                  rows={3}
+                  className="border border-line bg-white px-3 py-2 text-sm outline-none focus:border-coral"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void doAction("decline", { decline_feedback: declineFeedback })}
+                    disabled={busy || !declineFeedback.trim()}
+                    className="h-9 bg-coral px-4 text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60"
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline order"}
+                  </button>
+                  <button
+                    onClick={() => { setShowDecline(false); setDeclineFeedback(""); }}
+                    disabled={busy}
+                    className="h-9 border border-line px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
           </>
         )}
 
-        {/* Buyer: created → awaiting vendor approval */}
+        {/* Buyer: created → awaiting vendor approval (or declined banner + proceed) */}
         {isBuyer && trade.status === "created" && (
           <>
-            <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
-              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
-              <p className="text-muted">Your order was sent to {counterparty}. You&apos;ll be notified once they approve it and lock the escrow.</p>
-            </div>
-            <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+            {trade.decline_feedback ? (
+              <div className="flex flex-col gap-2.5 border border-coral/40 bg-coral/5 p-3">
+                <div className="flex items-start gap-2">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-coral">{counterparty} declined your order</p>
+                    <p className="mt-1 text-muted">&ldquo;{trade.decline_feedback}&rdquo;</p>
+                    <p className="mt-1 text-xs text-muted">You can cancel the order, or proceed anyway and ask {counterparty} to approve it.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => void doAction("proceed")}
+                    disabled={busy}
+                    className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+                  >
+                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Proceed anyway"}
+                  </button>
+                  <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
+                  <p className="text-muted">Your order was sent to {counterparty}. You&apos;ll be notified once they approve it and lock the escrow.</p>
+                </div>
+                <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+              </>
+            )}
           </>
         )}
 

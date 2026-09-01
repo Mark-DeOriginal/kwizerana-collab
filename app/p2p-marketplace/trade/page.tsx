@@ -260,9 +260,13 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume }: { offer: Of
             {formatNumber(offer.price_value)} {offer.fiat_currency}
           </p>
 
-          <p className="mt-1 text-sm text-muted">
-            Limits: {formatNumber(offer.min_amount)} – {formatNumber(offer.max_amount)} {offer.fiat_currency}
-          </p>
+          {side === "buy" && offer.vendor.balance > 0 && (
+            <p className="mt-1 text-xs font-semibold text-moss">
+              {offer.vendor.balance <= offer.vendor.limitMin
+                ? `Limit: ${formatNumber(offer.vendor.balance)} ${offer.crypto_currency}`
+                : `Limit: ${formatNumber(offer.vendor.limitMin)} - ${formatNumber(offer.vendor.balance)} ${offer.crypto_currency}`}
+            </p>
+          )}
 
           <div className="mt-3 flex flex-wrap gap-1.5">
             {offer.payment_methods.map((pm) => (
@@ -678,7 +682,7 @@ function TradeClient() {
       const data = await readJson<{ offers: Offer[] }>(res);
       const list = data?.offers ?? [];
       const stamp = list
-        .map((o) => `${o.id}:${o.price_value}:${o.price_margin ?? ""}:${o.min_amount}:${o.max_amount}:${o.ad_type}:${o.vendor.id}:${o.vendor.advertiserStatus}:${o.vendor.completionRate}:${o.vendor.totalTrades}:${o.vendor.avgReleaseSeconds}`)
+        .map((o) => `${o.id}:${o.price_value}:${o.price_margin ?? ""}:${o.min_amount}:${o.max_amount}:${o.ad_type}:${o.vendor.id}:${o.vendor.advertiserStatus}:${o.vendor.completionRate}:${o.vendor.totalTrades}:${o.vendor.avgReleaseSeconds}:${o.vendor.balance}`)
         .join("|");
       if (stamp !== offersStampRef.current) {
         offersStampRef.current = stamp;

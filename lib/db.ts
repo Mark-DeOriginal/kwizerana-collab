@@ -336,11 +336,23 @@ const schemaStatements = [
     used_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS p2p_vendor_inventory (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    crypto_currency TEXT NOT NULL,
+    declared_balance NUMERIC NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, crypto_currency)
+  )`,
+  `CREATE INDEX IF NOT EXISTS p2p_vendor_inventory_user_idx ON p2p_vendor_inventory(user_id)`,
 
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt_image TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS escrow_locked_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS decline_feedback TEXT`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS declined_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS inventory_confirmed_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS funded_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS claim_tx_hash TEXT`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS refund_tx_hash TEXT`,

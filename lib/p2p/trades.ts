@@ -79,6 +79,9 @@ export type Trade = {
   created_at: string;
   escrow_locked_at: string | null;
   claimed_at: string | null;
+  decline_feedback: string | null;
+  declined_at: string | null;
+  inventory_confirmed_at: string | null;
   seller_wallet_address: string | null;
   buyer_wallet_address: string | null;
   escrow_status: string | null;
@@ -159,7 +162,7 @@ const TRADE_SELECT = `
            t.price_at_trade::TEXT AS price_at_trade,
            t.status, t.buyer_id, t.seller_id,
            t.buyer_paid_at, t.released_at, t.expires_at, t.created_at,
-           t.escrow_locked_at, t.claimed_at,
+           t.escrow_locked_at, t.claimed_at, t.decline_feedback, t.declined_at, t.inventory_confirmed_at,
            t.seller_wallet_address, t.buyer_wallet_address,
            buyer.name AS buyer_name, seller.name AS seller_name,
            pm.method_name AS payment_method_name, pm.method_type AS payment_method_type,
@@ -311,7 +314,7 @@ export async function listTrades(userId: string, isSuperAdmin = false): Promise<
   return rows.map((row) => mapTrade(row, userId, ownedVendorIds, isSuperAdmin));
 }
 
-export type TradeAction = "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund";
+export type TradeAction = "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "decline" | "proceed";
 
 export type TradeActionInput = {
   receipt?: string;
@@ -319,6 +322,7 @@ export type TradeActionInput = {
   walletAddress?: string;
   txHash?: string;
   destAddress?: string;
+  declineFeedback?: string;
 };
 
 const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) => string }> = {
@@ -345,6 +349,14 @@ const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) =>
   refund: {
     title: "Escrow refunded",
     body: (ref) => `The escrow for ${ref} was refunded to the seller.`
+  },
+  decline: {
+    title: "Order declined by vendor",
+    body: (ref) => `The vendor declined your order ${ref}.`
+  },
+  proceed: {
+    title: "Order approved to proceed",
+    body: (ref) => `The buyer chose to proceed with order ${ref}.`
   }
 };
 
@@ -420,6 +432,22 @@ export async function applyTradeAction(
       escrowStatus = "refunded";
       break;
     }
+    case "decline": {
+      if (!isSeller) throw new Error("Only the vendor can decline this order.");
+      if (status !== "created") throw new Error("This order is no longer awaiting approval.");
+      if (!input.declineFeedback?.trim()) throw new Error("Please provide a reason for declining the order.");
+      // Order stays in "created"; feedback is recorded for the buyer to review.
+      break;
+    }
+    case "proceed": {
+      if (!isBuyer) throw new Error("Only the buyer can choose to proceed.");
+      if (status !== "created" || !row.decline_feedback) {
+        throw new Error("There is no declined order to proceed with.");
+      }
+      // Buyer chose to proceed despite vendor's feedback; clear the feedback and continue as normal.
+      newStatus = status;
+      break;
+    }
   }
 
   await dbQuery(
@@ -433,9 +461,13 @@ export async function applyTradeAction(
         seller_wallet_address = COALESCE($3, seller_wallet_address),
         receipt = COALESCE($4, receipt),
         receipt_image = COALESCE($5, receipt_image),
+        declined_at = CASE WHEN $7 = 'decline' THEN NOW() ELSE declined_at END,
+        decline_feedback = CASE WHEN $7 = 'proceed' THEN NULL
+                                WHEN $7 = 'decline' THEN $6
+                                ELSE decline_feedback END,
         updated_at = NOW()
       WHERE id = $1`,
-    [tradeId, newStatus, input.walletAddress ?? null, input.receipt ?? null, input.receiptImage ?? null]
+    [tradeId, newStatus, input.walletAddress ?? null, input.receipt ?? null, input.receiptImage ?? null, input.declineFeedback ?? null, action]
   );
 
   const escrowTx = input.txHash ?? null;
@@ -465,6 +497,17 @@ export async function applyTradeAction(
            updated_at = NOW()
        WHERE id = $1 OR id = $2`,
       [row.buyer_id, row.seller_id]
+    );
+  }
+
+  // Auto-decrement the seller's declared inventory when a trade completes.
+  if (newStatus === "completed") {
+    await dbQuery(
+      `UPDATE p2p_vendor_inventory
+       SET declared_balance = GREATEST(declared_balance - $3::numeric, 0),
+           updated_at = NOW()
+       WHERE user_id = $1 AND crypto_currency = $2`,
+      [row.seller_id, row.crypto_currency, toNumber(row.crypto_amount)]
     );
   }
 
@@ -523,4 +566,41 @@ export async function getEscrowForTrade(tradeId: string): Promise<{
     },
     releaseTo: r.release_to
   };
+}
+
+/**
+ * Vendor confirms the absolute remaining balance after a completed trade.
+ * Sets the vendor's declared inventory to the reported balance and stamps
+ * `inventory_confirmed_at` on the trade. Only the seller of a completed trade
+ * can do this.
+ */
+export async function confirmInventory(userId: string, tradeId: string, declaredBalance: number): Promise<Trade> {
+  await ensureDatabase();
+  const ownedVendorIds = await getOwnedVendorIds(userId);
+  const allIds = [userId, ...Array.from(ownedVendorIds)];
+  const rows = await dbQuery<TradeRow>(
+    `${TRADE_SELECT} WHERE t.id = $1 AND (t.buyer_id = ANY($2) OR t.seller_id = ANY($2))`,
+    [tradeId, allIds]
+  );
+  const row = rows[0];
+  if (!row) throw new Error("Trade not found.");
+
+  const isSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds);
+  if (!isSeller) throw new Error("Only the vendor can confirm inventory.");
+  if (row.status !== "completed") throw new Error("Inventory can only be confirmed after the trade completes.");
+
+  await dbQuery(
+    `INSERT INTO p2p_vendor_inventory (user_id, crypto_currency, declared_balance, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (user_id, crypto_currency)
+     DO UPDATE SET declared_balance = $3, updated_at = NOW()`,
+    [row.seller_id, row.crypto_currency, declaredBalance]
+  );
+
+  await dbQuery(
+    `UPDATE p2p_trades SET inventory_confirmed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+    [tradeId]
+  );
+
+  return getTrade(userId, tradeId, ownedVendorIds);
 }

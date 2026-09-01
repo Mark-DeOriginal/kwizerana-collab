@@ -40,7 +40,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const action = String(body.action ?? "");
-  const validActions: TradeAction[] = ["accept", "mark_paid", "release", "claim", "cancel", "refund"];
+  const validActions: TradeAction[] = ["accept", "mark_paid", "release", "claim", "cancel", "refund", "decline", "proceed"];
   if (!validActions.includes(action as TradeAction)) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
@@ -50,7 +50,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     receiptImage: body.receipt_image ? String(body.receipt_image) : undefined,
     walletAddress: body.wallet_address ? String(body.wallet_address) : undefined,
     txHash: body.tx_hash ? String(body.tx_hash) : undefined,
-    destAddress: body.dest_address ? String(body.dest_address) : undefined
+    destAddress: body.dest_address ? String(body.dest_address) : undefined,
+    declineFeedback: body.decline_feedback ? String(body.decline_feedback) : undefined
   };
 
   try {

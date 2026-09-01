@@ -96,6 +96,18 @@ async function seedDefaultVendors(): Promise<void> {
       [vendorId, email, vendorName, adminUserId]
     );
 
+    // Seed a default declared balance for sale per token so seeded vendors
+    // appear on the trade page (per-token gating requires balance > 0).
+    const defaultInventory = Number(process.env.DAOVENDOR_INVENTORY ?? 100000);
+    for (const crypto of CRYPTO_CURRENCIES) {
+      await dbQuery(
+        `INSERT INTO p2p_vendor_inventory (user_id, crypto_currency, declared_balance, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (user_id, crypto_currency) DO NOTHING`,
+        [vendorId, crypto, defaultInventory]
+      );
+    }
+
     let pmRows = await dbQuery<{ id: string; method_type: string; method_name: string; details: string }>(
       `SELECT id::TEXT AS id, method_type, method_name, details::TEXT AS details
        FROM p2p_payment_methods WHERE user_id = $1 ORDER BY id ASC`,

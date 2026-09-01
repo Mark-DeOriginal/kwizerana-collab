@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { hasPermission, isAdminEmail } from "@/lib/roles";
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import { createNotification } from "@/lib/p2p/notifications";
+import { ensureVendorListings } from "@/lib/p2p/vendor";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       `UPDATE users SET p2p_advertiser_status = 'general', p2p_advertiser_level = 'beginner', updated_at = NOW() WHERE id = $1`,
       [appRow.user_id]
     );
+
+    // Provision the vendor's listings from their application so they actually
+    // appear on the trade page once they declare inventory.
+    await ensureVendorListings(appRow.user_id);
 
     await createNotification(appRow.user_id, {
       type: "vendor_approved",

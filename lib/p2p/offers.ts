@@ -9,6 +9,10 @@ export type OfferVendor = {
   completionRate: number;
   totalTrades: number;
   avgReleaseSeconds: number;
+  // Vendor-declared balance of the offer's token available for sale.
+  balance: number;
+  // Minimum floor for the displayed limit.
+  limitMin: number;
 };
 
 export type OfferPaymentMethod = {
@@ -55,7 +59,11 @@ type AdRow = {
   p2p_completion_rate_30d: string;
   p2p_total_trades: string;
   p2p_avg_release_seconds: string;
+  declared_balance: string | null;
 };
+
+// The minimum floor for a listing's displayed limit.
+export const CRYPTO_LIMIT_MIN = 10;
 
 export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<Offer[]> {
   await ensureDatabase();
@@ -69,9 +77,11 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
             a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
             u.id AS vendor_id, u.name AS vendor_name,
             u.p2p_advertiser_status, u.p2p_advertiser_level, u.p2p_verified_tier,
-            u.p2p_completion_rate_30d, u.p2p_total_trades, u.p2p_avg_release_seconds
+            u.p2p_completion_rate_30d, u.p2p_total_trades, u.p2p_avg_release_seconds,
+            inv.declared_balance::TEXT AS declared_balance
      FROM p2p_ads a
      JOIN users u ON u.id = a.user_id
+     LEFT JOIN p2p_vendor_inventory inv ON inv.user_id = a.user_id AND inv.crypto_currency = a.crypto_currency
      WHERE a.status = 'active' AND a.is_paused = FALSE
        AND a.ad_type = $1 AND a.crypto_currency = $2 AND a.fiat_currency = $3`,
     [adType, asset, fiat]
@@ -96,32 +106,41 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
     }
   }
 
-  const offers: Offer[] = rows.map((row) => ({
-    id: row.id,
-    ad_type: row.ad_type as "buy" | "sell",
-    crypto_currency: row.crypto_currency,
-    fiat_currency: row.fiat_currency,
-    price_type: row.price_type,
-    price_value: Number(row.price_value),
-    price_margin: row.price_margin == null ? null : Number(row.price_margin),
-    min_amount: Number(row.min_amount),
-    max_amount: Number(row.max_amount),
-    vendor: {
-      id: row.vendor_id,
-      name: row.vendor_name,
-      advertiserStatus: row.p2p_advertiser_status,
-      advertiserLevel: row.p2p_advertiser_level,
-      verifiedTier: row.p2p_verified_tier,
-      completionRate: Number(row.p2p_completion_rate_30d),
-      totalTrades: Number(row.p2p_total_trades),
-      avgReleaseSeconds: Number(row.p2p_avg_release_seconds)
-    },
-    payment_methods: methodsByVendor.get(row.vendor_id) ?? []
-  }));
+  const offers: Offer[] = rows.map((row) => {
+    const declared = row.declared_balance == null ? 0 : Number(row.declared_balance);
+    return {
+      id: row.id,
+      ad_type: row.ad_type as "buy" | "sell",
+      crypto_currency: row.crypto_currency,
+      fiat_currency: row.fiat_currency,
+      price_type: row.price_type,
+      price_value: Number(row.price_value),
+      price_margin: row.price_margin == null ? null : Number(row.price_margin),
+      min_amount: Number(row.min_amount),
+      max_amount: Number(row.max_amount),
+      vendor: {
+        id: row.vendor_id,
+        name: row.vendor_name,
+        advertiserStatus: row.p2p_advertiser_status,
+        advertiserLevel: row.p2p_advertiser_level,
+        verifiedTier: row.p2p_verified_tier,
+        completionRate: Number(row.p2p_completion_rate_30d),
+        totalTrades: Number(row.p2p_total_trades),
+        avgReleaseSeconds: Number(row.p2p_avg_release_seconds),
+        balance: declared,
+        limitMin: CRYPTO_LIMIT_MIN
+      },
+      payment_methods: methodsByVendor.get(row.vendor_id) ?? []
+    };
+  });
 
-  offers.sort((a, b) =>
+  // Only show listings whose vendor has a >0 declared balance for that token.
+  // Per-token gating: each token's ads are gated by that token's declared amount.
+  const visible = offers.filter((o) => o.vendor.balance > 0);
+
+  visible.sort((a, b) =>
     side === "buy" ? a.price_value - b.price_value : b.price_value - a.price_value
   );
 
-  return offers;
+  return visible;
 }
