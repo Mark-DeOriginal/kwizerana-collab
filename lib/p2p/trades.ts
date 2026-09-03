@@ -1,6 +1,9 @@
 import { randomBytes } from "crypto";
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import { createNotification, updateTradeNotification } from "@/lib/p2p/notifications";
+import { getFees } from "@/lib/p2p/fees";
+import { getLiveRate } from "@/lib/p2p/price-feed";
+import { SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
 
 function fmtCryptoAmount(n: number): string {
   if (!Number.isFinite(n)) return "0";
@@ -64,6 +67,8 @@ export type Trade = {
   fiat_currency: string;
   fiat_amount: number;
   price_at_trade: number;
+  fee_rate: number;
+  release_hold_minutes: number;
   status: string;
   buyer_id: string;
   seller_id: string;
@@ -118,10 +123,12 @@ export const TRADE_STATUS_LABELS: Record<string, string> = {
   disputed: "Disputed"
 };
 
-type TradeRow = Omit<Trade, "crypto_amount" | "fiat_amount" | "price_at_trade" | "my_role" | "payment_details"> & {
+type TradeRow = Omit<Trade, "crypto_amount" | "fiat_amount" | "price_at_trade" | "fee_rate" | "release_hold_minutes" | "my_role" | "payment_details"> & {
   crypto_amount: string;
   fiat_amount: string;
   price_at_trade: string;
+  fee_rate: string;
+  release_hold_minutes: string;
   payment_details: string | null;
 };
 
@@ -160,6 +167,8 @@ const TRADE_SELECT = `
            t.crypto_currency, t.chain, t.crypto_amount::TEXT AS crypto_amount,
            t.fiat_currency, t.fiat_amount::TEXT AS fiat_amount,
            t.price_at_trade::TEXT AS price_at_trade,
+           t.fee_rate::TEXT AS fee_rate,
+           t.release_hold_minutes::TEXT AS release_hold_minutes,
            t.status, t.buyer_id, t.seller_id,
            t.buyer_paid_at, t.released_at, t.expires_at, t.created_at,
            t.escrow_locked_at, t.claimed_at, t.decline_feedback, t.declined_at, t.inventory_confirmed_at,
@@ -192,6 +201,8 @@ function mapTrade(row: TradeRow, userId: string, ownedVendorIds?: Set<string>, i
     crypto_amount: toNumber(row.crypto_amount),
     fiat_amount: toNumber(row.fiat_amount),
     price_at_trade: toNumber(row.price_at_trade),
+    fee_rate: toNumber(row.fee_rate),
+    release_hold_minutes: toNumber(row.release_hold_minutes),
     payment_details: parseDetails(payment_details),
     my_role: myRole,
     can_act_as_buyer: canActAsBuyer,
@@ -216,23 +227,51 @@ export async function createTrade(
     ad_type: string;
     crypto_currency: string;
     fiat_currency: string;
+    price_type: string;
     price_value: string;
+    price_margin: string | null;
     min_amount: string;
     max_amount: string;
+    vendor_fee_percent: string;
   }>(
-    `SELECT id::TEXT AS id, user_id, ad_type, crypto_currency, fiat_currency,
-            price_value::TEXT AS price_value, min_amount::TEXT AS min_amount, max_amount::TEXT AS max_amount
-     FROM p2p_ads WHERE id = $1 AND status = 'active' AND is_paused = FALSE`,
+    `SELECT a.id::TEXT AS id, a.user_id, a.ad_type, a.crypto_currency, a.fiat_currency,
+            a.price_type, a.price_value::TEXT AS price_value, a.price_margin::TEXT AS price_margin,
+            a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
+            u.vendor_fee_percent::TEXT AS vendor_fee_percent
+     FROM p2p_ads a
+     JOIN users u ON u.id = a.user_id
+     WHERE a.id = $1 AND a.status = 'active' AND a.is_paused = FALSE`,
     [input.adId]
   );
   const ad = ads[0];
   if (!ad) throw new Error("Vendor is no longer available.");
 
-  const price = toNumber(ad.price_value);
+  const vendorFee = Number(ad.vendor_fee_percent) || 0;
+  const standardRate = await getLiveRate(ad.crypto_currency, ad.fiat_currency);
+  const direction = ad.ad_type === "sell" ? 1 : -1;
+  const price = Number((standardRate * (1 + (direction * vendorFee) / 100)).toFixed(2));
   const fiatAmount = input.cryptoAmount * price;
 
   if (fiatAmount < toNumber(ad.min_amount) || fiatAmount > toNumber(ad.max_amount)) {
     throw new Error("Amount is outside the vendor's limits.");
+  }
+
+  const fees = await getFees(ad.crypto_currency, ad.fiat_currency);
+  const feeRate = fees.takerFee;
+
+  // Snapshot the release hold for the chosen payment method (high-risk methods
+  // such as PayPal hold funds after payment to reduce chargeback risk).
+  let releaseHoldMinutes = 0;
+  if (input.paymentMethodId) {
+    const pmRows = await dbQuery<{ method_name: string }>(
+      `SELECT method_name FROM p2p_payment_methods WHERE id = $1`,
+      [input.paymentMethodId]
+    );
+    const name = pmRows[0]?.method_name;
+    if (name) {
+      const match = SUPPORTED_METHODS.find((s) => s.name.toLowerCase() === name.toLowerCase());
+      releaseHoldMinutes = match?.hold_period_minutes ?? 0;
+    }
   }
 
   // Buy offer (ad_type 'sell') → vendor is the seller, initiator is the buyer.
@@ -248,10 +287,10 @@ export async function createTrade(
   const inserted = await dbQuery<{ id: string }>(
     `INSERT INTO p2p_trades (trade_ref, payment_reference, ad_id, buyer_id, seller_id,
         crypto_currency, chain, crypto_amount, fiat_currency, fiat_amount, price_at_trade,
-        payment_method_id, buyer_wallet_address, status, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'avalanche', $7, $8, $9, $10, $11, $12, 'created', NOW() + INTERVAL '30 minutes')
+        fee_rate, release_hold_minutes, payment_method_id, buyer_wallet_address, status, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, 'avalanche', $7, $8, $9, $10, $11, $12, $13, $14, 'created', NOW() + INTERVAL '30 minutes')
      RETURNING id::TEXT AS id`,
-    [tradeRef, paymentReference, ad.id, buyerId, sellerId, ad.crypto_currency, input.cryptoAmount, ad.fiat_currency, fiatAmount, price, input.paymentMethodId ?? null, buyerWalletAddress]
+    [tradeRef, paymentReference, ad.id, buyerId, sellerId, ad.crypto_currency, input.cryptoAmount, ad.fiat_currency, fiatAmount, price, feeRate, releaseHoldMinutes, input.paymentMethodId ?? null, buyerWalletAddress]
   );
   const tradeId = inserted[0].id;
 
@@ -297,7 +336,7 @@ export async function getTrade(userId: string, tradeId: string, ownedVendorIds?:
   return mapTrade(row, userId, ownedVendorIds, isSuperAdmin);
 }
 
-export async function listTrades(userId: string, isSuperAdmin = false): Promise<Trade[]> {
+export async function expireStaleTrades(): Promise<number> {
   await ensureDatabase();
   const expired = await dbQuery<{ id: string }>(
     `UPDATE p2p_trades SET status = 'expired', updated_at = NOW()
@@ -305,6 +344,11 @@ export async function listTrades(userId: string, isSuperAdmin = false): Promise<
      RETURNING id`
   );
   for (const row of expired) await syncTradeNotification(row.id);
+  return expired.length;
+}
+
+export async function listTrades(userId: string, isSuperAdmin = false): Promise<Trade[]> {
+  await expireStaleTrades();
   const ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];
   const rows = await dbQuery<TradeRow>(
@@ -403,6 +447,12 @@ export async function applyTradeAction(
     case "release": {
       if (!isSeller) throw new Error("Only the seller can confirm the payment.");
       if (status !== "payment_sent") throw new Error("There is no payment to confirm yet.");
+      if (toNumber(row.release_hold_minutes) > 0 && row.buyer_paid_at) {
+        const readyAt = new Date(row.buyer_paid_at).getTime() + toNumber(row.release_hold_minutes) * 60000;
+        if (Date.now() < readyAt) {
+          throw new Error(`This payment method holds funds for ${toNumber(row.release_hold_minutes)} minutes. You can release at ${new Date(readyAt).toLocaleTimeString()}.`);
+        }
+      }
       newStatus = "released";
       escrowStatus = "released";
       break;

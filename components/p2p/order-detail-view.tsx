@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -24,6 +24,7 @@ import {
   ReceiveCryptoButton,
   RefundEscrowButton
 } from "@/components/p2p/escrow-wallet";
+import { TradeChat } from "@/components/p2p/trade-chat";
 
 function fn(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) value = 0;
@@ -354,6 +355,8 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
       {terminalBanner}
 
+      <TradeChat tradeId={trade.id} myRole={isBuyer ? "buyer" : "seller"} />
+
       {/* Post-completion inventory confirm */}
       {showConfirm && confirmEligible && (
         <div className="border border-mint/40 bg-mint/10 p-4 text-sm">
@@ -586,6 +589,14 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         {/* Seller: payment_sent → confirm + release */}
         {!isBuyer && trade.status === "payment_sent" && (
           <>
+            {trade.release_hold_minutes > 0 && (
+              <div className="flex items-start gap-2 border border-coral/30 bg-coral/5 p-3 text-sm">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
+                <p className="text-muted">
+                  This payment method has a {trade.release_hold_minutes}-minute safety hold after payment. You can release once the hold elapses.
+                </p>
+              </div>
+            )}
             <ConfirmReleaseButton
               trade={trade}
               onCompleted={(txHash) => void doAction("release", { tx_hash: txHash })}

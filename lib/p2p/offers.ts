@@ -1,4 +1,7 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
+import { listAllFees } from "@/lib/p2p/fees";
+import { listLiveRates } from "@/lib/p2p/price-feed";
+import { SEED_RATES } from "@/lib/p2p/currencies-shared";
 
 export type OfferVendor = {
   id: string;
@@ -13,6 +16,8 @@ export type OfferVendor = {
   balance: number;
   // Minimum floor for the displayed limit.
   limitMin: number;
+  // Vendor's custom fee percentage applied on top of the standard rate.
+  vendorFeePercent: number;
 };
 
 export type OfferPaymentMethod = {
@@ -31,6 +36,7 @@ export type Offer = {
   price_margin: number | null;
   min_amount: number;
   max_amount: number;
+  takerFeeRate: number;
   vendor: OfferVendor;
   payment_methods: OfferPaymentMethod[];
 };
@@ -53,6 +59,7 @@ type AdRow = {
   max_amount: string;
   vendor_id: string;
   vendor_name: string;
+  vendor_fee_percent: string;
   p2p_advertiser_status: string;
   p2p_advertiser_level: string;
   p2p_verified_tier: string;
@@ -76,6 +83,7 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
             a.price_value::TEXT AS price_value, a.price_margin::TEXT AS price_margin,
             a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
             u.id AS vendor_id, u.name AS vendor_name,
+            u.vendor_fee_percent::TEXT AS vendor_fee_percent,
             u.p2p_advertiser_status, u.p2p_advertiser_level, u.p2p_verified_tier,
             u.p2p_completion_rate_30d, u.p2p_total_trades, u.p2p_avg_release_seconds,
             inv.declared_balance::TEXT AS declared_balance
@@ -106,18 +114,30 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
     }
   }
 
+  const fees = await listAllFees();
+  const liveRates = await listLiveRates();
+
   const offers: Offer[] = rows.map((row) => {
     const declared = row.declared_balance == null ? 0 : Number(row.declared_balance);
+    const vendorFee = Number(row.vendor_fee_percent) || 0;
+    const standardRate = liveRates[`${row.crypto_currency}:${row.fiat_currency}`] ?? SEED_RATES[row.fiat_currency] ?? Number(row.price_value);
+    // Sell ads: vendor sells at standard rate + fee (higher price for buyer)
+    // Buy ads: vendor buys at standard rate - fee (lower price for seller)
+    const direction = row.ad_type === "sell" ? 1 : -1;
+    const price = Number((standardRate * (1 + (direction * vendorFee) / 100)).toFixed(2));
+    const fee = fees[`${row.crypto_currency}:${row.fiat_currency}`];
+
     return {
       id: row.id,
       ad_type: row.ad_type as "buy" | "sell",
       crypto_currency: row.crypto_currency,
       fiat_currency: row.fiat_currency,
       price_type: row.price_type,
-      price_value: Number(row.price_value),
-      price_margin: row.price_margin == null ? null : Number(row.price_margin),
+      price_value: price,
+      price_margin: vendorFee,
       min_amount: Number(row.min_amount),
       max_amount: Number(row.max_amount),
+      takerFeeRate: fee?.takerFee ?? 0,
       vendor: {
         id: row.vendor_id,
         name: row.vendor_name,
@@ -128,7 +148,8 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
         totalTrades: Number(row.p2p_total_trades),
         avgReleaseSeconds: Number(row.p2p_avg_release_seconds),
         balance: declared,
-        limitMin: CRYPTO_LIMIT_MIN
+        limitMin: CRYPTO_LIMIT_MIN,
+        vendorFeePercent: vendorFee
       },
       payment_methods: methodsByVendor.get(row.vendor_id) ?? []
     };

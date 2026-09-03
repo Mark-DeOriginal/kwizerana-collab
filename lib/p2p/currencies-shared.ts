@@ -37,21 +37,21 @@ export const FIAT_CURRENCIES: FiatSeed[] = [
 ];
 
 // Approximate initial rates: fiat units per 1 USDT/USDC.
-// Refreshed by the live price feed in Phase 2.
+// Admin can update these via the dashboard or auto-refresh from CoinGecko.
 export const SEED_RATES: Record<string, number> = {
   USD: 1,
-  EUR: 1.08,
-  GBP: 1.27,
+  EUR: 0.85,
+  GBP: 0.74,
   CAD: 1.36,
-  NGN: 1600,
+  NGN: 1530,
   KES: 129,
-  GHS: 15.5,
-  ZAR: 18.5,
-  UGX: 3700,
-  INR: 84,
-  PHP: 58,
-  VND: 25000,
-  THB: 34,
+  GHS: 12.5,
+  ZAR: 17.8,
+  UGX: 3750,
+  INR: 83.5,
+  PHP: 56,
+  VND: 25500,
+  THB: 33,
   AED: 3.67,
   SAR: 3.75
 };

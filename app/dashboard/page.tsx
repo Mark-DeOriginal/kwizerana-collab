@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
@@ -8,9 +8,9 @@ import {
   ArrowUpRight,
   BadgeCheck,
   Banknote,
+  Bell,
   Check,
   CheckCircle2,
-  ChevronRight,
   Clock,
   Copy,
   History,
@@ -25,6 +25,7 @@ import {
   Scale,
   ShieldCheck,
   Star,
+  ThumbsUp,
   Trash2,
   TrendingUp,
   Users,
@@ -38,10 +39,12 @@ import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import type { P2PNotification } from "@/lib/p2p/notifications";
 import type { CurrencyRate } from "@/lib/p2p/currencies-shared";
 import type { VendorStatus } from "@/lib/p2p/vendor";
+import type { Review } from "@/lib/p2p/reviews";
+import type { DisputeDetail } from "@/lib/p2p/disputes";
 import { ACTIVE_TRADE_STATUSES, type Trade } from "@/lib/p2p/trades";
 import { OrderDetailView, TradeOrderCard } from "@/components/p2p/order-detail-view";
 import { Modal } from "@/components/p2p/modal";
-import { useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
+import { useTradeSubscription, isTerminalTrade, useRealtimeFeed } from "@/lib/p2p/use-realtime";
 import { useAccount, useDisconnect, useReadContract } from "wagmi";
 import { formatUnits } from "viem";
 import { AVALANCHE_TOKENS, ERC20_ABI, explorerAddressUrl } from "@/lib/web3/escrow";
@@ -54,6 +57,9 @@ type DashboardData = {
   notifications: P2PNotification[];
   vendor: VendorStatus;
   trades: Trade[];
+  submittedReviews: Review[];
+  disputes: DisputeDetail[];
+  unreadCount: number;
   vendorApplication: { status: string } | null;
   isSuperAdmin: boolean;
 };
@@ -66,6 +72,24 @@ function shortAddress(address: string): string {
 function formatAmount(value: number): string {
   if (!value) return "0";
   return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return formatDate(iso);
 }
 
 function formatReleaseSeconds(seconds: number): string {
@@ -179,6 +203,10 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
     };
   }, [status, load]);
 
+  // Near-real-time: server-sent events trigger a silent reload; polling remains
+  // as a fallback when SSE isn't available.
+  useRealtimeFeed(() => void load({ silent: true }));
+
   if (status === "unauthenticated") {
     return (
       <div className="px-4 py-24 text-ink sm:px-6 lg:px-8">
@@ -210,10 +238,22 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
               {data ? `Welcome back, ${session?.user?.name?.split(" ")[0] ?? "trader"}` : "Your dashboard"}
             </h1>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <QuickAction href="/p2p-marketplace" label="Buy crypto" icon={<TrendingUp className="h-4 w-4" />} primary soon />
-            <QuickAction href="/p2p-marketplace" label="Sell crypto" icon={<Banknote className="h-4 w-4" />} soon />
-            <QuickAction href="/p2p-marketplace" label="Post an ad" icon={<Megaphone className="h-4 w-4" />} soon />
+          <div className="flex flex-wrap items-center gap-2">
+            <QuickAction href="/p2p-marketplace/trade?side=buy" label="Buy crypto" icon={<TrendingUp className="h-4 w-4" />} primary />
+            <QuickAction href="/p2p-marketplace/trade?side=sell" label="Sell crypto" icon={<Banknote className="h-4 w-4" />} />
+            <QuickAction href="/p2p/ads" label="My ads" icon={<Megaphone className="h-4 w-4" />} />
+            <Link
+              href="/notifications"
+              className="relative flex h-10 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-ocean"
+            >
+              <Bell className="h-4 w-4" />
+              Notifications
+              {(data?.unreadCount ?? 0) > 0 && (
+                <span className="grid h-5 min-w-[20px] place-items-center rounded-full bg-coral px-1 text-[11px] font-bold text-white">
+                  {data!.unreadCount}
+                </span>
+              )}
+            </Link>
           </div>
         </div>
 
@@ -252,14 +292,26 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
           <PaymentMethodsPanel methods={data?.paymentMethods ?? []} loading={loading && !data} onChanged={load} />
         </div>
 
-{/* Trade history + disputes */}
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card title="Trade history">
-            <TradeHistoryPanel trades={data?.trades ?? []} loading={loading && !data} onChanged={load} />
+        {/* Trade history — full width table */}
+        <div className="mt-4">
+          <Card title="Trade history" action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>}>
+            <TradeHistoryPanel
+              trades={data?.trades ?? []}
+              submittedReviews={data?.submittedReviews ?? []}
+              loading={loading && !data}
+              onChanged={load}
+            />
           </Card>
-          <Card title="Disputes">
-            <EmptyState icon={<Scale className="h-5 w-5" />} title="No disputes" subtitle="Any open or resolved disputes will appear here." />
-          </Card>
+        </div>
+
+        {/* Disputes */}
+        <div className="mt-4">
+          <DisputesPanel disputes={data?.disputes ?? []} loading={loading && !data} />
+        </div>
+
+        {/* Referral */}
+        <div className="mt-4">
+          <ReferralPanel />
         </div>
       </div>
     </div>
@@ -291,24 +343,19 @@ function formatWalletBalance(amount: bigint | undefined): string {
 function WalletPanel({ loading }: { loading?: boolean }) {
   const { address, isConnected, chain } = useAccount();
   const { disconnect } = useDisconnect();
-  const [token, setToken] = useState<"USDC" | "USDT">("USDC");
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const tokens = [["USDC", AVALANCHE_TOKENS.USDC], ["USDT", AVALANCHE_TOKENS.USDT]] as const;
-  const primary = tokens.find(([symbol]) => symbol === token) ?? tokens[0];
-  const secondary = tokens.find(([symbol]) => symbol !== token) ?? tokens[1];
-
-  const { data: primaryBalance, refetch: refetchPrimary, isFetching: primaryFetching, isError: primaryError } = useReadContract({
-    address: primary[1] as `0x${string}`,
+  const { data: usdcBalance, refetch: refetchUsdc, isFetching: usdcFetching, isError: usdcError } = useReadContract({
+    address: AVALANCHE_TOKENS.USDC as `0x${string}`,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
     query: { enabled: isConnected && Boolean(address), refetchInterval: 30000 }
   });
 
-  const { data: secondaryBalance, refetch: refetchSecondary, isFetching: secondaryFetching, isError: secondaryError } = useReadContract({
-    address: secondary[1] as `0x${string}`,
+  const { data: usdtBalance, refetch: refetchUsdt, isFetching: usdtFetching, isError: usdtError } = useReadContract({
+    address: AVALANCHE_TOKENS.USDT as `0x${string}`,
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
@@ -318,7 +365,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
   async function refresh() {
     if (!isConnected || !address) return;
     setRefreshing(true);
-    await Promise.all([refetchPrimary(), refetchSecondary()]);
+    await Promise.all([refetchUsdc(), refetchUsdt()]);
     setRefreshing(false);
   }
 
@@ -357,8 +404,8 @@ function WalletPanel({ loading }: { loading?: boolean }) {
     );
   }
 
-  const primaryLoading = primaryFetching && primaryBalance === undefined;
-  const secondaryLoading = secondaryFetching && secondaryBalance === undefined;
+  const usdcLoading = usdcFetching && usdcBalance === undefined;
+  const usdtLoading = usdtFetching && usdtBalance === undefined;
 
   return (
     <Card
@@ -412,39 +459,21 @@ function WalletPanel({ loading }: { loading?: boolean }) {
           </div>
         </div>
 
-        <div className="border border-line bg-white p-4">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Balance</p>
-            <select
-              value={token}
-              onChange={(e) => setToken(e.target.value as "USDC" | "USDT")}
-              className="h-8 border border-line bg-white px-2 text-sm font-semibold outline-none transition-colors focus:border-ocean"
-              aria-label="Select token"
-            >
-              {tokens.map(([symbol]) => (
-                <option key={symbol} value={symbol}>{symbol}</option>
-              ))}
-            </select>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="border border-line bg-white p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">USDC</p>
+            <p className="mt-2 font-mono text-xl font-bold tracking-tight text-ink sm:text-2xl">
+              {usdcLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted" /> : usdcError ? "—" : formatWalletBalance(usdcBalance)}
+            </p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted">Avalanche</p>
           </div>
-
-          <p className="mt-3 font-mono text-2xl font-bold tracking-tight text-ink sm:text-3xl">
-            {primaryLoading ? <Loader2 className="h-6 w-6 animate-spin text-muted" /> : primaryError ? "—" : formatWalletBalance(primaryBalance)}
-          </p>
-          <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted">{token} · Avalanche</p>
-
-          {!secondaryError && (
-            <button
-              onClick={() => setToken(secondary[0])}
-              className="mt-3 flex w-full items-center justify-between gap-2 border-t border-line pt-3 text-left transition-colors hover:opacity-80"
-              aria-label={`View ${secondary[0]} balance`}
-            >
-              <span className="text-xs font-semibold text-muted">Also in this wallet</span>
-              <span className="flex items-center gap-1.5 font-mono text-sm font-semibold text-ink">
-                {secondaryLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" /> : `${formatWalletBalance(secondaryBalance)} ${secondary[0]}`}
-                <ChevronRight className="h-3.5 w-3.5 text-muted" />
-              </span>
-            </button>
-          )}
+          <div className="border border-line bg-white p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">USDT</p>
+            <p className="mt-2 font-mono text-xl font-bold tracking-tight text-ink sm:text-2xl">
+              {usdtLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted" /> : usdtError ? "—" : formatWalletBalance(usdtBalance)}
+            </p>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted">Avalanche</p>
+          </div>
         </div>
       </div>
     </Card>
@@ -473,7 +502,18 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
   ];
 
   return (
-    <Card title="Trading reputation">
+    <Card
+      title="Trading reputation"
+      action={
+        stats.advertiserStatus !== "none" ? (
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-moss">
+            <BadgeCheck className="h-4 w-4" />
+            <span className="capitalize">{stats.advertiserLevel}</span>
+            {stats.verifiedTier && stats.verifiedTier !== "none" && <span className="text-muted">· {stats.verifiedTier}</span>}
+          </span>
+        ) : undefined
+      }
+    >
       <div className="grid grid-cols-2 gap-3">
         {items.map((item) => (
           <div key={item.label} className="border border-line bg-panel px-3 py-3">
@@ -531,15 +571,19 @@ function ActivityPanel({ notifications, loading }: { notifications: P2PNotificat
   }
 
   return (
-    <Card title="Recent activity">
+    <Card title="Recent activity" action={<Link href="/notifications" className="text-xs font-semibold text-ocean hover:underline">View all</Link>}>
       {notifications.length === 0 ? (
         <EmptyState icon={<MessageSquare className="h-5 w-5" />} title="No activity yet" subtitle="Trade updates, messages, and notices will show up here." />
       ) : (
         <ul className="space-y-2">
           {notifications.map((n) => (
-            <li key={n.id} className="border border-line bg-panel px-3 py-2">
-              <p className="text-sm font-semibold">{n.title}</p>
-              <p className="text-sm text-muted">{n.body}</p>
+            <li key={n.id} className="flex items-start gap-2 border border-line bg-panel px-3 py-2">
+              {!n.is_read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-ocean" />}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">{n.title}</p>
+                <p className="text-sm text-muted">{n.body}</p>
+              </div>
+              <span className="shrink-0 text-xs text-muted">{timeAgo(n.created_at)}</span>
             </li>
           ))}
         </ul>
@@ -823,6 +867,10 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
 
         <InventoryEditor onChanged={onChanged} managed={isManaged} />
 
+        <VendorFeeEditor onChanged={onChanged} managed={isManaged} />
+
+        {!isManaged && <VerificationPanel vendor={vendor} onChanged={onChanged} />}
+
         {isManaged && (
           <div className="mt-4 border-t border-line pt-3">
             <p className="text-xs text-muted">Admin panel: use <Link href="/admin-dashboard" className="font-semibold text-ocean hover:underline">Admin Dashboard</Link> to manage vendor applications and approve new vendors.</p>
@@ -1086,20 +1134,41 @@ function LiveTradeModal({ trade, onChanged }: { trade: Trade; onChanged: () => v
   return <OrderDetailView trade={live} onRefresh={onChanged} />;
 }
 
-function TradeHistoryPanel({ trades, loading, onChanged }: { trades: Trade[]; loading?: boolean; onChanged: () => void }) {
-  const history = trades.filter((t) => t.status === "completed" || t.status === "cancelled" || t.status === "expired");
-  const [ratingId, setRatingId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+function ratingToStars(rating: string): number {
+  if (rating === "positive") return 5;
+  if (rating === "neutral") return 3;
+  if (rating === "negative") return 1;
+  return 0;
+}
 
-  async function doRate(tradeId: string, rating: string) {
+function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { trades: Trade[]; submittedReviews: Review[]; loading?: boolean; onChanged: () => void }) {
+  const [filter, setFilter] = useState<"all" | "completed" | "cancelled" | "expired">("all");
+  const [visible, setVisible] = useState(10);
+  const [reviewing, setReviewing] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [stars, setStars] = useState(0);
+  const [comment, setComment] = useState("");
+
+  const history = trades.filter((t) => t.status === "completed" || t.status === "cancelled" || t.status === "expired");
+  const filtered = filter === "all" ? history : history.filter((t) => t.status === filter);
+  const shown = filtered.slice(0, visible);
+  const reviewedById = useMemo(() => new Map(submittedReviews.map((r) => [r.trade_id, r])), [submittedReviews]);
+
+  async function submitReview(tradeId: string) {
+    const map: Record<number, string> = { 5: "positive", 4: "positive", 3: "neutral", 2: "negative", 1: "negative" };
+    const rating = map[stars];
+    if (!rating) return;
     setBusy(true);
-    await fetch(`/api/p2p/trades/${tradeId}/review`, {
+    const res = await fetch(`/api/p2p/trades/${tradeId}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rating })
+      body: JSON.stringify({ rating, comment })
     });
     setBusy(false);
-    setRatingId(null);
+    if (!res.ok) return;
+    setReviewing(null);
+    setStars(0);
+    setComment("");
     onChanged();
   }
 
@@ -1116,38 +1185,304 @@ function TradeHistoryPanel({ trades, loading, onChanged }: { trades: Trade[]; lo
     return <EmptyState icon={<History className="h-5 w-5" />} title="No trades yet" subtitle="Your completed trades and their details will show here." />;
   }
 
+  const statusFilters: { key: "all" | "completed" | "cancelled" | "expired"; label: string }[] = [
+    { key: "all", label: `All (${history.length})` },
+    { key: "completed", label: "Completed" },
+    { key: "cancelled", label: "Cancelled" },
+    { key: "expired", label: "Expired" }
+  ];
+
   return (
-    <ul className="space-y-2">
-      {history.map((t) => {
-        const counterparty = t.my_role === "buyer" ? t.seller_name : t.buyer_name;
-        const isCompleted = t.status === "completed";
-        return (
-          <li key={t.id} className="border border-line bg-panel px-3 py-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{counterparty}</p>
-                <p className="text-xs text-muted">{formatAmount(t.crypto_amount)} {t.crypto_currency} · {formatAmount(t.fiat_amount)} {t.fiat_currency}</p>
-              </div>
-              <span className={`shrink-0 text-[10px] font-bold uppercase tracking-wide ${isCompleted ? "text-moss" : "text-muted"}`}>
-                {statusLabel(t.status)}
-              </span>
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {statusFilters.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => { setFilter(f.key); setVisible(10); }}
+              className={`h-8 border px-3 text-xs font-semibold transition-colors ${filter === f.key ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:border-ocean hover:text-ink"}`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <a href="/api/p2p/trades/export" className="flex h-8 items-center gap-1.5 border border-line bg-white px-3 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">
+          Download CSV
+        </a>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-line text-left text-xs font-semibold uppercase tracking-wide text-muted">
+              <th className="px-3 py-2">Date</th>
+              <th className="px-3 py-2">Type</th>
+              <th className="px-3 py-2">Asset</th>
+              <th className="px-3 py-2 text-right">Amount</th>
+              <th className="px-3 py-2 text-right">Fiat value</th>
+              <th className="px-3 py-2">Rate</th>
+              <th className="px-3 py-2">Counterparty</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map((t) => {
+              const counterparty = t.my_role === "buyer" ? t.seller_name : t.buyer_name;
+              const isBuy = t.my_role === "buyer";
+              const isCompleted = t.status === "completed";
+              const existing = reviewedById.get(t.id);
+              return (
+                <Fragment key={t.id}>
+                  <tr className="border-b border-line">
+                    <td className="px-3 py-2.5 text-muted">{formatDate(t.created_at)}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`inline-flex items-center gap-1 text-xs font-bold uppercase ${isBuy ? "text-moss" : "text-coral"}`}>
+                        {isBuy ? "Buy" : "Sell"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 font-semibold">{t.crypto_currency}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{t.crypto_amount} {t.crypto_currency}</td>
+                    <td className="px-3 py-2.5 text-right">{formatAmount(t.fiat_amount)} {t.fiat_currency}</td>
+                    <td className="px-3 py-2.5 text-muted">1 = {formatAmount(t.price_at_trade)}</td>
+                    <td className="px-3 py-2.5">{counterparty}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-xs font-bold uppercase tracking-wide ${isCompleted ? "text-moss" : "text-muted"}`}>{statusLabel(t.status)}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {isCompleted && !existing && (
+                        <button onClick={() => { setReviewing(t.id); setStars(0); setComment(""); }} className="text-xs font-semibold text-ocean hover:underline">
+                          Rate
+                        </button>
+                      )}
+                      {isCompleted && existing && (
+                        <span className="flex items-center justify-end gap-0.5 text-moss" title="Rated">
+                          {[1, 2, 3, 4, 5].map((i) => (
+                            <Star key={i} className={`h-3.5 w-3.5 ${i <= ratingToStars(existing.rating) ? "fill-current" : "text-line"}`} />
+                          ))}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                  {reviewing === t.id && (
+                    <tr className="border-b border-line bg-panel">
+                      <td colSpan={9} className="px-3 py-3">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="mr-2 text-xs font-semibold uppercase tracking-wide text-muted">Your rating</span>
+                            {[1, 2, 3, 4, 5].map((i) => (
+                              <button key={i} onClick={() => setStars(i)} className="text-muted transition-colors hover:text-ocean">
+                                <Star className={`h-5 w-5 ${i <= stars ? "fill-current text-ocean" : ""}`} />
+                              </button>
+                            ))}
+                          </div>
+                          <textarea
+                            value={comment}
+                            onChange={(e) => setComment(e.target.value)}
+                            rows={2}
+                            placeholder="Share your experience (optional)"
+                            className="w-full max-w-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ocean"
+                          />
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => void submitReview(t.id)} disabled={busy || stars === 0} className="flex h-8 items-center gap-1.5 bg-ink px-3 text-xs font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60">
+                              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />}
+                              Submit
+                            </button>
+                            <button onClick={() => setReviewing(null)} disabled={busy} className="h-8 border border-line px-3 text-xs font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {filtered.length > visible && (
+        <button onClick={() => setVisible((v) => v + 10)} className="mt-3 flex h-9 items-center justify-center gap-1.5 border border-line bg-white px-4 text-sm font-semibold text-ocean transition-colors hover:border-ocean">
+          Show more ({filtered.length - visible} remaining)
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DisputesPanel({ disputes, loading }: { disputes: DisputeDetail[]; loading?: boolean }) {
+  if (loading) {
+    return (
+      <Card title="Disputes">
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading disputes…
+        </div>
+      </Card>
+    );
+  }
+
+  const open = disputes.filter((d) => d.status === "open");
+  const resolved = disputes.filter((d) => d.status !== "open");
+
+  if (disputes.length === 0) {
+    return (
+      <Card title="Disputes" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
+        <EmptyState icon={<Scale className="h-5 w-5" />} title="No disputes" subtitle="Any open or resolved disputes will appear here." />
+      </Card>
+    );
+  }
+
+  return (
+    <Card title="Disputes" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
+      <div className="mb-3 flex flex-wrap gap-3">
+        <span className="text-sm font-semibold text-coral">{open.length} open</span>
+        <span className="text-sm font-semibold text-muted">{resolved.length} resolved</span>
+      </div>
+      <ul className="space-y-2">
+        {disputes.slice(0, 3).map((d) => (
+          <li key={d.id} className="flex items-center justify-between gap-2 border border-line bg-panel px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">{d.trade_ref} · {d.counterparty}</p>
+              <p className="truncate text-xs text-muted">{d.crypto_amount} {d.crypto_currency} · {timeAgo(d.created_at)}</p>
             </div>
-            {isCompleted && (ratingId === t.id ? (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {(["positive", "neutral", "negative"] as const).map((r) => (
-                  <button key={r} onClick={() => void doRate(t.id, r)} disabled={busy} className="h-7 border border-line bg-white px-2 text-xs font-semibold capitalize text-muted transition-colors hover:border-ocean hover:text-ink disabled:opacity-60">
-                    {r}
-                  </button>
-                ))}
-                <button onClick={() => setRatingId(null)} className="h-7 px-2 text-xs font-semibold text-muted transition-colors hover:text-ink">Cancel</button>
-              </div>
-            ) : (
-              <button onClick={() => setRatingId(t.id)} className="mt-2 text-xs font-semibold text-ocean hover:underline">Rate counterparty</button>
-            ))}
+            <span className={`shrink-0 text-xs font-bold uppercase tracking-wide ${d.status === "open" ? "text-coral" : "text-moss"}`}>
+              {d.status}
+            </span>
           </li>
-        );
-      })}
-    </ul>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function VerificationPanel({ vendor, onChanged }: { vendor: VendorStatus; onChanged: () => void }) {
+  const [status, setStatus] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch("/api/p2p/verification", { cache: "no-store" })
+      .then((res) => readJson<{ request?: { status: string } | null }>(res))
+      .then((data) => setStatus(data?.request?.status ?? null))
+      .catch(() => {});
+  }, []);
+
+  async function submit() {
+    setBusy(true);
+    setError("");
+    const res = await fetch("/api/p2p/verification", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note })
+    });
+    const data = await readJson<{ error?: string }>(res);
+    setBusy(false);
+    if (!res.ok) {
+      setError(data?.error ?? "Unable to request verification.");
+      return;
+    }
+    setShowForm(false);
+    setNote("");
+    setStatus("pending");
+    onChanged();
+  }
+
+  if (vendor.advertiserStatus === "verified") {
+    return (
+      <div className="mt-4 flex items-center gap-2 border border-mint bg-mint/20 px-3 py-2 text-sm">
+        <BadgeCheck className="h-4 w-4 text-moss" />
+        <span className="font-semibold text-moss">Verified vendor</span>
+      </div>
+    );
+  }
+
+  if (status === "pending") {
+    return (
+      <div className="mt-4 border border-ocean/30 bg-ocean/5 px-3 py-2 text-sm text-muted">
+        Verification request pending review.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Get verified</p>
+      <p className="mt-1 text-xs text-muted">Earn a verified badge to stand out and raise your trading limits.</p>
+      {!showForm ? (
+        <button onClick={() => setShowForm(true)} className="mt-2 flex h-9 items-center gap-1.5 border border-ocean px-3 text-sm font-semibold text-ocean transition-colors hover:bg-ocean hover:text-white">
+          <ShieldCheck className="h-4 w-4" />
+          Request verified badge
+        </button>
+      ) : (
+        <div className="mt-2 space-y-2">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Tell us about your trading history or business…"
+            className="w-full border border-line bg-white px-3 py-2 text-sm outline-none focus:border-ocean"
+          />
+          {error && <p className="text-xs font-semibold text-coral">{error}</p>}
+          <div className="flex items-center gap-2">
+            <button onClick={() => void submit()} disabled={busy || !note.trim()} className="flex h-9 items-center gap-1.5 bg-ink px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Submit request
+            </button>
+            <button onClick={() => setShowForm(false)} className="h-9 border border-line px-3 text-sm font-semibold text-muted transition-colors hover:text-ink">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReferralPanel() {
+  const [info, setInfo] = useState<{ code: string; referredCount: number; link: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/p2p/referral", { cache: "no-store" })
+      .then((res) => readJson<{ code: string; referredCount: number; link: string }>(res))
+      .then((data) => { if (data) setInfo(data); })
+      .catch(() => {});
+  }, []);
+
+  async function copy() {
+    if (!info) return;
+    try {
+      await navigator.clipboard.writeText(info.link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!info) return null;
+
+  return (
+    <Card title="Refer friends">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm text-muted">
+            Invite traders and grow the network. You&apos;ve referred{" "}
+            <span className="font-semibold text-ink">{info.referredCount}</span> {info.referredCount === 1 ? "person" : "people"}.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="truncate border border-line bg-panel px-3 py-1.5 text-xs text-ink">{info.link}</code>
+            <button onClick={() => void copy()} className="flex h-8 shrink-0 items-center gap-1 border border-line bg-white px-2.5 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">
+              {copied ? <Check className="h-3.5 w-3.5 text-moss" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -1285,6 +1620,129 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
       </button>
       {error && <p className="mt-1 text-xs font-semibold text-coral">{error}</p>}
+    </div>
+  );
+}
+
+function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; managed?: boolean }) {
+  const [managedVendors, setManagedVendors] = useState<{ id: string; name: string }[]>([]);
+  const [vendorId, setVendorId] = useState("");
+  const [feePercent, setFeePercent] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const loadFee = useCallback(async (vid?: string) => {
+    const qs = managed && vid ? `?user_id=${encodeURIComponent(vid)}` : "";
+    const res = await fetch(`/api/p2p/vendor/fee${qs}`);
+    const data = await readJson<{ vendor_fee_percent?: number; managed_vendors?: { id: string; name: string }[] }>(res);
+    if (res.ok && data) {
+      setFeePercent(String(data.vendor_fee_percent ?? 0));
+      if (data.managed_vendors?.length) {
+        setManagedVendors(data.managed_vendors);
+        setVendorId((prev) => (data.managed_vendors!.some((v) => v.id === prev) ? prev : data.managed_vendors![0].id));
+      }
+    }
+  }, [managed]);
+
+  useEffect(() => {
+    void loadFee();
+  }, [loadFee]);
+
+  useEffect(() => {
+    if (managed && vendorId) void loadFee(vendorId);
+  }, [vendorId, managed, loadFee]);
+
+  async function save() {
+    const value = Number(feePercent);
+    if (!Number.isFinite(value) || value < 0 || value > 50) {
+      setError("Fee must be between 0% and 50%.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setSuccess("");
+    try {
+      const body: Record<string, unknown> = { vendor_fee_percent: value };
+      if (managed && vendorId) body.user_id = vendorId;
+      const res = await fetch("/api/p2p/vendor/fee", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await readJson<{ error?: string; vendor_fee_percent?: number }>(res);
+      if (!res.ok) {
+        setError(data?.error ?? "Unable to update fee.");
+        return;
+      }
+      if (data?.vendor_fee_percent !== undefined) {
+        setFeePercent(String(data.vendor_fee_percent));
+      }
+      setSuccess("Fee updated. Your displayed rate is now: Standard rate " + (value > 0 ? `+ ${value}%` : "(no markup)"));
+      setTimeout(() => setSuccess(""), 6000);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const showVendorSelect = managed && managedVendors.length > 0;
+  const currentFee = Number(feePercent) || 0;
+
+  return (
+    <div className="mt-4 border-t border-line pt-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Trading fee</p>
+      <p className="mt-1 text-xs text-muted">
+        Set the percentage you charge on top of the standard exchange rate. For example, 2% means buyers pay 2% more than the standard rate when buying from you.
+      </p>
+
+      {showVendorSelect && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
+          <select
+            value={vendorId}
+            onChange={(e) => setVendorId(e.target.value)}
+            className="h-9 border border-line bg-white px-2 text-sm outline-none focus:border-ocean"
+          >
+            {managedVendors.map((v) => (
+              <option key={v.id} value={v.id}>{v.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <div className="mt-2 flex items-end gap-3">
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Fee (%)</span>
+          <input
+            value={feePercent}
+            onChange={(e) => setFeePercent(e.target.value.replace(/[^\d.]/g, ""))}
+            type="number"
+            min="0"
+            max="50"
+            step="0.1"
+            placeholder="0"
+            className="h-9 w-28 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+          />
+        </label>
+        <div className="text-xs text-muted">
+          {currentFee > 0 ? (
+            <span>Sell price: Standard <span className="font-semibold text-moss">+ {currentFee}%</span> · Buy price: Standard <span className="font-semibold text-coral">- {currentFee}%</span></span>
+          ) : (
+            <span>Displaying standard rate with no markup.</span>
+          )}
+        </div>
+      </div>
+
+      <button
+        onClick={() => void save()}
+        disabled={busy || (showVendorSelect && !vendorId)}
+        className="mt-2 flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save fee"}
+      </button>
+      {error && <p className="mt-1 text-xs font-semibold text-coral">{error}</p>}
+      {success && <p className="mt-1 text-xs font-semibold text-moss">{success}</p>}
     </div>
   );
 }

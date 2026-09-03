@@ -89,7 +89,7 @@ export default function P2PMarketplacePage() {
           }}
         />
         <div className="relative mx-auto max-w-[1200px] px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-semibold tracking-wide text-mint">
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-surface/5 px-3 py-1 text-xs font-semibold tracking-wide text-mint">
             <Lock className="h-3.5 w-3.5" />
             Non-custodial · No KYC required
           </span>
@@ -128,7 +128,7 @@ export default function P2PMarketplacePage() {
 
         <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
-            <div key={feature.title} className="group border border-line bg-white p-6 transition-colors hover:border-ocean">
+            <div key={feature.title} className="group border border-line bg-surface p-6 transition-colors hover:border-ocean">
               <span className="grid h-11 w-11 place-items-center rounded-full bg-mint text-ocean ring-1 ring-ocean/15">
                 <feature.icon className="h-5 w-5" />
               </span>
@@ -150,7 +150,7 @@ export default function P2PMarketplacePage() {
                 Trade {CRYPTO_CURRENCIES.join(" and ")} against fiat across five regions.
               </p>
             </div>
-            <span className="flex items-center gap-2 border border-line bg-white px-3 py-2 text-sm font-semibold text-muted">
+            <span className="flex items-center gap-2 border border-line bg-surface px-3 py-2 text-sm font-semibold text-muted">
               <Coins className="h-4 w-4 text-ocean" />
               {CRYPTO_CURRENCIES.join(" · ")}
             </span>
@@ -162,7 +162,7 @@ export default function P2PMarketplacePage() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">{region}</p>
                 <ul className="mt-3 flex flex-wrap gap-2">
                   {currencies.map((c) => (
-                    <li key={c.code} className="flex items-center gap-2 border border-line bg-white px-3 py-1.5 text-sm font-semibold">
+                    <li key={c.code} className="flex items-center gap-2 border border-line bg-surface px-3 py-1.5 text-sm font-semibold">
                       {c.code}
                       <span className="text-xs font-normal text-muted">{c.name}</span>
                     </li>
@@ -184,7 +184,7 @@ export default function P2PMarketplacePage() {
 
         <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {methodCategories.map(([category, methods]) => (
-            <div key={category} className="border border-line bg-white p-5">
+            <div key={category} className="border border-line bg-surface p-5">
               <span className="grid h-9 w-9 place-items-center rounded-full bg-panel text-ocean ring-1 ring-line">
                 <Smartphone className="h-4 w-4" />
               </span>
@@ -209,7 +209,7 @@ export default function P2PMarketplacePage() {
 
           <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {steps.map((step, index) => (
-              <li key={step.title} className="relative border border-white/10 bg-white/5 p-6">
+              <li key={step.title} className="relative border border-white/10 bg-surface/5 p-6">
                 <span className="absolute right-4 top-4 text-5xl font-bold text-white/10">{index + 1}</span>
                 <span className="grid h-11 w-11 place-items-center rounded-full bg-ocean text-white">
                   <step.icon className="h-5 w-5" />
@@ -224,7 +224,7 @@ export default function P2PMarketplacePage() {
 
       {/* CTA */}
       <section className="mx-auto max-w-[1200px] px-4 py-20 sm:px-6 lg:px-8">
-        <div className="border border-line bg-white p-8 sm:p-10">
+        <div className="border border-line bg-surface p-8 sm:p-10">
           <BottomCta />
         </div>
       </section>

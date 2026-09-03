@@ -30,10 +30,17 @@ async function seedP2PData(): Promise<void> {
   for (const fiatCode of Object.keys(SEED_RATES)) {
     for (const crypto of CRYPTO_CURRENCIES) {
       await dbQuery(
-        `INSERT INTO p2p_currency_rates (crypto_currency, fiat_currency, rate)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (crypto_currency, fiat_currency) DO NOTHING`,
+        `INSERT INTO p2p_currency_rates (crypto_currency, fiat_currency, rate, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (crypto_currency, fiat_currency)
+         DO UPDATE SET rate = EXCLUDED.rate, updated_at = NOW()`,
         [crypto, fiatCode, SEED_RATES[fiatCode]]
+      );
+      await dbQuery(
+        `INSERT INTO p2p_fees (crypto_currency, fiat_currency, maker_fee, taker_fee)
+         VALUES ($1, $2, 0, 0)
+         ON CONFLICT (crypto_currency, fiat_currency) DO NOTHING`,
+        [crypto, fiatCode]
       );
     }
   }
@@ -143,21 +150,21 @@ async function seedDefaultVendors(): Promise<void> {
     );
 
     if (Number(existingAds[0]?.count ?? "0") === 0) {
-      const sellPrice = Number((rate * 1.01).toFixed(2));
-      const buyPrice = Number((rate * 0.99).toFixed(2));
+      const sellMargin = 1.5;
+      const buyMargin = -1.5;
       const minAmount = Math.round(rate * 50);
       const maxAmount = Math.round(rate * 100000);
 
       for (const crypto of CRYPTO_CURRENCIES) {
         await dbQuery(
-          `INSERT INTO p2p_ads (user_id, ad_type, crypto_currency, chain, fiat_currency, price_type, price_value, min_amount, max_amount, payment_method_ids, status)
-           VALUES ($1, 'sell', $2, 'avalanche', $3, 'fixed', $4, $5, $6, $7::bigint[], 'active')`,
-          [vendorId, crypto, code, sellPrice, minAmount, maxAmount, pmIds]
+          `INSERT INTO p2p_ads (user_id, ad_type, crypto_currency, chain, fiat_currency, price_type, price_value, price_margin, min_amount, max_amount, payment_method_ids, status)
+           VALUES ($1, 'sell', $2, 'avalanche', $3, 'floating', $4, $5, $6, $7, $8::bigint[], 'active')`,
+          [vendorId, crypto, code, rate, sellMargin, minAmount, maxAmount, pmIds]
         );
         await dbQuery(
-          `INSERT INTO p2p_ads (user_id, ad_type, crypto_currency, chain, fiat_currency, price_type, price_value, min_amount, max_amount, payment_method_ids, status)
-           VALUES ($1, 'buy', $2, 'avalanche', $3, 'fixed', $4, $5, $6, $7::bigint[], 'active')`,
-          [vendorId, crypto, code, buyPrice, minAmount, maxAmount, pmIds]
+          `INSERT INTO p2p_ads (user_id, ad_type, crypto_currency, chain, fiat_currency, price_type, price_value, price_margin, min_amount, max_amount, payment_method_ids, status)
+           VALUES ($1, 'buy', $2, 'avalanche', $3, 'floating', $4, $5, $6, $7, $8::bigint[], 'active')`,
+          [vendorId, crypto, code, rate, buyMargin, minAmount, maxAmount, pmIds]
         );
       }
     }

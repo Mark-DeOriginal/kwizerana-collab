@@ -45,3 +45,67 @@ export async function createReview(
 
   return inserted[0];
 }
+
+export type PublicReview = Review & { reviewer_name: string };
+
+export async function listReviewsForUser(revieweeId: string, limit = 20): Promise<PublicReview[]> {
+  await ensureDatabase();
+  return dbQuery<PublicReview>(
+    `SELECT r.id::TEXT AS id, r.trade_id::TEXT AS trade_id, r.reviewer_id, r.reviewee_id,
+            r.rating, r.comment, r.created_at, u.name AS reviewer_name
+     FROM p2p_reviews r
+     JOIN users u ON u.id = r.reviewer_id
+     WHERE r.reviewee_id = $1
+     ORDER BY r.created_at DESC
+     LIMIT $2`,
+    [revieweeId, limit]
+  );
+}
+
+export type RatingSummary = {
+  total: number;
+  positive: number;
+  neutral: number;
+  negative: number;
+};
+
+export async function getRatingSummary(revieweeId: string): Promise<RatingSummary> {
+  await ensureDatabase();
+  const rows = await dbQuery<{ rating: string; count: string }>(
+    `SELECT rating, COUNT(*)::TEXT AS count
+     FROM p2p_reviews
+     WHERE reviewee_id = $1
+     GROUP BY rating`,
+    [revieweeId]
+  );
+  const summary: RatingSummary = { total: 0, positive: 0, neutral: 0, negative: 0 };
+  for (const r of rows) {
+    const n = Number(r.count);
+    summary.total += n;
+    if (r.rating === "positive") summary.positive = n;
+    else if (r.rating === "neutral") summary.neutral = n;
+    else if (r.rating === "negative") summary.negative = n;
+  }
+  return summary;
+}
+
+/** Returns the review the given user already left for a trade, if any. */
+export async function getUserReviewForTrade(tradeId: string, reviewerId: string): Promise<Review | null> {
+  await ensureDatabase();
+  const rows = await dbQuery<Review>(
+    `SELECT id::TEXT AS id, trade_id::TEXT AS trade_id, reviewer_id, reviewee_id, rating, comment, created_at
+     FROM p2p_reviews WHERE trade_id = $1 AND reviewer_id = $2`,
+    [tradeId, reviewerId]
+  );
+  return rows[0] ?? null;
+}
+
+/** All reviews a user has submitted (keyed by trade_id), used to show "already rated" state. */
+export async function listSubmittedReviews(reviewerId: string): Promise<Review[]> {
+  await ensureDatabase();
+  return dbQuery<Review>(
+    `SELECT id::TEXT AS id, trade_id::TEXT AS trade_id, reviewer_id, reviewee_id, rating, comment, created_at
+     FROM p2p_reviews WHERE reviewer_id = $1`,
+    [reviewerId]
+  );
+}

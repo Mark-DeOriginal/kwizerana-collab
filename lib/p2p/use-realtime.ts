@@ -86,3 +86,34 @@ export function useTradeSubscription(
     { intervalMs: opts.intervalMs ?? 8000, enabled: Boolean(tradeId) && (opts.enabled ?? true) }
   );
 }
+
+/**
+ * Subscribes to the server-sent events feed for general app updates (trades,
+ * notifications, disputes). Calls `onUpdate` whenever anything changes. Safe to
+ * use everywhere — it degrades silently if SSE is unsupported.
+ */
+export function useRealtimeFeed(onUpdate: () => void): void {
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  useEffect(() => {
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource("/api/p2p/stream");
+      es.addEventListener("update", () => onUpdateRef.current());
+      es.onerror = () => {
+        // Let polling take over; close the connection on persistent failure.
+        es?.close();
+      };
+    } catch {
+      // EventSource unavailable — rely on polling.
+    }
+    return () => {
+      try {
+        es?.close();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+}

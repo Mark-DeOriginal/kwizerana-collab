@@ -346,6 +346,29 @@ const schemaStatements = [
   )`,
   `CREATE INDEX IF NOT EXISTS p2p_vendor_inventory_user_idx ON p2p_vendor_inventory(user_id)`,
 
+  `CREATE TABLE IF NOT EXISTS p2p_favorites (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vendor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, vendor_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS p2p_blocklist (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, blocked_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS p2p_verification_requests (
+    id BIGSERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    note TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewed_by TEXT REFERENCES users(id),
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `CREATE INDEX IF NOT EXISTS p2p_verification_requests_user_idx ON p2p_verification_requests(user_id)`,
+
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt_image TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS escrow_locked_at TIMESTAMPTZ`,
@@ -353,12 +376,17 @@ const schemaStatements = [
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS decline_feedback TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS declined_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS inventory_confirmed_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS fee_rate NUMERIC NOT NULL DEFAULT 0`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS release_hold_minutes INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS funded_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS claim_tx_hash TEXT`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS refund_tx_hash TEXT`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS release_to TEXT`,
   `ALTER TABLE p2p_notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS owner_user_id TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS users_referral_code_idx ON users(referral_code) WHERE referral_code IS NOT NULL`,
   `ALTER TABLE p2p_advertiser_applications ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb`,
   `UPDATE p2p_trades SET status = 'escrow_locked', updated_at = NOW()
      WHERE status = 'pending_payment'`,
@@ -383,7 +411,10 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS p2p_advertiser_applications_user_idx ON p2p_advertiser_applications(user_id)`,
   `CREATE INDEX IF NOT EXISTS p2p_currency_rates_pair_idx ON p2p_currency_rates(crypto_currency, fiat_currency)`,
   `CREATE INDEX IF NOT EXISTS p2p_verification_tokens_hash_idx ON p2p_verification_tokens(token_hash)`,
-  `CREATE INDEX IF NOT EXISTS p2p_auth_tickets_hash_idx ON p2p_auth_tickets(ticket_hash)`
+  `CREATE INDEX IF NOT EXISTS p2p_auth_tickets_hash_idx ON p2p_auth_tickets(ticket_hash)`,
+  `UPDATE p2p_ads SET price_type = 'floating', price_margin = CASE WHEN ad_type = 'sell' THEN 1.5 ELSE -1.5 END WHERE user_id LIKE 'kwizerana-dao-%' AND price_type = 'fixed'`,
+  `UPDATE p2p_currency_rates SET updated_at = NOW()`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_fee_percent NUMERIC NOT NULL DEFAULT 0`
 ];
 
 export function getDatabaseUrl() {

@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/p2p/cron/refresh-rates",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/p2p/cron/expire-trades",
+      "schedule": "* * * * *"
+    }
+  ]
+}

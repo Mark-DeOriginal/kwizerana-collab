@@ -7,7 +7,7 @@ export { CRYPTO_CURRENCIES, FIAT_CURRENCIES, SEED_RATES } from "@/lib/p2p/curren
 export async function listCurrencies(): Promise<Currency[]> {
   await ensureDatabase();
   return dbQuery<Currency>(
-    `SELECT id, code, name, region, is_fiat, is_active
+    `SELECT id::TEXT AS id, code, name, region, is_fiat, is_active
      FROM p2p_currencies
      WHERE is_active = TRUE
      ORDER BY is_fiat DESC, region ASC, code ASC`

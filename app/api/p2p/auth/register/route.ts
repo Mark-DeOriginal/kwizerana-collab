@@ -3,6 +3,7 @@ import { hashPassword, validateEmail, validatePassword } from "@/lib/auth/passwo
 import { createPasswordUser, getUserCredentialsByEmail, setUserPassword } from "@/lib/users";
 import { createVerificationToken } from "@/lib/p2p/verification";
 import { sendEmail, renderAntiPhishingNotice } from "@/lib/p2p/email";
+import { applyReferralCode } from "@/lib/p2p/referrals";
 import { getSiteUrl } from "@/lib/site";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 
@@ -51,6 +52,8 @@ export async function POST(request: Request) {
     });
     userId = created.id;
   }
+
+  await applyReferralCode(userId, body.referral_code ? String(body.referral_code) : null);
 
   const token = await createVerificationToken(userId, "email_verify", 24);
   const verifyUrl = `${getSiteUrl()}/auth/verify-email?token=${encodeURIComponent(token)}`;

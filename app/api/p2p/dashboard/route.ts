@@ -3,9 +3,11 @@ import { getCurrentUserId } from "@/lib/p2p/server-auth";
 import { getP2PStats, getSecuritySummary } from "@/lib/p2p/stats";
 import { listWallets } from "@/lib/p2p/wallets";
 import { listUserPaymentMethods } from "@/lib/p2p/payment-methods";
-import { listNotifications } from "@/lib/p2p/notifications";
+import { listNotifications, getUnreadNotificationCount } from "@/lib/p2p/notifications";
 import { getVendorStatus } from "@/lib/p2p/vendor";
 import { listTrades } from "@/lib/p2p/trades";
+import { listSubmittedReviews } from "@/lib/p2p/reviews";
+import { listMyDisputes } from "@/lib/p2p/disputes";
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import { isAdminEmail } from "@/lib/roles";
 import { getServerSession } from "next-auth";
@@ -33,15 +35,19 @@ export async function GET() {
   );
   const vendorApplication = appRows.length > 0 ? { status: appRows[0].status } : null;
 
-  const [stats, security, wallets, paymentMethods, notifications, vendor, trades] = await Promise.all([
+  const [stats, security, wallets, paymentMethods, notifications, vendor, trades, submittedReviews, disputes] = await Promise.all([
     getP2PStats(userId),
     getSecuritySummary(userId),
     listWallets(userId),
     listUserPaymentMethods(userId),
     listNotifications(userId, 8),
     getVendorStatus(userId),
-    listTrades(userId, isSuperAdmin)
+    listTrades(userId, isSuperAdmin),
+    listSubmittedReviews(userId),
+    listMyDisputes(userId)
   ]);
+
+  const unreadCount = await getUnreadNotificationCount(userId);
 
   return NextResponse.json({
     stats,
@@ -51,6 +57,9 @@ export async function GET() {
     notifications,
     vendor,
     trades,
+    submittedReviews,
+    disputes,
+    unreadCount,
     vendorApplication,
     isSuperAdmin
   });

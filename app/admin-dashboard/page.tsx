@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
@@ -18,12 +18,15 @@ import {
   Pencil,
   Search,
   Store,
-  Trophy
+  Scale,
+  Trophy,
+  DollarSign
 } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { friendlyError, readJson } from "@/lib/client-request";
 import type { Permission } from "@/lib/roles";
 import { RankingsTab } from "@/components/RankingsTab";
+import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
 
 const ALL_PERMISSIONS: { key: Permission; label: string; description: string }[] = [
   { key: "manage_admins", label: "Can manage admins", description: "Promote and demote other users" },
@@ -73,7 +76,7 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState("");
   const [serverDenied, setServerDenied] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"users" | "rankings" | "vendors">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "rankings" | "vendors" | "disputes" | "verifications" | "rates">("users");
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>([]);
@@ -377,12 +380,51 @@ export default function AdminDashboardPage() {
           <Trophy className="h-4 w-4" />
           Rankings
         </button>
+        <button
+          onClick={() => setActiveTab("disputes")}
+          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+            activeTab === "disputes"
+              ? "border-ocean text-ink"
+              : "border-transparent text-muted hover:border-line hover:text-ink"
+          }`}
+        >
+          <Scale className="h-4 w-4" />
+          Disputes
+        </button>
+        <button
+          onClick={() => setActiveTab("verifications")}
+          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+            activeTab === "verifications"
+              ? "border-ocean text-ink"
+              : "border-transparent text-muted hover:border-line hover:text-ink"
+          }`}
+        >
+          <ShieldCheck className="h-4 w-4" />
+          Verifications
+        </button>
+        <button
+          onClick={() => setActiveTab("rates")}
+          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+            activeTab === "rates"
+              ? "border-ocean text-ink"
+              : "border-transparent text-muted hover:border-line hover:text-ink"
+          }`}
+        >
+          <DollarSign className="h-4 w-4" />
+          Rates
+        </button>
       </div>
 
       {activeTab === "rankings" ? (
         <RankingsTab />
       ) : activeTab === "vendors" ? (
         <VendorApplicationsTab />
+      ) : activeTab === "disputes" ? (
+        <DisputesTab />
+      ) : activeTab === "verifications" ? (
+        <VerificationsTab />
+      ) : activeTab === "rates" ? (
+        <CurrencyRatesTab />
       ) : (
         <>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -733,6 +775,213 @@ function VendorApplicationsTab() {
                   <span className={`shrink-0 text-xs font-bold uppercase ${filter === "approved" ? "text-moss" : "text-coral"}`}>
                     {app.status}
                   </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type AdminDispute = {
+  id: string;
+  trade_id: string;
+  trade_ref: string;
+  reason: string;
+  status: string;
+  resolution: string | null;
+  raised_by: string;
+  buyer_name: string;
+  seller_name: string;
+  created_at: string;
+  resolved_at: string | null;
+};
+
+function DisputesTab() {
+  const [disputes, setDisputes] = useState<AdminDispute[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/disputes");
+      const data = await readJson<{ disputes?: AdminDispute[]; error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to load disputes.");
+      setDisputes(data?.disputes ?? []);
+    } catch (err: unknown) {
+      setError(friendlyError(err, "Something went wrong."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function resolve(id: string, resolution: string) {
+    setActionId(id);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/disputes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolution })
+      });
+      const data = await readJson<{ error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Action failed.");
+      await load();
+    } catch (err: unknown) {
+      setError(friendlyError(err, "Something went wrong."));
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  return (
+    <div>
+      <h2 className="mb-4 text-lg font-bold">Disputes</h2>
+      {error && <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-muted" />
+        </div>
+      ) : disputes.length === 0 ? (
+        <div className="py-20 text-center text-sm text-muted">No disputes.</div>
+      ) : (
+        <div className="space-y-3">
+          {disputes.map((d) => (
+            <div key={d.id} className="border border-line bg-white p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-muted">{d.trade_ref}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ${d.status === "open" ? "bg-coral/15 text-coral" : "bg-mint text-moss"}`}>{d.status}</span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold">Buyer: {d.buyer_name} · Seller: {d.seller_name}</p>
+                  <p className="mt-1 text-sm text-muted">{d.reason}</p>
+                  <p className="mt-1 text-xs text-muted">Raised {relativeTime(d.created_at)}</p>
+                </div>
+                {d.status === "open" ? (
+                  <div className="flex shrink-0 flex-col gap-1.5">
+                    <button onClick={() => void resolve(d.id, "release_buyer")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 bg-moss px-3 text-xs font-bold text-white transition-colors hover:bg-moss/90 disabled:opacity-60">
+                      {actionId === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Release to buyer
+                    </button>
+                    <button onClick={() => void resolve(d.id, "refund_seller")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ocean/30 bg-white px-3 text-xs font-bold text-ocean transition-colors hover:bg-ocean/5 disabled:opacity-60">
+                      Refund seller
+                    </button>
+                    <button onClick={() => void resolve(d.id, "split")} disabled={actionId === d.id} className="flex h-8 items-center justify-center border border-line bg-white px-3 text-xs font-bold text-muted transition-colors hover:text-ink disabled:opacity-60">
+                      Split 50/50
+                    </button>
+                  </div>
+                ) : (
+                  <span className="shrink-0 text-xs font-bold text-moss">{d.resolution}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type VerificationReq = {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  note: string;
+  status: string;
+  created_at: string;
+};
+
+function VerificationsTab() {
+  const [requests, setRequests] = useState<VerificationReq[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/verifications");
+      const data = await readJson<{ requests?: VerificationReq[]; error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Failed to load requests.");
+      setRequests(data?.requests ?? []);
+    } catch (err: unknown) {
+      setError(friendlyError(err, "Something went wrong."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function review(id: string, action: "approve" | "reject") {
+    setActionId(id);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/verifications/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action })
+      });
+      const data = await readJson<{ error?: string }>(res);
+      if (!res.ok) throw new Error(data?.error ?? "Action failed.");
+      await load();
+    } catch (err: unknown) {
+      setError(friendlyError(err, "Something went wrong."));
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  return (
+    <div>
+      <h2 className="mb-4 text-lg font-bold">Verification Requests</h2>
+      {error && <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>}
+
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-muted" />
+        </div>
+      ) : requests.length === 0 ? (
+        <div className="py-20 text-center text-sm text-muted">No verification requests.</div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((r) => (
+            <div key={r.id} className="border border-line bg-white p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold">{r.name ?? r.email}</p>
+                    <span className="text-xs text-muted">{r.email}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ${r.status === "pending" ? "bg-coral/15 text-coral" : r.status === "approved" ? "bg-mint text-moss" : "bg-panel text-muted"}`}>{r.status}</span>
+                  </div>
+                  {r.note && <p className="mt-1 text-sm text-muted">&quot;{r.note}&quot;</p>}
+                  <p className="mt-1 text-xs text-muted">Requested {relativeTime(r.created_at)}</p>
+                </div>
+                {r.status === "pending" && (
+                  <div className="flex shrink-0 gap-2">
+                    <button onClick={() => void review(r.id, "approve")} disabled={actionId === r.id} className="flex h-8 items-center gap-1 bg-moss px-3 text-xs font-bold text-white transition-colors hover:bg-moss/90 disabled:opacity-60">
+                      {actionId === r.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      Approve
+                    </button>
+                    <button onClick={() => void review(r.id, "reject")} disabled={actionId === r.id} className="flex h-8 items-center gap-1 border border-coral/30 bg-white px-3 text-xs font-bold text-coral transition-colors hover:bg-coral/5 disabled:opacity-60">
+                      <X className="h-3 w-3" />
+                      Reject
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
