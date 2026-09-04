@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Check, Loader2, Pause, Play, Pencil, Plus, Trash2, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
+import { CustomSelect, NumInput } from "@/components/p2p/custom-ui";
 import type { P2PAd } from "@/lib/p2p/ads";
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import { CRYPTO_CURRENCIES } from "@/lib/p2p/currencies-shared";
@@ -177,15 +178,21 @@ export default function MyAdsPage() {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Cryptocurrency</label>
-                <select value={crypto} onChange={(e) => setCrypto(e.target.value)} className="h-9 w-full border border-line bg-white px-2 text-sm outline-none focus:border-ocean">
-                  {CRYPTO_CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <CustomSelect
+                  value={crypto}
+                  onChange={setCrypto}
+                  groups={[{ options: CRYPTO_CURRENCIES.map((c) => ({ value: c, label: c })) }]}
+                  triggerClassName="h-9"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Fiat currency</label>
-                <select value={fiat} onChange={(e) => setFiat(e.target.value)} className="h-9 w-full border border-line bg-white px-2 text-sm outline-none focus:border-ocean">
-                  {FIATS.map((f) => <option key={f} value={f}>{f}</option>)}
-                </select>
+                <CustomSelect
+                  value={fiat}
+                  onChange={setFiat}
+                  groups={[{ options: FIATS.map((f) => ({ value: f, label: f })) }]}
+                  triggerClassName="h-9"
+                />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Price type</label>
@@ -201,21 +208,21 @@ export default function MyAdsPage() {
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
                   {priceType === "floating" ? "Base price (1 crypto = )" : "Price (1 " + crypto + " = )"}
                 </label>
-                <input value={price} onChange={(e) => setPrice(e.target.value)} type="number" min="0" step="any" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
+                <NumInput value={price} onValueChange={setPrice} min="0" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
               </div>
               {priceType === "floating" && (
                 <div>
                   <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Margin (%)</label>
-                  <input value={margin} onChange={(e) => setMargin(e.target.value)} type="number" step="any" placeholder="e.g. 1 for +1%" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
+                  <NumInput value={margin} onValueChange={setMargin} placeholder="e.g. 1 for +1%" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
                 </div>
               )}
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Min amount ({fiat})</label>
-                <input value={min} onChange={(e) => setMin(e.target.value)} type="number" min="0" step="any" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
+                <NumInput value={min} onValueChange={setMin} min="0" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Max amount ({fiat})</label>
-                <input value={max} onChange={(e) => setMax(e.target.value)} type="number" min="0" step="any" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
+                <NumInput value={max} onValueChange={setMax} min="0" className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean" />
               </div>
             </div>
 

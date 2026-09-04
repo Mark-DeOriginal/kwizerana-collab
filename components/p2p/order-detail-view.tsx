@@ -9,6 +9,7 @@ import {
   ImagePlus,
   Loader2,
   ShieldCheck,
+  Star,
   TriangleAlert,
   Wallet,
   X
@@ -25,6 +26,7 @@ import {
   RefundEscrowButton
 } from "@/components/p2p/escrow-wallet";
 import { TradeChat } from "@/components/p2p/trade-chat";
+import { NumInput } from "@/components/p2p/custom-ui";
 
 function fn(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) value = 0;
@@ -134,6 +136,11 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const [declineFeedback, setDeclineFeedback] = useState("");
   const [confirmBalance, setConfirmBalance] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
+  const [starRating, setStarRating] = useState(0);
+  const [hoveredStar, setHoveredStar] = useState(0);
+  const [rated, setRated] = useState(false);
+  const [ratingBusy, setRatingBusy] = useState(false);
+  const [ratingError, setRatingError] = useState("");
 
   const allowRoleSwitch = trade.can_act_as_buyer && trade.can_act_as_seller;
   const [viewRole, setViewRole] = useState<"buyer" | "seller">(trade.my_role === "buyer" ? "buyer" : "seller");
@@ -180,6 +187,24 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   useEffect(() => {
     void prefillInventory();
   }, [prefillInventory]);
+
+  async function submitRating() {
+    if (starRating < 1 || starRating > 6 || ratingBusy) return;
+    setRatingBusy(true);
+    setRatingError("");
+    const res = await fetch(`/api/p2p/trades/${trade.id}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ star_rating: starRating })
+    });
+    const data = await readJson<{ error?: string }>(res);
+    setRatingBusy(false);
+    if (!res.ok) {
+      setRatingError(data?.error ?? "Unable to submit rating.");
+      return;
+    }
+    setRated(true);
+  }
 
   const doAction = useCallback(
     async (action: string, payload: Record<string, unknown> = {}): Promise<boolean> => {
@@ -355,7 +380,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
       {terminalBanner}
 
-      <TradeChat tradeId={trade.id} myRole={isBuyer ? "buyer" : "seller"} />
+      <TradeChat tradeId={trade.id} />
 
       {/* Post-completion inventory confirm */}
       {showConfirm && confirmEligible && (
@@ -367,12 +392,10 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
             This trade sold {fn(trade.crypto_amount, 6)} {trade.crypto_currency}. Confirm how much {trade.crypto_currency} you still have for sale.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input
-              type="number"
-              min="0"
-              step="any"
+            <NumInput
               value={confirmBalance}
-              onChange={(e) => setConfirmBalance(e.target.value)}
+              onValueChange={setConfirmBalance}
+              min="0"
               placeholder={`Remaining ${trade.crypto_currency} for sale`}
               className="h-9 w-40 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
             />
@@ -396,21 +419,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         <Row label="Fee" value="0.00" note="0% platform fee" />
         {trade.payment_reference && <Row label="Payment reference" value={<span className="font-mono">{trade.payment_reference}</span>} />}
       </div>
-
-      {/* Wallet addresses */}
-      {(trade.seller_wallet_address || trade.buyer_wallet_address) && (
-        <div className="space-y-1.5 border border-line bg-white p-4 text-sm">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-            <Wallet className="h-3.5 w-3.5" /> Escrow wallets
-          </p>
-          {trade.seller_wallet_address && (
-            <Row label={`${isBuyer ? "Seller's" : "Your"} wallet (escrow funder)`} value={<span className="font-mono text-xs">{shortAddr(trade.seller_wallet_address)}</span>} />
-          )}
-          {trade.buyer_wallet_address && (
-            <Row label={`${isBuyer ? "Your" : "Buyer's"} receive wallet`} value={<span className="font-mono text-xs">{shortAddr(trade.buyer_wallet_address)}</span>} />
-          )}
-        </div>
-      )}
 
       {/* Payment details */}
       {showPaymentDetails && (
@@ -483,7 +491,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                 </div>
               </div>
             )}
-            <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
           </>
         )}
 
@@ -515,7 +522,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               <>
                 <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
                   <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
-                  <p className="text-muted">Your order was sent to {counterparty}. You&apos;ll be notified once they approve it and lock the escrow.</p>
+                  <p className="text-muted">Your order was sent to {counterparty}. You&apos;ll be notified once they approve it.</p>
                 </div>
                 <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
               </>
@@ -706,6 +713,22 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
             {trade.escrow_claim_tx && <p>Received: <span className="font-mono text-ink">{shortAddr(trade.escrow_claim_tx)}</span></p>}
           </div>
         )}
+
+        {/* Buyer: completed → rate vendor */}
+        {isBuyer && trade.status === "completed" && (
+          <RatingPanel
+            tradeId={trade.id}
+            vendorName={trade.seller_name}
+            rated={rated}
+            starRating={starRating}
+            hoveredStar={hoveredStar}
+            ratingBusy={ratingBusy}
+            ratingError={ratingError}
+            onHover={setHoveredStar}
+            onSelect={setStarRating}
+            onSubmit={() => void submitRating()}
+          />
+        )}
       </div>
     </div>
   );
@@ -764,5 +787,85 @@ function CancelTradeButton({ busy, onClick }: { busy: boolean; onClick: () => vo
     >
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Yes, cancel trade"}
     </button>
+  );
+}
+
+function RatingPanel({
+  tradeId,
+  vendorName,
+  rated,
+  starRating,
+  hoveredStar,
+  ratingBusy,
+  ratingError,
+  onHover,
+  onSelect,
+  onSubmit
+}: {
+  tradeId: string;
+  vendorName: string;
+  rated: boolean;
+  starRating: number;
+  hoveredStar: number;
+  ratingBusy: boolean;
+  ratingError: string;
+  onHover: (n: number) => void;
+  onSelect: (n: number) => void;
+  onSubmit: () => void;
+}) {
+  const [alreadyRated, setAlreadyRated] = useState(false);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/p2p/trades/${tradeId}/review`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data: { reviewed?: boolean }) => {
+        if (data?.reviewed) setAlreadyRated(true);
+      })
+      .finally(() => setChecked(true));
+  }, [tradeId]);
+
+  if (!checked) return null;
+
+  if (alreadyRated || rated) {
+    return (
+      <div className="border border-mint bg-mint/40 p-4 text-center text-sm text-moss">
+        <p className="font-semibold">You rated {vendorName} {starRating > 0 ? `${starRating}/6` : ""}. Thanks for your feedback!</p>
+      </div>
+    );
+  }
+
+  const display = hoveredStar || starRating;
+
+  return (
+    <div className="border border-line bg-white p-4 text-center">
+      <p className="text-sm font-semibold">Trade completed. Rate the vendor:</p>
+      <div className="mt-3 flex items-center justify-center gap-1.5">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <button
+            key={i}
+            type="button"
+            onMouseEnter={() => onHover(i)}
+            onMouseLeave={() => onHover(0)}
+            onClick={() => onSelect(i)}
+            className="transition-transform hover:scale-110"
+          >
+            <Star className={`h-7 w-7 ${i <= display ? "fill-current text-moss" : "text-line"}`} />
+          </button>
+        ))}
+      </div>
+      {starRating > 0 && (
+        <p className="mt-2 text-xs text-muted">{starRating}/6 — {Math.round((starRating / 6) * 100)}% satisfaction</p>
+      )}
+      {ratingError && <p className="mt-2 text-xs font-semibold text-coral">{ratingError}</p>}
+      <button
+        onClick={onSubmit}
+        disabled={starRating < 1 || ratingBusy}
+        className="mt-3 h-9 px-6 text-sm font-semibold text-white transition-colors disabled:opacity-60"
+        style={{ backgroundColor: starRating >= 1 ? "#2d6a4f" : "#ccc" }}
+      >
+        {ratingBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit rating"}
+      </button>
+    </div>
   );
 }

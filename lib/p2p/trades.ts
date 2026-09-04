@@ -237,7 +237,9 @@ export async function createTrade(
     `SELECT a.id::TEXT AS id, a.user_id, a.ad_type, a.crypto_currency, a.fiat_currency,
             a.price_type, a.price_value::TEXT AS price_value, a.price_margin::TEXT AS price_margin,
             a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
-            u.vendor_fee_percent::TEXT AS vendor_fee_percent
+            CASE WHEN a.ad_type = 'sell' THEN COALESCE(u.vendor_sell_fee_percent, u.vendor_fee_percent)
+                 ELSE COALESCE(u.vendor_buy_fee_percent, u.vendor_fee_percent)
+            END::TEXT AS vendor_fee_percent
      FROM p2p_ads a
      JOIN users u ON u.id = a.user_id
      WHERE a.id = $1 AND a.status = 'active' AND a.is_paused = FALSE`,
@@ -288,7 +290,7 @@ export async function createTrade(
     `INSERT INTO p2p_trades (trade_ref, payment_reference, ad_id, buyer_id, seller_id,
         crypto_currency, chain, crypto_amount, fiat_currency, fiat_amount, price_at_trade,
         fee_rate, release_hold_minutes, payment_method_id, buyer_wallet_address, status, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, 'avalanche', $7, $8, $9, $10, $11, $12, $13, $14, 'created', NOW() + INTERVAL '30 minutes')
+     VALUES ($1, $2, $3, $4, $5, $6, 'avalanche', $7, $8, $9, $10, $11, $12, $13, $14, 'created', NOW() + INTERVAL '2 hours')
      RETURNING id::TEXT AS id`,
     [tradeRef, paymentReference, ad.id, buyerId, sellerId, ad.crypto_currency, input.cryptoAmount, ad.fiat_currency, fiatAmount, price, feeRate, releaseHoldMinutes, input.paymentMethodId ?? null, buyerWalletAddress]
   );

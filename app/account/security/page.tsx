@@ -67,12 +67,14 @@ export default function SecurityPage() {
         <AntiPhishingPanel code={antiPhishing} onChanged={loadAntiPhishing} />
       </SectionCard>
 
-      <SectionCard
-        title="Password"
-        description={account?.hasPassword ? "Change the password you use to sign in." : "Set a password so you can sign in with your email."}
-      >
-        <PasswordPanel hasPassword={account?.hasPassword ?? false} />
-      </SectionCard>
+      {account?.hasPassword && (
+        <SectionCard
+          title="Password"
+          description="Change the password you use to sign in."
+        >
+          <PasswordPanel hasPassword={account?.hasPassword ?? false} />
+        </SectionCard>
+      )}
     </div>
   );
 }

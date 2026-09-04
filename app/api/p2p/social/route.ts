@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
-import { getSocialState, toggleFavorite, toggleBlock } from "@/lib/p2p/social";
+import { getSocialState, toggleFavorite, toggleBlock, togglePin } from "@/lib/p2p/social";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +36,10 @@ export async function POST(request: Request) {
     if (action === "block") {
       const blocked = await toggleBlock(userId, vendorId);
       return NextResponse.json({ blocked });
+    }
+    if (action === "pin") {
+      const pinned = await togglePin(userId, vendorId);
+      return NextResponse.json({ pinned });
     }
     const favorite = await toggleFavorite(userId, vendorId);
     return NextResponse.json({ favorite });

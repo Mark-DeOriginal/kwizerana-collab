@@ -22,6 +22,7 @@ type VendorProfile = {
   stats: P2PStats;
   reviews: PublicReview[];
   ratingSummary: RatingSummary;
+  starRating?: { avg: number; count: number } | null;
 };
 
 function ratingToStars(rating: string): number {
@@ -38,7 +39,7 @@ function formatDate(iso: string): string {
 function Stars({ count, size = "h-4 w-4" }: { count: number; size?: string }) {
   return (
     <span className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((i) => (
+      {[1, 2, 3, 4, 5, 6].map((i) => (
         <Star key={i} className={`${size} ${i <= count ? "fill-current text-ocean" : "text-line"}`} />
       ))}
     </span>
@@ -93,17 +94,15 @@ export default function VendorProfilePage() {
     );
   }
 
-  const { vendor, stats, reviews, ratingSummary } = profile;
-  const avgStars = ratingSummary.total > 0
-    ? Math.round((ratingSummary.positive * 5 + ratingSummary.neutral * 3 + ratingSummary.negative * 1) / ratingSummary.total)
-    : 0;
+  const { vendor, stats, reviews, ratingSummary, starRating } = profile;
+  const avgStars = starRating ? Math.round(starRating.avg) : 0;
 
   return (
     <div className="px-4 py-8 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto max-w-3xl">
         <Link href="/p2p-marketplace/trade" className="text-sm font-semibold text-ocean hover:underline">← Back to marketplace</Link>
 
-        <div className="mt-4 border border-line bg-surface p-6">
+        <div className="mt-4 border border-line bg-white p-6">
           <div className="flex items-center gap-3">
             <span className="grid h-14 w-14 place-items-center rounded-full bg-ocean text-xl font-bold text-white">{vendor.name.charAt(0)}</span>
             <div className="min-w-0 flex-1">
@@ -118,11 +117,11 @@ export default function VendorProfilePage() {
               </div>
             </div>
             <div className="flex shrink-0 gap-2">
-              <button onClick={() => void toggle("favorite")} className="flex h-9 items-center gap-1.5 border border-line bg-surface px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean">
+              <button onClick={() => void toggle("favorite")} className="flex h-9 items-center gap-1.5 border border-line bg-white px-3 text-sm font-semibold text-ink transition-colors hover:border-ocean">
                 <Star className={`h-4 w-4 ${isFav ? "fill-current text-ocean" : ""}`} />
                 {isFav ? "Favorited" : "Favorite"}
               </button>
-              <button onClick={() => void toggle("block")} className="flex h-9 items-center gap-1.5 border border-line bg-surface px-3 text-sm font-semibold text-muted transition-colors hover:border-coral hover:text-coral">
+              <button onClick={() => void toggle("block")} className="flex h-9 items-center gap-1.5 border border-line bg-white px-3 text-sm font-semibold text-muted transition-colors hover:border-coral hover:text-coral">
                 <Ban className="h-4 w-4" />
                 Block
               </button>
@@ -144,20 +143,17 @@ export default function VendorProfilePage() {
             </div>
             <div className="border border-line bg-panel px-3 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Rating</p>
-              <p className="mt-1 flex items-center gap-1 text-lg font-bold">{avgStars}<Star className="h-4 w-4 fill-current text-ocean" /></p>
+              <p className="mt-1 flex items-center gap-1 text-lg font-bold">{starRating ? `${starRating.avg}/6` : "—"}<Star className="h-4 w-4 fill-current text-ocean" /></p>
             </div>
           </div>
 
           <div className="mt-4 flex items-center gap-2 text-sm text-muted">
             <Stars count={avgStars} />
-            <span>{ratingSummary.total} review{ratingSummary.total === 1 ? "" : "s"}</span>
-            <span className="text-moss">{ratingSummary.positive} positive</span>
-            <span className="text-muted">{ratingSummary.neutral} neutral</span>
-            <span className="text-coral">{ratingSummary.negative} negative</span>
+            <span>{starRating?.count ?? 0} rating{starRating?.count === 1 ? "" : "s"}</span>
           </div>
         </div>
 
-        <div className="mt-4 border border-line bg-surface">
+        <div className="mt-4 border border-line bg-white">
           <p className="border-b border-line px-5 py-3 text-sm font-semibold">Reviews</p>
           {reviews.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-muted">No reviews yet.</p>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CreditCard, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
+import { CustomSelect } from "@/components/p2p/custom-ui";
 import { COUNTRIES, countryLabel, PAYMENT_METHOD_CATEGORY_LABELS } from "@/lib/p2p/countries-shared";
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 
@@ -101,6 +102,10 @@ export default function PaymentMethodsPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!form.countryCode || (!form.customBank && !form.methodName)) {
+      setError("Select a country and a payment method.");
+      return;
+    }
     setBusy(true);
 
     let methodType: string;
@@ -181,22 +186,13 @@ export default function PaymentMethodsPage() {
             <label htmlFor="country" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
               Country / region
             </label>
-            <select
-              id="country"
+            <CustomSelect
               value={form.countryCode}
-              onChange={(e) => selectCountry(e.target.value)}
-              required
-              className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
-            >
-              <option value="" disabled>
-                Select your country
-              </option>
-              {countries.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={selectCountry}
+              groups={[{ options: countries.map((c) => ({ value: c.code, label: c.name })) }]}
+              placeholder="Select your country"
+              triggerClassName="h-11"
+            />
           </div>
 
           {form.customBank ? (
@@ -218,27 +214,17 @@ export default function PaymentMethodsPage() {
               <label htmlFor="method" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
                 Payment method
               </label>
-              <select
-                id="method"
+              <CustomSelect
                 value={form.methodName}
-                onChange={(e) => setForm((f) => ({ ...f, methodName: e.target.value }))}
-                required
+                onChange={(v) => setForm((f) => ({ ...f, methodName: v }))}
                 disabled={!selectedCountry}
-                className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <option value="" disabled>
-                  {selectedCountry ? "Select a payment method" : "Select a country first"}
-                </option>
-                {groupedMethods.map((group) => (
-                  <optgroup key={group.category} label={PAYMENT_METHOD_CATEGORY_LABELS[group.category]}>
-                    {group.options.map((m) => (
-                      <option key={m.name} value={m.name}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                groups={groupedMethods.map((group) => ({
+                  label: PAYMENT_METHOD_CATEGORY_LABELS[group.category],
+                  options: group.options.map((m) => ({ value: m.name, label: m.name }))
+                }))}
+                placeholder={selectedCountry ? "Select a payment method" : "Select a country first"}
+                triggerClassName="h-11"
+              />
             </div>
           )}
 

@@ -12,7 +12,7 @@ export type Review = {
 
 export async function createReview(
   userId: string,
-  input: { tradeId: string; rating: string; comment?: string }
+  input: { tradeId: string; starRating: number; comment?: string }
 ): Promise<Review> {
   await ensureDatabase();
 
@@ -36,11 +36,14 @@ export async function createReview(
   );
   if (existing.length > 0) throw new Error("You've already rated this trade.");
 
+  const stars = Math.round(Math.min(6, Math.max(1, input.starRating)));
+  const ratingLabel = stars >= 5 ? "positive" : stars >= 3 ? "neutral" : "negative";
+
   const inserted = await dbQuery<Review>(
-    `INSERT INTO p2p_reviews (trade_id, reviewer_id, reviewee_id, rating, comment)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO p2p_reviews (trade_id, reviewer_id, reviewee_id, rating, star_rating, comment)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING id::TEXT AS id, trade_id::TEXT AS trade_id, reviewer_id, reviewee_id, rating, comment, created_at`,
-    [input.tradeId, userId, revieweeId, input.rating, input.comment ?? ""]
+    [input.tradeId, userId, revieweeId, ratingLabel, stars, input.comment ?? ""]
   );
 
   return inserted[0];
@@ -92,8 +95,8 @@ export async function getRatingSummary(revieweeId: string): Promise<RatingSummar
 /** Returns the review the given user already left for a trade, if any. */
 export async function getUserReviewForTrade(tradeId: string, reviewerId: string): Promise<Review | null> {
   await ensureDatabase();
-  const rows = await dbQuery<Review>(
-    `SELECT id::TEXT AS id, trade_id::TEXT AS trade_id, reviewer_id, reviewee_id, rating, comment, created_at
+  const rows = await dbQuery<{ id: string; trade_id: string; reviewer_id: string; reviewee_id: string; rating: string; comment: string; star_rating: string | null; created_at: string }>(
+    `SELECT id::TEXT AS id, trade_id::TEXT AS trade_id, reviewer_id, reviewee_id, rating, comment, star_rating::TEXT AS star_rating, created_at
      FROM p2p_reviews WHERE trade_id = $1 AND reviewer_id = $2`,
     [tradeId, reviewerId]
   );
@@ -108,4 +111,17 @@ export async function listSubmittedReviews(reviewerId: string): Promise<Review[]
      FROM p2p_reviews WHERE reviewer_id = $1`,
     [reviewerId]
   );
+}
+
+/** Average star rating (1–6) for a vendor, rounded to one decimal. */
+export async function getVendorAverageStars(revieweeId: string): Promise<{ avg: number; count: number } | null> {
+  await ensureDatabase();
+  const rows = await dbQuery<{ avg: string; count: string }>(
+    `SELECT AVG(star_rating)::NUMERIC(4,1) AS avg, COUNT(*)::TEXT AS count
+     FROM p2p_reviews WHERE reviewee_id = $1 AND star_rating IS NOT NULL`,
+    [revieweeId]
+  );
+  const r = rows[0];
+  if (!r || Number(r.count) === 0) return null;
+  return { avg: Number(r.avg), count: Number(r.count) };
 }

@@ -32,6 +32,7 @@ import {
   Wallet
 } from "lucide-react";
 import { readJson } from "@/lib/client-request";
+import { CustomSelect, NumInput } from "@/components/p2p/custom-ui";
 import { ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
 import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
 import type { UserWallet } from "@/lib/p2p/wallets";
@@ -241,7 +242,7 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
           <div className="flex flex-wrap items-center gap-2">
             <QuickAction href="/p2p-marketplace/trade?side=buy" label="Buy crypto" icon={<TrendingUp className="h-4 w-4" />} primary />
             <QuickAction href="/p2p-marketplace/trade?side=sell" label="Sell crypto" icon={<Banknote className="h-4 w-4" />} />
-            <QuickAction href="/p2p/ads" label="My ads" icon={<Megaphone className="h-4 w-4" />} />
+            {/* My Ads removed */}
             <Link
               href="/notifications"
               className="relative flex h-10 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-ocean"
@@ -1583,15 +1584,15 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
       {showVendorSelect && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
-          <select
+          <CustomSelect
             value={vendorId}
-            onChange={(e) => setVendorId(e.target.value)}
-            className="h-9 border border-line bg-white px-2 text-sm outline-none focus:border-ocean"
-          >
-            {managedVendors.map((v) => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
+            onChange={setVendorId}
+            groups={[{ options: managedVendors.map((v) => ({ value: v.id, label: v.name })) }]}
+            placeholder="Select vendor"
+            wrapperClassName="w-48"
+            align="right"
+            triggerClassName="h-9"
+          />
         </div>
       )}
 
@@ -1599,12 +1600,10 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
         {INVENTORY_TOKENS.map((code) => (
           <label key={code} className="block">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">{code} for sale</span>
-            <input
+            <NumInput
               value={balances[code] ?? ""}
-              onChange={(e) => setBalances((prev) => ({ ...prev, [code]: e.target.value }))}
-              type="number"
+              onValueChange={(raw) => setBalances((prev) => ({ ...prev, [code]: raw }))}
               min="0"
-              step="any"
               placeholder="0"
               className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
             />
@@ -1627,7 +1626,8 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
 function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; managed?: boolean }) {
   const [managedVendors, setManagedVendors] = useState<{ id: string; name: string }[]>([]);
   const [vendorId, setVendorId] = useState("");
-  const [feePercent, setFeePercent] = useState("");
+  const [buyFeePercent, setBuyFeePercent] = useState("");
+  const [sellFeePercent, setSellFeePercent] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -1635,9 +1635,10 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
   const loadFee = useCallback(async (vid?: string) => {
     const qs = managed && vid ? `?user_id=${encodeURIComponent(vid)}` : "";
     const res = await fetch(`/api/p2p/vendor/fee${qs}`);
-    const data = await readJson<{ vendor_fee_percent?: number; managed_vendors?: { id: string; name: string }[] }>(res);
+    const data = await readJson<{ vendor_buy_fee_percent?: number; vendor_sell_fee_percent?: number; managed_vendors?: { id: string; name: string }[] }>(res);
     if (res.ok && data) {
-      setFeePercent(String(data.vendor_fee_percent ?? 0));
+      setBuyFeePercent(String(data.vendor_buy_fee_percent ?? 0));
+      setSellFeePercent(String(data.vendor_sell_fee_percent ?? 0));
       if (data.managed_vendors?.length) {
         setManagedVendors(data.managed_vendors);
         setVendorId((prev) => (data.managed_vendors!.some((v) => v.id === prev) ? prev : data.managed_vendors![0].id));
@@ -1654,31 +1655,35 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
   }, [vendorId, managed, loadFee]);
 
   async function save() {
-    const value = Number(feePercent);
-    if (!Number.isFinite(value) || value < 0 || value > 50) {
-      setError("Fee must be between 0% and 50%.");
+    const buy = Number(buyFeePercent);
+    const sell = Number(sellFeePercent);
+    if (!Number.isFinite(buy) || buy < 0 || buy > 50) {
+      setError("Buy fee must be between 0% and 50%.");
+      return;
+    }
+    if (!Number.isFinite(sell) || sell < 0 || sell > 50) {
+      setError("Sell fee must be between 0% and 50%.");
       return;
     }
     setBusy(true);
     setError("");
     setSuccess("");
     try {
-      const body: Record<string, unknown> = { vendor_fee_percent: value };
+      const body: Record<string, unknown> = { vendor_buy_fee_percent: buy, vendor_sell_fee_percent: sell };
       if (managed && vendorId) body.user_id = vendorId;
       const res = await fetch("/api/p2p/vendor/fee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
-      const data = await readJson<{ error?: string; vendor_fee_percent?: number }>(res);
+      const data = await readJson<{ error?: string; vendor_buy_fee_percent?: number; vendor_sell_fee_percent?: number }>(res);
       if (!res.ok) {
         setError(data?.error ?? "Unable to update fee.");
         return;
       }
-      if (data?.vendor_fee_percent !== undefined) {
-        setFeePercent(String(data.vendor_fee_percent));
-      }
-      setSuccess("Fee updated. Your displayed rate is now: Standard rate " + (value > 0 ? `+ ${value}%` : "(no markup)"));
+      if (data?.vendor_buy_fee_percent !== undefined) setBuyFeePercent(String(data.vendor_buy_fee_percent));
+      if (data?.vendor_sell_fee_percent !== undefined) setSellFeePercent(String(data.vendor_sell_fee_percent));
+      setSuccess("Fees updated.");
       setTimeout(() => setSuccess(""), 6000);
       onChanged();
     } finally {
@@ -1687,51 +1692,60 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
   }
 
   const showVendorSelect = managed && managedVendors.length > 0;
-  const currentFee = Number(feePercent) || 0;
+  const currentBuyFee = Number(buyFeePercent) || 0;
+  const currentSellFee = Number(sellFeePercent) || 0;
 
   return (
     <div className="mt-4 border-t border-line pt-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Trading fee</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Trading fees</p>
       <p className="mt-1 text-xs text-muted">
-        Set the percentage you charge on top of the standard exchange rate. For example, 2% means buyers pay 2% more than the standard rate when buying from you.
+        Set the percentage you charge on top of the standard exchange rate for each direction.
       </p>
 
       {showVendorSelect && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
-          <select
+          <CustomSelect
             value={vendorId}
-            onChange={(e) => setVendorId(e.target.value)}
-            className="h-9 border border-line bg-white px-2 text-sm outline-none focus:border-ocean"
-          >
-            {managedVendors.map((v) => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
-          </select>
+            onChange={setVendorId}
+            groups={[{ options: managedVendors.map((v) => ({ value: v.id, label: v.name })) }]}
+            placeholder="Select vendor"
+            wrapperClassName="w-48"
+            align="right"
+            triggerClassName="h-9"
+          />
         </div>
       )}
 
-      <div className="mt-2 flex items-end gap-3">
+      <div className="mt-2 flex items-end gap-4">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Fee (%)</span>
-          <input
-            value={feePercent}
-            onChange={(e) => setFeePercent(e.target.value.replace(/[^\d.]/g, ""))}
-            type="number"
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Sell fee (%)</span>
+          <NumInput
+            value={sellFeePercent}
+            onValueChange={(raw) => setSellFeePercent(raw)}
             min="0"
             max="50"
-            step="0.1"
             placeholder="0"
             className="h-9 w-28 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
           />
         </label>
-        <div className="text-xs text-muted">
-          {currentFee > 0 ? (
-            <span>Sell price: Standard <span className="font-semibold text-moss">+ {currentFee}%</span> · Buy price: Standard <span className="font-semibold text-coral">- {currentFee}%</span></span>
-          ) : (
-            <span>Displaying standard rate with no markup.</span>
-          )}
-        </div>
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Buy fee (%)</span>
+          <NumInput
+            value={buyFeePercent}
+            onValueChange={(raw) => setBuyFeePercent(raw)}
+            min="0"
+            max="50"
+            placeholder="0"
+            className="h-9 w-28 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+          />
+        </label>
+      </div>
+
+      <div className="mt-2 text-xs text-muted">
+        {currentSellFee > 0 && <span>Sell: Standard <span className="font-semibold text-moss">+ {currentSellFee}%</span> · </span>}
+        {currentBuyFee > 0 && <span>Buy: Standard <span className="font-semibold text-coral">- {currentBuyFee}%</span></span>}
+        {currentSellFee === 0 && currentBuyFee === 0 && <span>Displaying standard rate with no markup.</span>}
       </div>
 
       <button
@@ -1739,7 +1753,7 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
         disabled={busy || (showVendorSelect && !vendorId)}
         className="mt-2 flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
       >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save fee"}
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save fees"}
       </button>
       {error && <p className="mt-1 text-xs font-semibold text-coral">{error}</p>}
       {success && <p className="mt-1 text-xs font-semibold text-moss">{success}</p>}

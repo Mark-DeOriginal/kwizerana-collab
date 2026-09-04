@@ -83,7 +83,9 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
             a.price_value::TEXT AS price_value, a.price_margin::TEXT AS price_margin,
             a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
             u.id AS vendor_id, u.name AS vendor_name,
-            u.vendor_fee_percent::TEXT AS vendor_fee_percent,
+            CASE WHEN a.ad_type = 'sell' THEN COALESCE(u.vendor_sell_fee_percent, u.vendor_fee_percent)
+                 ELSE COALESCE(u.vendor_buy_fee_percent, u.vendor_fee_percent)
+            END::TEXT AS vendor_fee_percent,
             u.p2p_advertiser_status, u.p2p_advertiser_level, u.p2p_verified_tier,
             u.p2p_completion_rate_30d, u.p2p_total_trades, u.p2p_avg_release_seconds,
             inv.declared_balance::TEXT AS declared_balance

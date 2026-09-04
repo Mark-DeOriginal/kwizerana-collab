@@ -358,6 +358,12 @@ const schemaStatements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, blocked_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS p2p_pins (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vendor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, vendor_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS p2p_verification_requests (
     id BIGSERIAL PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -414,7 +420,11 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS p2p_auth_tickets_hash_idx ON p2p_auth_tickets(ticket_hash)`,
   `UPDATE p2p_ads SET price_type = 'floating', price_margin = CASE WHEN ad_type = 'sell' THEN 1.5 ELSE -1.5 END WHERE user_id LIKE 'kwizerana-dao-%' AND price_type = 'fixed'`,
   `UPDATE p2p_currency_rates SET updated_at = NOW()`,
-  `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_fee_percent NUMERIC NOT NULL DEFAULT 0`
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_fee_percent NUMERIC NOT NULL DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_buy_fee_percent NUMERIC`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_sell_fee_percent NUMERIC`,
+  `UPDATE users SET vendor_buy_fee_percent = vendor_fee_percent, vendor_sell_fee_percent = vendor_fee_percent WHERE vendor_buy_fee_percent IS NULL`,
+  `ALTER TABLE p2p_reviews ADD COLUMN IF NOT EXISTS star_rating INTEGER`
 ];
 
 export function getDatabaseUrl() {

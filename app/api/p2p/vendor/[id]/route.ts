@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import { getP2PStats } from "@/lib/p2p/stats";
-import { listReviewsForUser, getRatingSummary } from "@/lib/p2p/reviews";
+import { listReviewsForUser, getRatingSummary, getVendorAverageStars } from "@/lib/p2p/reviews";
 
 export const dynamic = "force-dynamic";
 
@@ -33,10 +33,11 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     [params.id]
   );
 
-  const [stats, reviews, ratingSummary] = await Promise.all([
+  const [stats, reviews, ratingSummary, starRating] = await Promise.all([
     getP2PStats(params.id),
     listReviewsForUser(params.id),
-    getRatingSummary(params.id)
+    getRatingSummary(params.id),
+    getVendorAverageStars(params.id)
   ]);
 
   return NextResponse.json({
@@ -52,6 +53,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     },
     stats,
     reviews,
-    ratingSummary
+    ratingSummary,
+    starRating
   });
 }

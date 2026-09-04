@@ -4,8 +4,10 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ArrowLeft, ArrowRight, BadgeCheck, Ban, Check, ChevronDown, Clock, ImagePlus, Loader2, LogIn, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Ban, Check, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
+import { CustomSelect, OptionsMenu } from "@/components/p2p/custom-ui";
+import { formatThousandsInput } from "@/lib/p2p/number-format";
 import { compressImage } from "@/lib/p2p/compress-image";
 import { CRYPTO_CURRENCIES, type Currency } from "@/lib/p2p/currencies-shared";
 import { COUNTRIES, PAYMENT_METHOD_CATEGORY_LABELS, type Country } from "@/lib/p2p/countries-shared";
@@ -70,7 +72,7 @@ function CurrencyInput({
           <input
             type="text"
             inputMode="decimal"
-            value={amount}
+            value={readOnly ? amount : formatThousandsInput(amount)}
             readOnly={readOnly}
             onChange={(e) => onAmountChange?.(sanitizeAmount(e.target.value))}
             placeholder="0.00"
@@ -115,6 +117,10 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+    if (!customBank && !methodName) {
+      setError("Select a payment method.");
+      return;
+    }
     setBusy(true);
 
     let methodType: string;
@@ -166,22 +172,16 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
       ) : (
         <div>
           <label htmlFor="pm-method" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Method</label>
-          <select
-            id="pm-method"
+          <CustomSelect
             value={methodName}
-            onChange={(e) => setMethodName(e.target.value)}
-            required
-            className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
-          >
-            <option value="" disabled>Select a method</option>
-            {grouped.map((group) => (
-              <optgroup key={group.category} label={PAYMENT_METHOD_CATEGORY_LABELS[group.category]}>
-                {group.options.map((m) => (
-                  <option key={m.name} value={m.name}>{m.name}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+            onChange={setMethodName}
+            groups={grouped.map((group) => ({
+              label: PAYMENT_METHOD_CATEGORY_LABELS[group.category],
+              options: group.options.map((m) => ({ value: m.name, label: m.name }))
+            }))}
+            placeholder="Select a method"
+            triggerClassName="h-10"
+          />
         </div>
       )}
 
@@ -228,7 +228,7 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
   );
 }
 
-function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, onToggleFavorite, onToggleBlock }: { offer: Offer; side: Side; activeTrade?: Trade; onSelect: (offer: Offer) => void; onResume: (trade: Trade) => void; isFavorite: boolean; onToggleFavorite: () => void; onToggleBlock: () => void }) {
+function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, isPinned, onToggleFavorite, onTogglePin, onToggleBlock, myUserId }: { offer: Offer; side: Side; activeTrade?: Trade; onSelect: (offer: Offer) => void; onResume: (trade: Trade) => void; isFavorite: boolean; isPinned: boolean; onToggleFavorite: () => void; onTogglePin: () => void; onToggleBlock: () => void; myUserId?: string }) {
   const tierLabel = offer.vendor.verifiedTier !== "none" ? offer.vendor.verifiedTier : offer.vendor.advertiserStatus !== "none" ? "advertiser" : null;
 
   return (
@@ -254,20 +254,32 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, o
               {offer.vendor.completionRate}% · {formatNumber(offer.vendor.totalTrades, 0)} trades
             </span>
             <span className="ml-auto flex items-center gap-1">
-              <button
-                onClick={onToggleFavorite}
-                className="flex h-7 w-7 items-center justify-center border border-line bg-white text-muted transition-colors hover:text-ocean"
-                aria-label="Toggle favorite"
-              >
-                <Star className={`h-3.5 w-3.5 ${isFavorite ? "fill-current text-ocean" : ""}`} />
-              </button>
-              <button
-                onClick={onToggleBlock}
-                className="flex h-7 w-7 items-center justify-center border border-line bg-white text-muted transition-colors hover:text-coral"
-                aria-label="Block vendor"
-              >
-                <Ban className="h-3.5 w-3.5" />
-              </button>
+              <OptionsMenu
+                items={[
+                  {
+                    key: "favorite",
+                    label: isFavorite ? "Unfavorite" : "Favorite",
+                    icon: <Star className={`h-4 w-4 ${isFavorite ? "fill-current text-ocean" : ""}`} />,
+                    active: isFavorite,
+                    onClick: onToggleFavorite
+                  },
+                  {
+                    key: "pin",
+                    label: isPinned ? "Unpin" : "Pin to top",
+                    icon: <Pin className={`h-4 w-4 ${isPinned ? "fill-current text-ocean" : ""}`} />,
+                    active: isPinned,
+                    onClick: onTogglePin
+                  },
+                  { key: "divider", divider: true },
+                  {
+                    key: "block",
+                    label: "Block vendor",
+                    icon: <Ban className="h-4 w-4" />,
+                    danger: true,
+                    onClick: onToggleBlock
+                  }
+                ]}
+              />
             </span>
           </div>
 
@@ -302,6 +314,10 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, o
             Resume trade
             <ArrowRight className="h-4 w-4" />
           </button>
+        ) : myUserId && myUserId === offer.vendor.id ? (
+          <span className="flex h-11 shrink-0 items-center gap-2 border border-line bg-panel px-6 text-sm font-semibold text-muted">
+            You
+          </span>
         ) : (
           <button
             onClick={() => onSelect(offer)}
@@ -329,11 +345,14 @@ function OfferList({
   activeTradesByAd,
   onResume,
   favorites,
+  pinned,
   blocked,
   favoritesOnly,
   onFavoritesOnlyChange,
   onToggleFavorite,
-  onToggleBlock
+  onTogglePin,
+  onToggleBlock,
+  myUserId
 }: {
   side: Side;
   onSideChange: (side: Side) => void;
@@ -348,15 +367,18 @@ function OfferList({
   activeTradesByAd: Map<string, Trade>;
   onResume: (trade: Trade) => void;
   favorites: string[];
+  pinned: string[];
   blocked: string[];
   favoritesOnly: boolean;
   onFavoritesOnlyChange: (v: boolean) => void;
   onToggleFavorite: (vendorId: string) => void;
+  onTogglePin: (vendorId: string) => void;
   onToggleBlock: (vendorId: string) => void;
+  myUserId?: string;
 }) {
-  const visible = offers.filter(
-    (o) => !blocked.includes(o.vendor.id) && (!favoritesOnly || favorites.includes(o.vendor.id))
-  );
+  const visible = offers
+    .filter((o) => !blocked.includes(o.vendor.id) && (!favoritesOnly || favorites.includes(o.vendor.id)))
+    .sort((a, b) => Number(pinned.includes(b.vendor.id)) - Number(pinned.includes(a.vendor.id)));
 
   return (
     <div>
@@ -389,16 +411,21 @@ function OfferList({
             </button>
           ))}
         </div>
-        <div className="relative">
-          <select
+        <CustomSelect
             value={fiat}
-            onChange={(e) => onFiatChange(e.target.value)}
-            className="h-9 cursor-pointer appearance-none border border-line bg-white pl-3 pr-8 text-sm font-semibold text-ink outline-none focus:border-ocean"
-          >
-            {fiatOptions.length === 0 ? <option value={fiat}>{fiat}</option> : fiatOptions.map((o) => <option key={o.code} value={o.code}>{o.code}</option>)}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-        </div>
+            onChange={onFiatChange}
+            groups={[
+              {
+                options:
+                  fiatOptions.length === 0
+                    ? [{ value: fiat, label: fiat }]
+                    : fiatOptions.map((o) => ({ value: o.code, label: o.code }))
+              }
+            ]}
+            wrapperClassName="w-24"
+            align="right"
+            triggerClassName="h-9"
+          />
         <button
           onClick={() => onFavoritesOnlyChange(!favoritesOnly)}
           className={`flex h-9 items-center gap-1.5 px-3 text-sm font-semibold transition-colors ${favoritesOnly ? "bg-ink text-white" : "border border-line text-muted hover:border-ocean hover:text-ink"}`}
@@ -430,8 +457,11 @@ function OfferList({
               onSelect={onSelect}
               onResume={onResume}
               isFavorite={favorites.includes(offer.vendor.id)}
+              isPinned={pinned.includes(offer.vendor.id)}
               onToggleFavorite={() => onToggleFavorite(offer.vendor.id)}
+              onTogglePin={() => onTogglePin(offer.vendor.id)}
               onToggleBlock={() => onToggleBlock(offer.vendor.id)}
+              myUserId={myUserId}
             />
           ))
         )}
@@ -572,20 +602,21 @@ function OrderForm({
           <p className="text-sm text-muted">No payment methods available for {offer.fiat_currency}.</p>
         ) : (
           <>
-            <div className="relative">
-              <select
+            <CustomSelect
                 value={paymentMethodId}
-                onChange={(e) => setPaymentMethodId(e.target.value)}
-                className="h-11 w-full cursor-pointer appearance-none border border-line bg-white px-3 pr-8 text-sm outline-none focus:border-ocean"
-              >
-                <option value="" disabled>Select where you&apos;ll receive fiat</option>
-                {savedForCountry.map((m) => (
-                  <option key={m.id} value={m.id}>{m.method_name}</option>
-                ))}
-                <option value="new">＋ Add a new payment method</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            </div>
+                onChange={setPaymentMethodId}
+                groups={[
+                  {
+                    options: savedForCountry.map((m) => ({ value: m.id, label: m.method_name }))
+                  },
+                  {
+                    label: "New",
+                    options: [{ value: "new", label: "＋ Add a new payment method" }]
+                  }
+                ]}
+                placeholder="Select where you'll receive fiat"
+                triggerClassName="h-11"
+              />
             {paymentMethodId === "new" && (
               <NewPaymentMethodForm
                 country={selectedCountry}
@@ -639,7 +670,8 @@ function TradeDetail({ trade, onBack, onRefresh }: { trade: Trade; onBack: () =>
 function TradeClient() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  const myUserId = session?.user?.id as string | undefined;
   const tradeParam = searchParams.get("trade");
 
   const [side, setSide] = useState<Side>(searchParams.get("side") === "sell" ? "sell" : "buy");
@@ -653,6 +685,7 @@ function TradeClient() {
   const [activeTrade, setActiveTrade] = useState<Trade | null>(null);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [pinned, setPinned] = useState<string[]>([]);
   const [blocked, setBlocked] = useState<string[]>([]);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const offersStampRef = useRef("");
@@ -727,10 +760,11 @@ function TradeClient() {
 
   const loadSocial = useCallback(async () => {
     const res = await fetch("/api/p2p/social", { cache: "no-store" });
-    const data = await readJson<{ favorites?: string[]; blocked?: string[] }>(res);
+    const data = await readJson<{ favorites?: string[]; blocked?: string[]; pinned?: string[] }>(res);
     if (res.ok && data) {
       setFavorites(data.favorites ?? []);
       setBlocked(data.blocked ?? []);
+      setPinned(data.pinned ?? []);
     }
   }, []);
 
@@ -741,6 +775,15 @@ function TradeClient() {
   async function toggleFavorite(vendorId: string) {
     setFavorites((prev) => (prev.includes(vendorId) ? prev.filter((v) => v !== vendorId) : [...prev, vendorId]));
     await fetch("/api/p2p/social?action=favorite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vendorId })
+    }).catch(() => {});
+  }
+
+  async function togglePin(vendorId: string) {
+    setPinned((prev) => (prev.includes(vendorId) ? prev.filter((v) => v !== vendorId) : [...prev, vendorId]));
+    await fetch("/api/p2p/social?action=pin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ vendorId })
@@ -850,11 +893,14 @@ function TradeClient() {
                   router.replace(`/p2p-marketplace/trade?side=${side}&trade=${trade.id}`, { scroll: false });
                 }}
                 favorites={favorites}
+                pinned={pinned}
                 blocked={blocked}
                 favoritesOnly={favoritesOnly}
                 onFavoritesOnlyChange={setFavoritesOnly}
                 onToggleFavorite={toggleFavorite}
+                onTogglePin={togglePin}
                 onToggleBlock={toggleBlock}
+                myUserId={myUserId}
               />
             </div>
 

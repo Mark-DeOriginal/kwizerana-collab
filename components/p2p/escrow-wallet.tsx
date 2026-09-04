@@ -320,14 +320,14 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
       </div>
 
       <div className="space-y-2">
-        <label className={`flex cursor-pointer items-start gap-2 border p-3 text-sm ${mode === "connected" ? "border-ocean bg-surface" : "border-line bg-panel"}`}>
+        <label className={`flex cursor-pointer items-start gap-2 border p-3 text-sm ${mode === "connected" ? "border-ocean bg-ocean/5" : "border-line bg-panel"}`}>
           <input type="radio" checked={mode === "connected"} onChange={() => setMode("connected")} className="mt-0.5 accent-ocean" />
           <span>
             <span className="block font-semibold">Receive in my connected wallet</span>
             <span className="block truncate font-mono text-xs text-muted">{address ?? "No wallet connected"}</span>
           </span>
         </label>
-        <label className={`flex cursor-pointer items-start gap-2 border p-3 text-sm ${mode === "address" ? "border-ocean bg-surface" : "border-line bg-panel"}`}>
+        <label className={`flex cursor-pointer items-start gap-2 border p-3 text-sm ${mode === "address" ? "border-ocean bg-ocean/5" : "border-line bg-panel"}`}>
           <input type="radio" checked={mode === "address"} onChange={() => setMode("address")} className="mt-0.5 accent-ocean" />
           <span>
             <span className="block font-semibold">Send to a wallet address</span>
@@ -341,7 +341,7 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
           value={dest}
           onChange={(e) => setDest(e.target.value)}
           placeholder="0x…"
-          className="h-10 w-full border border-line bg-surface px-3 font-mono text-sm outline-none focus:border-ocean"
+          className="h-10 w-full border border-line bg-white px-3 font-mono text-sm outline-none focus:border-ocean"
         />
       )}
 

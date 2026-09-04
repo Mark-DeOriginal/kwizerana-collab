@@ -3,20 +3,22 @@ import { coreWallet, metaMaskWallet, rabbyWallet, walletConnectWallet } from "@r
 import { createConfig, http } from "wagmi";
 import { avalanche } from "wagmi/chains";
 
-const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() || "MISSING_WALLETCONNECT_PROJECT_ID";
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
 const appName = "Kwizerana";
 
 const avalancheRpcUrl = process.env.NEXT_PUBLIC_AVALANCHE_RPC_URL?.trim();
 
-const connectors = connectorsForWallets(
-  [
-    {
-      groupName: "Recommended",
-      wallets: [metaMaskWallet, rabbyWallet, coreWallet, walletConnectWallet]
-    }
-  ],
-  { appName, projectId }
-);
+const injectedWallets = [metaMaskWallet, rabbyWallet, coreWallet];
+
+const connectors = projectId
+  ? connectorsForWallets(
+      [{ groupName: "Recommended", wallets: [...injectedWallets, walletConnectWallet] }],
+      { appName, projectId }
+    )
+  : connectorsForWallets(
+      [{ groupName: "Recommended", wallets: injectedWallets }],
+      { appName, projectId: "unused" }
+    );
 
 export const walletConnectChains = [avalanche] as const;
 
