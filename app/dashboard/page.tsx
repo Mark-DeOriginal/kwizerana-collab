@@ -13,11 +13,11 @@ import {
   CheckCircle2,
   Clock,
   Copy,
+  Gift,
   History,
   Landmark,
   Loader2,
   LogIn,
-  Megaphone,
   MessageSquare,
   Pencil,
   Plus,
@@ -25,10 +25,10 @@ import {
   Scale,
   ShieldCheck,
   Star,
+  Store,
   ThumbsUp,
   Trash2,
   TrendingUp,
-  Users,
   Wallet
 } from "lucide-react";
 import { readJson } from "@/lib/client-request";
@@ -101,12 +101,18 @@ function formatReleaseSeconds(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
-function Card({ title, action, children, className = "" }: { title?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+function Card({ title, icon, subtitle, action, children, className = "" }: { title?: string; icon?: React.ReactNode; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <section className={`border border-line bg-white ${className}`}>
       {(title || action) && (
-        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
-          <h2 className="text-sm font-semibold">{title}</h2>
+        <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            {icon && <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-panel text-ocean">{icon}</span>}
+            <div className="min-w-0">
+              {title && <h2 className="text-sm font-semibold leading-tight">{title}</h2>}
+              {subtitle && <p className="mt-0.5 truncate text-xs text-muted">{subtitle}</p>}
+            </div>
+          </div>
           {action}
         </div>
       )}
@@ -267,8 +273,8 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
           </div>
         )}
 
-        {/* Top grid: wallet + stats */}
-        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        {/* Top grid: wallet + reputation */}
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <WalletPanel loading={loading && !data} />
           <StatsPanel stats={data?.stats} loading={loading && !data} />
         </div>
@@ -280,8 +286,8 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         <TickerStrip rates={rates} />
 
         {/* Active trades + activity */}
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-          <Card title="Active trades" action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>}>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <Card title="Active trades" subtitle="Trades in progress" icon={<Clock className="h-4 w-4" />} action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>}>
             <ActiveTradesPanel trades={data?.trades ?? []} loading={loading && !data} onChanged={load} />
           </Card>
           <ActivityPanel notifications={data?.notifications ?? []} loading={loading && !data} />
@@ -295,7 +301,7 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
 
         {/* Trade history — full width table */}
         <div className="mt-4">
-          <Card title="Trade history" action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>}>
+          <Card title="Trade history" subtitle="Completed and closed trades" icon={<History className="h-4 w-4" />} action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>}>
             <TradeHistoryPanel
               trades={data?.trades ?? []}
               submittedReviews={data?.submittedReviews ?? []}
@@ -383,7 +389,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
 
   if (loading) {
     return (
-      <Card title="Your wallet">
+      <Card title="Wallet" icon={<Wallet className="h-4 w-4" />} subtitle="USDC & USDT on Avalanche">
         <div className="flex items-center gap-3 text-sm text-muted">
           <Loader2 className="h-5 w-5 animate-spin text-ocean" />
           Loading your wallet…
@@ -394,7 +400,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
 
   if (!isConnected || !address) {
     return (
-      <Card title="Your wallet">
+      <Card title="Wallet" icon={<Wallet className="h-4 w-4" />} subtitle="USDC & USDT on Avalanche">
         <EmptyState
           icon={<Wallet className="h-5 w-5" />}
           title="No wallet connected"
@@ -410,7 +416,9 @@ function WalletPanel({ loading }: { loading?: boolean }) {
 
   return (
     <Card
-      title="Your wallet"
+      title="Wallet"
+      icon={<Wallet className="h-4 w-4" />}
+      subtitle="USDC & USDT on Avalanche"
       action={
         <button
           onClick={() => void refresh()}
@@ -424,7 +432,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
       }
     >
       <div className="space-y-3">
-        <div className="flex items-center justify-between gap-2 border border-line bg-panel px-3 py-2">
+        <div className="flex items-center justify-between gap-2 rounded-md border border-line bg-panel px-3 py-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-moss">
             <span className="h-2 w-2 rounded-full bg-moss" />
             Connected · {chain?.name ?? "Avalanche"}
@@ -434,7 +442,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
           </button>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border border-line bg-panel px-3 py-2">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-line bg-panel px-3 py-2">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Address</p>
             <p className="truncate font-mono text-sm font-semibold text-ink">{shortAddress(address)}</p>
@@ -461,14 +469,14 @@ function WalletPanel({ loading }: { loading?: boolean }) {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <div className="border border-line bg-white p-4">
+          <div className="rounded-md border border-line bg-white p-4">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">USDC</p>
             <p className="mt-2 font-mono text-xl font-bold tracking-tight text-ink sm:text-2xl">
               {usdcLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted" /> : usdcError ? "—" : formatWalletBalance(usdcBalance)}
             </p>
             <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-muted">Avalanche</p>
           </div>
-          <div className="border border-line bg-white p-4">
+          <div className="rounded-md border border-line bg-white p-4">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">USDT</p>
             <p className="mt-2 font-mono text-xl font-bold tracking-tight text-ink sm:text-2xl">
               {usdtLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted" /> : usdtError ? "—" : formatWalletBalance(usdtBalance)}
@@ -484,7 +492,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
 function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean }) {
   if (loading || !stats) {
     return (
-      <Card title="Trading reputation">
+      <Card title="Reputation" icon={<Star className="h-4 w-4" />} subtitle="Built from your trading history">
         <div className="flex items-center gap-3 text-sm text-muted">
           <Loader2 className="h-5 w-5 animate-spin text-ocean" />
           Loading stats…
@@ -493,21 +501,21 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
     );
   }
 
-  const items = [
-    { label: "Completion rate", value: `${formatAmount(stats.completionRate30d)}%`, icon: <CheckCircle2 className="h-4 w-4" /> },
-    { label: "Total trades", value: formatAmount(stats.totalTrades), icon: <History className="h-4 w-4" /> },
-    { label: "30-day volume", value: `${formatAmount(stats.volume30d)} USDT`, icon: <TrendingUp className="h-4 w-4" /> },
-    { label: "Counterparties", value: formatAmount(stats.cumulativeCounterparties), icon: <Users className="h-4 w-4" /> },
-    { label: "Avg release time", value: formatReleaseSeconds(stats.avgReleaseSeconds), icon: <Clock className="h-4 w-4" /> },
-    { label: "Trust score", value: String(stats.trustScore), icon: <Star className="h-4 w-4" /> }
+  const tiles = [
+    { label: "Completion rate", value: `${formatAmount(stats.completionRate30d)}%` },
+    { label: "Total trades", value: formatAmount(stats.totalTrades) },
+    { label: "30-day volume", value: `${formatAmount(stats.volume30d)} USDT` },
+    { label: "Counterparties", value: formatAmount(stats.cumulativeCounterparties) }
   ];
 
   return (
     <Card
-      title="Trading reputation"
+      title="Reputation"
+      icon={<Star className="h-4 w-4" />}
+      subtitle="Built from your trading history"
       action={
         stats.advertiserStatus !== "none" ? (
-          <span className="flex items-center gap-1.5 text-xs font-semibold text-moss">
+          <span className="flex items-center gap-1.5 rounded-full border border-mint bg-mint/50 px-2.5 py-1 text-xs font-semibold text-moss">
             <BadgeCheck className="h-4 w-4" />
             <span className="capitalize">{stats.advertiserLevel}</span>
             {stats.verifiedTier && stats.verifiedTier !== "none" && <span className="text-muted">· {stats.verifiedTier}</span>}
@@ -515,18 +523,31 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
         ) : undefined
       }
     >
-      <div className="grid grid-cols-2 gap-3">
-        {items.map((item) => (
-          <div key={item.label} className="border border-line bg-panel px-3 py-3">
-            <div className="flex items-center gap-1.5 text-muted">
-              {item.icon}
-              <span className="text-xs font-semibold uppercase tracking-wide">{item.label}</span>
-            </div>
-            <p className="mt-1.5 text-xl font-bold">{item.value}</p>
+      <div className="flex items-center justify-between rounded-md bg-ocean px-4 py-4 text-white">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-white/80">Trust score</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight">{stats.trustScore}</p>
+        </div>
+        <div className="flex items-center gap-0.5">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Star key={i} className={`h-4 w-4 ${i <= Math.round((stats.trustScore / 100) * 5) ? "fill-current" : "text-white/30"}`} />
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="rounded-md border border-line bg-panel px-3 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{tile.label}</p>
+            <p className="mt-1.5 text-xl font-bold">{tile.value}</p>
           </div>
         ))}
       </div>
-      <p className="mt-4 text-xs text-muted">Reputation builds as you trade. Verified advertisers earn badges and higher limits.</p>
+
+      <p className="mt-3 flex items-center gap-1.5 text-xs text-muted">
+        <Clock className="h-3.5 w-3.5" />
+        Avg release time <span className="font-semibold text-ink">{formatReleaseSeconds(stats.avgReleaseSeconds)}</span>
+      </p>
     </Card>
   );
 }
@@ -534,35 +555,30 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
 function TickerStrip({ rates }: { rates: CurrencyRate[] }) {
   const pairs = useMemo(() => rates.slice(0, 16), [rates]);
 
-  if (pairs.length === 0) {
-    return (
-      <div className="mt-4 border border-line bg-white px-5 py-3 text-sm text-muted">
-        Market rates will appear here once the price feed is live.
-      </div>
-    );
-  }
-
   return (
-    <div className="mt-4 border border-line bg-white">
-      <div className="thin-scrollbar flex items-stretch gap-0 overflow-x-auto">
-        {pairs.map((r) => (
-          <div key={`${r.crypto_currency}-${r.fiat_currency}`} className="flex min-w-[160px] shrink-0 flex-col justify-center border-r border-line px-4 py-3 last:border-r-0">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
-              <Landmark className="h-3.5 w-3.5 text-ocean" />
-              {r.crypto_currency}/{r.fiat_currency}
+    <Card title="Market rates" subtitle="Live fiat prices" icon={<Landmark className="h-4 w-4" />} className="mt-4">
+      {pairs.length === 0 ? (
+        <p className="text-sm text-muted">Market rates will appear here once the price feed is live.</p>
+      ) : (
+        <div className="thin-scrollbar flex gap-2 overflow-x-auto pb-1">
+          {pairs.map((r) => (
+            <div key={`${r.crypto_currency}-${r.fiat_currency}`} className="min-w-[150px] shrink-0 rounded-md border border-line bg-panel px-3 py-2.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                {r.crypto_currency}/{r.fiat_currency}
+              </div>
+              <p className="mt-0.5 text-sm font-bold">{formatAmount(Number(r.rate))}</p>
             </div>
-            <p className="mt-0.5 text-sm font-bold">{formatAmount(Number(r.rate))}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
 function ActivityPanel({ notifications, loading }: { notifications: P2PNotification[]; loading?: boolean }) {
   if (loading) {
     return (
-      <Card title="Recent activity">
+      <Card title="Activity" icon={<Bell className="h-4 w-4" />} subtitle="Latest updates and notices">
         <div className="flex items-center gap-3 text-sm text-muted">
           <Loader2 className="h-5 w-5 animate-spin text-ocean" />
           Loading activity…
@@ -572,13 +588,13 @@ function ActivityPanel({ notifications, loading }: { notifications: P2PNotificat
   }
 
   return (
-    <Card title="Recent activity" action={<Link href="/notifications" className="text-xs font-semibold text-ocean hover:underline">View all</Link>}>
+    <Card title="Activity" icon={<Bell className="h-4 w-4" />} subtitle="Latest updates and notices" action={<Link href="/notifications" className="text-xs font-semibold text-ocean hover:underline">View all</Link>}>
       {notifications.length === 0 ? (
         <EmptyState icon={<MessageSquare className="h-5 w-5" />} title="No activity yet" subtitle="Trade updates, messages, and notices will show up here." />
       ) : (
         <ul className="space-y-2">
           {notifications.map((n) => (
-            <li key={n.id} className="flex items-start gap-2 border border-line bg-panel px-3 py-2">
+            <li key={n.id} className="flex items-start gap-2 rounded-md border border-line bg-panel px-3 py-2">
               {!n.is_read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-ocean" />}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">{n.title}</p>
@@ -596,7 +612,7 @@ function ActivityPanel({ notifications, loading }: { notifications: P2PNotificat
 function SecurityPanel({ security, loading }: { security?: SecuritySummary; loading?: boolean }) {
   if (loading || !security) {
     return (
-      <Card title="Security">
+      <Card title="Account security" icon={<ShieldCheck className="h-4 w-4" />} subtitle="Keep your account protected">
         <div className="flex items-center gap-3 text-sm text-muted">
           <Loader2 className="h-5 w-5 animate-spin text-ocean" />
           Loading security…
@@ -612,24 +628,37 @@ function SecurityPanel({ security, loading }: { security?: SecuritySummary; load
     { label: "Email verified", ok: security.emailVerified }
   ];
 
-  const complete = items.every((i) => i.ok);
+  const done = items.filter((i) => i.ok).length;
+  const pct = Math.round((done / items.length) * 100);
 
   return (
-    <Card title="Security" action={<Link href="/account/security" className="text-xs font-semibold text-ocean hover:underline">Manage</Link>}>
+    <Card title="Account security" subtitle="Keep your account protected" icon={<ShieldCheck className="h-4 w-4" />} action={<Link href="/account/security" className="text-xs font-semibold text-ocean hover:underline">Manage</Link>}>
+      <div className="mb-3 flex items-center gap-3">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel">
+          <div className={`h-full transition-all ${pct === 100 ? "bg-moss" : "bg-ocean"}`} style={{ width: `${pct}%` }} />
+        </div>
+        <span className="shrink-0 text-xs font-semibold text-muted">{done}/{items.length} secured</span>
+      </div>
       <ul className="space-y-2">
         {items.map((item) => (
-          <li key={item.label} className="flex items-center justify-between border border-line bg-panel px-3 py-2.5">
+          <li key={item.label} className="flex items-center justify-between rounded-md border border-line bg-panel px-3 py-2.5">
             <span className="text-sm font-semibold">{item.label}</span>
             {item.ok ? (
-              <span className="flex items-center gap-1 text-xs font-semibold text-moss"><CheckCircle2 className="h-4 w-4" />On</span>
+              <span className="flex items-center gap-1.5 rounded-full bg-mint px-2.5 py-1 text-[11px] font-bold text-moss">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                On
+              </span>
             ) : (
-              <span className="flex items-center gap-1 text-xs font-semibold text-coral"><ShieldCheck className="h-4 w-4" />Action needed</span>
+              <span className="flex items-center gap-1.5 rounded-full bg-coral/10 px-2.5 py-1 text-[11px] font-bold text-coral">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Action needed
+              </span>
             )}
           </li>
         ))}
       </ul>
-      {!complete && (
-        <Link href="/account/security" className="mt-4 flex h-9 items-center justify-center gap-1.5 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean">
+      {pct < 100 && (
+        <Link href="/account/security" className="mt-4 flex h-10 items-center justify-center gap-1.5 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean">
           Secure my account
           <ArrowUpRight className="h-4 w-4" />
         </Link>
@@ -704,7 +733,7 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
 
   if (loading) {
     return (
-      <Card title="Payment methods">
+      <Card title="Payment methods" icon={<Banknote className="h-4 w-4" />} subtitle="How buyers pay you">
         <div className="flex items-center gap-3 text-sm text-muted">
           <Loader2 className="h-5 w-5 animate-spin text-ocean" />
           Loading payment methods…
@@ -716,6 +745,8 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
   return (
     <Card
       title="Payment methods"
+      icon={<Banknote className="h-4 w-4" />}
+      subtitle="How buyers pay you"
       action={
         <Link href="/account/payment-methods" className="flex h-8 items-center gap-1.5 bg-ink px-3 text-xs font-semibold text-white transition-colors hover:bg-ocean">
           <Plus className="h-3.5 w-3.5" />
@@ -845,35 +876,46 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
   if (vendor?.isVendor) {
     const isManaged = Boolean(isSuperAdmin);
     return (
-      <Card title="Vendor" action={<span className="flex items-center gap-1 text-xs font-semibold text-moss"><BadgeCheck className="h-4 w-4" />Active</span>}>
+      <Card
+        title="Your store"
+        icon={<Store className="h-4 w-4" />}
+        subtitle={isManaged ? "Manage vendor inventory and fees" : "Manage what you sell"}
+        action={
+          <span className="flex items-center gap-1.5 rounded-full border border-mint bg-mint/50 px-2.5 py-1 text-xs font-semibold text-moss">
+            <BadgeCheck className="h-4 w-4" />
+            Active
+          </span>
+        }
+      >
         {!isManaged && (
-          <div className="mt-4 border-t border-line pt-3">
+          <div className="border-b border-line pb-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Receiving payment options</p>
             {paymentMethods.length === 0 ? (
               <p className="mt-2 text-sm text-muted">No options yet — buyers won&apos;t be able to pay you.</p>
             ) : (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {paymentMethods.map((pm) => (
-                  <span key={pm.id} className="border border-line bg-white px-2 py-1 text-xs font-semibold text-ink">
+                  <span key={pm.id} className="rounded-md border border-line bg-panel px-2 py-1 text-xs font-semibold text-ink">
                     {pm.method_name}
                   </span>
                 ))}
               </div>
             )}
-            <Link href="/account/payment-methods" className="mt-2 inline-block text-xs font-semibold text-ocean hover:underline">
+            <Link href="/account/payment-methods" className="mt-3 inline-block text-xs font-semibold text-ocean hover:underline">
               Manage payment options
             </Link>
           </div>
         )}
 
-        <InventoryEditor onChanged={onChanged} managed={isManaged} />
-
-        <VendorFeeEditor onChanged={onChanged} managed={isManaged} />
+        <div className={`grid gap-6 md:grid-cols-2 ${!isManaged ? "pt-5" : ""}`}>
+          <InventoryEditor onChanged={onChanged} managed={isManaged} />
+          <VendorFeeEditor onChanged={onChanged} managed={isManaged} />
+        </div>
 
         {!isManaged && <VerificationPanel vendor={vendor} onChanged={onChanged} />}
 
         {isManaged && (
-          <div className="mt-4 border-t border-line pt-3">
+          <div className="mt-5 rounded-md border border-line bg-panel px-4 py-3">
             <p className="text-xs text-muted">Admin panel: use <Link href="/admin-dashboard" className="font-semibold text-ocean hover:underline">Admin Dashboard</Link> to manage vendor applications and approve new vendors.</p>
           </div>
         )}
@@ -884,8 +926,8 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
   // Pending application — show "under review" state
   if (vendorApplication?.status === "pending") {
     return (
-      <Card title="Become a vendor">
-        <div className="flex items-center gap-3 border border-ocean/30 bg-ocean/5 p-4">
+      <Card title="Become a vendor" icon={<Store className="h-4 w-4" />} subtitle="Sell crypto on the marketplace">
+        <div className="flex items-center gap-3 rounded-md border border-ocean/30 bg-ocean/5 p-4">
           <Clock className="h-5 w-5 shrink-0 text-ocean" />
           <div>
             <p className="text-sm font-semibold">Your application is under review</p>
@@ -899,8 +941,8 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
   // Rejected application — allow reapply
   if (vendorApplication?.status === "rejected") {
     return (
-      <Card title="Become a vendor">
-        <div className="mb-3 border border-coral/30 bg-coral/5 p-3 text-sm">
+      <Card title="Become a vendor" icon={<Store className="h-4 w-4" />} subtitle="Sell crypto on the marketplace">
+        <div className="mb-3 rounded-md border border-coral/30 bg-coral/5 p-3 text-sm">
           <p className="font-semibold text-coral">Application not approved</p>
           <p className="mt-1 text-muted">Your previous application was not approved. You can reapply below.</p>
         </div>
@@ -948,7 +990,7 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
 
   // No application yet — show "Become a vendor" card
   return (
-    <Card title="Become a vendor">
+    <Card title="Become a vendor" icon={<Store className="h-4 w-4" />} subtitle="Sell crypto on the marketplace">
       {!applying ? (
         <>
           <p className="text-sm leading-6 text-muted">
@@ -1316,7 +1358,7 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
 function DisputesPanel({ disputes, loading }: { disputes: DisputeDetail[]; loading?: boolean }) {
   if (loading) {
     return (
-      <Card title="Disputes">
+      <Card title="Disputes" icon={<Scale className="h-4 w-4" />} subtitle="Open and resolved cases">
         <div className="flex items-center gap-3 text-sm text-muted">
           <Loader2 className="h-5 w-5 animate-spin text-ocean" />
           Loading disputes…
@@ -1330,14 +1372,14 @@ function DisputesPanel({ disputes, loading }: { disputes: DisputeDetail[]; loadi
 
   if (disputes.length === 0) {
     return (
-      <Card title="Disputes" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
+      <Card title="Disputes" icon={<Scale className="h-4 w-4" />} subtitle="Open and resolved cases" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
         <EmptyState icon={<Scale className="h-5 w-5" />} title="No disputes" subtitle="Any open or resolved disputes will appear here." />
       </Card>
     );
   }
 
   return (
-    <Card title="Disputes" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
+    <Card title="Disputes" icon={<Scale className="h-4 w-4" />} subtitle="Open and resolved cases" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
       <div className="mb-3 flex flex-wrap gap-3">
         <span className="text-sm font-semibold text-coral">{open.length} open</span>
         <span className="text-sm font-semibold text-muted">{resolved.length} resolved</span>
@@ -1467,7 +1509,7 @@ function ReferralPanel() {
   if (!info) return null;
 
   return (
-    <Card title="Refer friends">
+    <Card title="Invite friends" subtitle="Share your referral link" icon={<Gift className="h-4 w-4" />}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm text-muted">
@@ -1475,7 +1517,7 @@ function ReferralPanel() {
             <span className="font-semibold text-ink">{info.referredCount}</span> {info.referredCount === 1 ? "person" : "people"}.
           </p>
           <div className="mt-2 flex items-center gap-2">
-            <code className="truncate border border-line bg-panel px-3 py-1.5 text-xs text-ink">{info.link}</code>
+            <code className="truncate rounded-md border border-line bg-panel px-3 py-1.5 text-xs text-ink">{info.link}</code>
             <button onClick={() => void copy()} className="flex h-8 shrink-0 items-center gap-1 border border-line bg-white px-2.5 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">
               {copied ? <Check className="h-3.5 w-3.5 text-moss" /> : <Copy className="h-3.5 w-3.5" />}
               {copied ? "Copied" : "Copy"}
@@ -1575,14 +1617,14 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
   const showVendorSelect = managed && managedVendors.length > 0;
 
   return (
-    <div className="mt-4 border-t border-line pt-3">
+    <div>
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">Inventory for sale</p>
       <p className="mt-1 text-xs text-muted">
-        Set how much USDC and USDT {managed ? "each vendor" : "you"} have available to sell. Buyers see this as the listing limit, and it updates as trades complete.
+        Set how much USDC and USDT {managed ? "each vendor" : "you"} have available to sell. Buyers see this as the listing limit.
       </p>
 
       {showVendorSelect && (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
           <CustomSelect
             value={vendorId}
@@ -1596,16 +1638,16 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
         </div>
       )}
 
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+      <div className="mt-3 space-y-2">
         {INVENTORY_TOKENS.map((code) => (
           <label key={code} className="block">
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">{code} for sale</span>
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">{code}</span>
             <NumInput
               value={balances[code] ?? ""}
               onValueChange={(raw) => setBalances((prev) => ({ ...prev, [code]: raw }))}
               min="0"
               placeholder="0"
-              className="h-9 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+              className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
             />
           </label>
         ))}
@@ -1614,11 +1656,11 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
       <button
         onClick={() => void save()}
         disabled={busy || (showVendorSelect && !vendorId)}
-        className="mt-2 flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+        className="mt-3 flex h-10 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
       >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save inventory"}
       </button>
-      {error && <p className="mt-1 text-xs font-semibold text-coral">{error}</p>}
+      {error && <p className="mt-2 text-xs font-semibold text-coral">{error}</p>}
     </div>
   );
 }
@@ -1696,14 +1738,14 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
   const currentSellFee = Number(sellFeePercent) || 0;
 
   return (
-    <div className="mt-4 border-t border-line pt-3">
+    <div>
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">Trading fees</p>
       <p className="mt-1 text-xs text-muted">
         Set the percentage you charge on top of the standard exchange rate for each direction.
       </p>
 
       {showVendorSelect && (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
           <CustomSelect
             value={vendorId}
@@ -1717,27 +1759,27 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
         </div>
       )}
 
-      <div className="mt-2 flex items-end gap-4">
+      <div className="mt-3 space-y-2">
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Sell fee (%)</span>
+          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Sell fee (%)</span>
           <NumInput
             value={sellFeePercent}
             onValueChange={(raw) => setSellFeePercent(raw)}
             min="0"
             max="50"
             placeholder="0"
-            className="h-9 w-28 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+            className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Buy fee (%)</span>
+          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Buy fee (%)</span>
           <NumInput
             value={buyFeePercent}
             onValueChange={(raw) => setBuyFeePercent(raw)}
             min="0"
             max="50"
             placeholder="0"
-            className="h-9 w-28 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+            className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
           />
         </label>
       </div>
@@ -1751,12 +1793,12 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
       <button
         onClick={() => void save()}
         disabled={busy || (showVendorSelect && !vendorId)}
-        className="mt-2 flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+        className="mt-3 flex h-10 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save fees"}
       </button>
-      {error && <p className="mt-1 text-xs font-semibold text-coral">{error}</p>}
-      {success && <p className="mt-1 text-xs font-semibold text-moss">{success}</p>}
+      {error && <p className="mt-2 text-xs font-semibold text-coral">{error}</p>}
+      {success && <p className="mt-2 text-xs font-semibold text-moss">{success}</p>}
     </div>
   );
 }
