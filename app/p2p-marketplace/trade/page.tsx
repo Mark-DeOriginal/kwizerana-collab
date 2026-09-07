@@ -437,10 +437,31 @@ function OfferList({
             Loading vendors…
           </div>
         ) : visible.length === 0 ? (
-          <div className="border border-dashed border-line bg-panel p-10 text-center">
-            <p className="font-semibold">No {side === "buy" ? "sellers" : "buyers"} for {asset}/{fiat} yet</p>
-            <p className="mt-1 text-sm text-muted">Check back soon as more vendors join.</p>
-          </div>
+          favoritesOnly ? (
+            <div className="border border-dashed border-line bg-panel p-10 text-center">
+              <p className="font-semibold">
+                {favorites.length === 0
+                  ? "You haven't added any vendor to favorites yet"
+                  : `None of your favorites are ${side === "buy" ? "selling" : "buying"} ${asset}/${fiat} right now`}
+              </p>
+              <p className="mt-1 text-sm text-muted">
+                {favorites.length === 0
+                  ? "Tap the ⋯ menu on a vendor card and choose Favorite to see them here."
+                  : "Try a different asset or currency, or check back soon."}
+              </p>
+              <button
+                onClick={() => onFavoritesOnlyChange(false)}
+                className="mt-4 h-9 border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-ocean"
+              >
+                Show all vendors
+              </button>
+            </div>
+          ) : (
+            <div className="border border-dashed border-line bg-panel p-10 text-center">
+              <p className="font-semibold">No {side === "buy" ? "sellers" : "buyers"} for {asset}/{fiat} yet</p>
+              <p className="mt-1 text-sm text-muted">Check back soon as more vendors join.</p>
+            </div>
+          )
         ) : (
           visible.map((offer) => (
             <OfferCard

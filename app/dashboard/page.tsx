@@ -872,6 +872,17 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
   // Super admin who owns DAO vendors — show managed vendors panel instead of hiding
   // (isSuperAdmin users also get isVendor=true from getVendorStatus via owned vendor aggregation)
 
+  if (loading) {
+    return (
+      <Card title="Your store" icon={<Store className="h-4 w-4" />}>
+        <div className="flex items-center gap-3 text-sm text-muted">
+          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
+          Loading…
+        </div>
+      </Card>
+    );
+  }
+
   // Already a vendor
   if (vendor?.isVendor) {
     const isManaged = Boolean(isSuperAdmin);
