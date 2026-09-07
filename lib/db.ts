@@ -352,12 +352,6 @@ const schemaStatements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, vendor_id)
   )`,
-  `CREATE TABLE IF NOT EXISTS p2p_blocklist (
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    blocked_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_id, blocked_id)
-  )`,
   `CREATE TABLE IF NOT EXISTS p2p_pins (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     vendor_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

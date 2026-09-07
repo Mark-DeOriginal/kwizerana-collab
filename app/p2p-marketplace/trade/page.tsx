@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ArrowLeft, ArrowRight, BadgeCheck, Ban, Check, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect, OptionsMenu } from "@/components/p2p/custom-ui";
 import { formatThousandsInput } from "@/lib/p2p/number-format";
@@ -228,14 +228,40 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
   );
 }
 
-function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, isPinned, onToggleFavorite, onTogglePin, onToggleBlock, myUserId }: { offer: Offer; side: Side; activeTrade?: Trade; onSelect: (offer: Offer) => void; onResume: (trade: Trade) => void; isFavorite: boolean; isPinned: boolean; onToggleFavorite: () => void; onTogglePin: () => void; onToggleBlock: () => void; myUserId?: string }) {
+function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, isPinned, onToggleFavorite, onTogglePin, myUserId }: { offer: Offer; side: Side; activeTrade?: Trade; onSelect: (offer: Offer) => void; onResume: (trade: Trade) => void; isFavorite: boolean; isPinned: boolean; onToggleFavorite: () => void; onTogglePin: () => void; myUserId?: string }) {
   const tierLabel = offer.vendor.verifiedTier !== "none" ? offer.vendor.verifiedTier : offer.vendor.advertiserStatus !== "none" ? "advertiser" : null;
 
   return (
-    <div className={`border p-4 transition-colors sm:p-5 ${activeTrade ? "border-ocean bg-mint/20" : "border-line bg-white hover:border-ocean"}`}>
+    <div className={`relative p-4 transition-colors sm:p-5 ${isPinned ? "border-2 border-ocean bg-white" : activeTrade ? "border border-ocean bg-mint/20" : "border border-line bg-white hover:border-ocean"}`}>
+      <div className="absolute right-2 top-2 flex items-center gap-1 sm:right-3 sm:top-3">
+        <OptionsMenu
+          items={[
+            {
+              key: "favorite",
+              label: isFavorite ? "Unfavorite" : "Favorite",
+              icon: <Star className={`h-4 w-4 ${isFavorite ? "fill-current text-ocean" : ""}`} />,
+              active: isFavorite,
+              onClick: onToggleFavorite
+            },
+            {
+              key: "pin",
+              label: isPinned ? "Unpin" : "Pin to top",
+              icon: <Pin className={`h-4 w-4 ${isPinned ? "fill-current text-ocean" : ""}`} />,
+              active: isPinned,
+              onClick: onTogglePin
+            }
+          ]}
+        />
+        {isPinned && (
+          <span className="flex h-7 w-7 items-center justify-center border border-ocean/40 bg-mint/30 text-ocean">
+            <Pin className="h-3.5 w-3.5 fill-current" />
+          </span>
+        )}
+      </div>
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className={`flex flex-wrap items-center gap-2 ${isPinned ? "pr-16" : "pr-12"}`}>
             <VendorAvatar name={offer.vendor.name} />
             <Link href={`/p2p-marketplace/vendor/${offer.vendor.id}`} className="truncate font-semibold hover:text-ocean hover:underline">{offer.vendor.name}</Link>
             {tierLabel && (
@@ -252,34 +278,6 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, i
             )}
             <span className="text-xs text-muted">
               {offer.vendor.completionRate}% · {formatNumber(offer.vendor.totalTrades, 0)} trades
-            </span>
-            <span className="ml-auto flex items-center gap-1">
-              <OptionsMenu
-                items={[
-                  {
-                    key: "favorite",
-                    label: isFavorite ? "Unfavorite" : "Favorite",
-                    icon: <Star className={`h-4 w-4 ${isFavorite ? "fill-current text-ocean" : ""}`} />,
-                    active: isFavorite,
-                    onClick: onToggleFavorite
-                  },
-                  {
-                    key: "pin",
-                    label: isPinned ? "Unpin" : "Pin to top",
-                    icon: <Pin className={`h-4 w-4 ${isPinned ? "fill-current text-ocean" : ""}`} />,
-                    active: isPinned,
-                    onClick: onTogglePin
-                  },
-                  { key: "divider", divider: true },
-                  {
-                    key: "block",
-                    label: "Block vendor",
-                    icon: <Ban className="h-4 w-4" />,
-                    danger: true,
-                    onClick: onToggleBlock
-                  }
-                ]}
-              />
             </span>
           </div>
 
@@ -346,12 +344,10 @@ function OfferList({
   onResume,
   favorites,
   pinned,
-  blocked,
   favoritesOnly,
   onFavoritesOnlyChange,
   onToggleFavorite,
   onTogglePin,
-  onToggleBlock,
   myUserId
 }: {
   side: Side;
@@ -368,16 +364,14 @@ function OfferList({
   onResume: (trade: Trade) => void;
   favorites: string[];
   pinned: string[];
-  blocked: string[];
   favoritesOnly: boolean;
   onFavoritesOnlyChange: (v: boolean) => void;
   onToggleFavorite: (vendorId: string) => void;
   onTogglePin: (vendorId: string) => void;
-  onToggleBlock: (vendorId: string) => void;
   myUserId?: string;
 }) {
   const visible = offers
-    .filter((o) => !blocked.includes(o.vendor.id) && (!favoritesOnly || favorites.includes(o.vendor.id)))
+    .filter((o) => !favoritesOnly || favorites.includes(o.vendor.id))
     .sort((a, b) => Number(pinned.includes(b.vendor.id)) - Number(pinned.includes(a.vendor.id)));
 
   return (
@@ -460,7 +454,6 @@ function OfferList({
               isPinned={pinned.includes(offer.vendor.id)}
               onToggleFavorite={() => onToggleFavorite(offer.vendor.id)}
               onTogglePin={() => onTogglePin(offer.vendor.id)}
-              onToggleBlock={() => onToggleBlock(offer.vendor.id)}
               myUserId={myUserId}
             />
           ))
@@ -686,7 +679,6 @@ function TradeClient() {
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
-  const [blocked, setBlocked] = useState<string[]>([]);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const offersStampRef = useRef("");
 
@@ -760,10 +752,9 @@ function TradeClient() {
 
   const loadSocial = useCallback(async () => {
     const res = await fetch("/api/p2p/social", { cache: "no-store" });
-    const data = await readJson<{ favorites?: string[]; blocked?: string[]; pinned?: string[] }>(res);
+    const data = await readJson<{ favorites?: string[]; pinned?: string[] }>(res);
     if (res.ok && data) {
       setFavorites(data.favorites ?? []);
-      setBlocked(data.blocked ?? []);
       setPinned(data.pinned ?? []);
     }
   }, []);
@@ -784,15 +775,6 @@ function TradeClient() {
   async function togglePin(vendorId: string) {
     setPinned((prev) => (prev.includes(vendorId) ? prev.filter((v) => v !== vendorId) : [...prev, vendorId]));
     await fetch("/api/p2p/social?action=pin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vendorId })
-    }).catch(() => {});
-  }
-
-  async function toggleBlock(vendorId: string) {
-    setBlocked((prev) => (prev.includes(vendorId) ? prev.filter((v) => v !== vendorId) : [...prev, vendorId]));
-    await fetch("/api/p2p/social?action=block", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ vendorId })
@@ -894,12 +876,10 @@ function TradeClient() {
                 }}
                 favorites={favorites}
                 pinned={pinned}
-                blocked={blocked}
                 favoritesOnly={favoritesOnly}
                 onFavoritesOnlyChange={setFavoritesOnly}
                 onToggleFavorite={toggleFavorite}
                 onTogglePin={togglePin}
-                onToggleBlock={toggleBlock}
                 myUserId={myUserId}
               />
             </div>
