@@ -10,7 +10,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const isAllowed = allowDevAdmin || isAdminEmail(session?.user?.email) ||
-    hasPermission(session?.user?.role ?? "member", session?.user?.permissions ?? [], "view_dashboard");
+    hasPermission(session?.user?.role ?? "member", session?.user?.permissions ?? [], "manage_disputes");
   if (!isAllowed) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }

@@ -1,8 +1,8 @@
 export type UserRole = "admin" | "member";
 
-export type Permission = "manage_admins" | "remove_profiles" | "view_dashboard";
+export type Permission = "manage_admins" | "remove_profiles" | "view_dashboard" | "manage_disputes";
 
-export const ALL_PERMISSIONS: Permission[] = ["manage_admins", "remove_profiles", "view_dashboard"];
+export const ALL_PERMISSIONS: Permission[] = ["manage_admins", "remove_profiles", "view_dashboard", "manage_disputes"];
 
 export const getAdminEmails = () =>
   (process.env.ADMIN_EMAILS ?? "")

@@ -1,5 +1,7 @@
 # P2P Crypto Marketplace — Feature Plan
 
+> **Document role:** desired product requirements, not verified implementation status. Use `MILESTONES.md` for evidence-based status, `TRADE-STATE-MACHINE.md` for lifecycle rules, and `ESCROW-SECURITY.md` for contract requirements. Several original multi-chain, multisig, timeout, appeal, and fraud-control statements are not implemented today.
+
 A comprehensive plan for building a production-ready crypto peer-to-peer marketplace at `/p2p-marketplace` within the Kwizerana Collab platform.
 
 Modeled on the mechanics of Bybit P2P, Binance P2P, Paxful, and LocalBitcoins — the industry-standard reference implementations.

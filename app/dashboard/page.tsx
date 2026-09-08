@@ -101,9 +101,9 @@ function formatReleaseSeconds(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
-function Card({ title, icon, subtitle, action, children, className = "" }: { title?: string; icon?: React.ReactNode; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+function Card({ id, title, icon, subtitle, action, children, className = "" }: { id?: string; title?: string; icon?: React.ReactNode; subtitle?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <section className={`border border-line bg-white ${className}`}>
+    <section id={id} className={`border border-line bg-white ${className}`}>
       {(title || action) && (
         <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -244,6 +244,12 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
             <h1 className="mt-2 text-3xl font-bold tracking-tight">
               {data ? `Welcome back, ${session?.user?.name?.split(" ")[0] ?? "trader"}` : "Your dashboard"}
             </h1>
+            <nav className="mt-4 flex max-w-full gap-1 overflow-x-auto pb-1" aria-label="Dashboard sections">
+              <a href="#active-trades" className="shrink-0 border border-ink bg-ink px-3 py-1.5 text-xs font-semibold text-white">Overview</a>
+              <a href="#active-trades" className="shrink-0 border border-line bg-white px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">Active trades</a>
+              <a href="#trade-history" className="shrink-0 border border-line bg-white px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">History</a>
+              <Link href="/account/security" className="shrink-0 border border-line bg-white px-3 py-1.5 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">Security</Link>
+            </nav>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <QuickAction href="/p2p-marketplace/trade?side=buy" label="Buy crypto" icon={<TrendingUp className="h-4 w-4" />} primary />
@@ -265,7 +271,7 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         </div>
 
         {error && (
-          <div className="mt-6 border border-coral/40 bg-coral/10 p-4 text-sm font-medium">
+          <div className="mt-6 border border-coral/40 bg-coral/10 p-4 text-sm font-medium" role="alert">
             {error}
             <button onClick={() => void load()} className="ml-3 font-semibold underline underline-offset-2">
               Retry
@@ -273,13 +279,15 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
           </div>
         )}
 
+        <DashboardAttention data={data} loading={loading && !data} />
+
         {/* Top grid: wallet + reputation */}
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <WalletPanel loading={loading && !data} />
           <StatsPanel stats={data?.stats} loading={loading && !data} />
         </div>
 
-        <div className="mt-4">
+          <div id="trade-history" className="mt-4 scroll-mt-24">
           <VendorPanel vendor={data?.vendor} paymentMethods={data?.paymentMethods ?? []} loading={loading && !data} onChanged={load} isSuperAdmin={data?.isSuperAdmin} vendorApplication={data?.vendorApplication} />
         </div>
 
@@ -287,7 +295,7 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
 
         {/* Active trades + activity */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <Card title="Active trades" subtitle="Trades in progress" icon={<Clock className="h-4 w-4" />} action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>}>
+          <Card id="active-trades" title="Active trades" subtitle="Trades in progress" icon={<Clock className="h-4 w-4" />} action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>} className="scroll-mt-24" >
             <ActiveTradesPanel trades={data?.trades ?? []} loading={loading && !data} onChanged={load} />
           </Card>
           <ActivityPanel notifications={data?.notifications ?? []} loading={loading && !data} />
@@ -322,6 +330,63 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         </div>
       </div>
     </div>
+  );
+}
+
+function DashboardAttention({ data, loading }: { data: DashboardData | null; loading?: boolean }) {
+  if (loading) {
+    return (
+      <section className="mt-6 border border-line bg-ink p-5 text-white" aria-busy="true">
+        <div className="h-3 w-28 animate-pulse bg-white/20" />
+        <div className="mt-3 h-6 w-72 max-w-full animate-pulse bg-white/20" />
+      </section>
+    );
+  }
+
+  const activeTrades = (data?.trades ?? []).filter((trade) => ACTIVE_TRADE_STATUSES.includes(trade.status as (typeof ACTIVE_TRADE_STATUSES)[number]));
+  const reconciliationTrades = activeTrades.filter((trade) => trade.status === "reconciliation_required");
+  const openDisputes = (data?.disputes ?? []).filter((dispute) => dispute.status === "open");
+  const securityNeedsAttention = Boolean(data?.security && (!data.security.emailVerified || !data.security.twoFactorEnabled));
+
+  let title = "You’re ready to trade";
+  let message = "Browse the market when you’re ready, or connect a wallet to make your first order.";
+  let href = "/p2p-marketplace";
+  let action = "Explore market";
+
+  if (reconciliationTrades.length > 0) {
+    title = `${reconciliationTrades.length} trade${reconciliationTrades.length === 1 ? "" : "s"} need reconciliation`;
+    message = "A chain and database state do not match. Do not send more funds; review the trade status with support.";
+    href = "/dashboard#active-trades";
+    action = "Review trade status";
+  } else if (openDisputes.length > 0) {
+    title = `${openDisputes.length} dispute${openDisputes.length === 1 ? "" : "s"} need${openDisputes.length === 1 ? "s" : ""} your attention`;
+    message = "Review the latest evidence and respond before the case deadline.";
+    href = "/p2p/disputes";
+    action = "Open dispute center";
+  } else if (activeTrades.length > 0) {
+    title = `${activeTrades.length} active trade${activeTrades.length === 1 ? "" : "s"}`;
+    message = "Keep an eye on payment, escrow, and release steps from your trade workspace.";
+    href = "/dashboard#active-trades";
+    action = "View active trades";
+  } else if (securityNeedsAttention) {
+    title = "Secure your account before trading";
+    message = "Verify your email and enable two-factor authentication for stronger protection.";
+    href = "/account/security";
+    action = "Review security";
+  }
+
+  return (
+    <section className="mt-6 flex flex-col gap-4 border border-ink bg-ink p-5 text-white sm:flex-row sm:items-center sm:justify-between" aria-labelledby="dashboard-attention-title">
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-mint">Next up</p>
+        <h2 id="dashboard-attention-title" className="mt-2 text-lg font-semibold tracking-tight">{title}</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-white/65">{message}</p>
+      </div>
+      <Link href={href} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 bg-white px-4 text-sm font-semibold text-ink transition-colors hover:bg-mint">
+        {action}
+        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+      </Link>
+    </section>
   );
 }
 

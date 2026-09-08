@@ -1,6 +1,8 @@
 # P2P Crypto Marketplace — Database Schema
 
-Draft schema for all P2P-related tables. These will be added to `lib/db.ts` as migration statements.
+> **Document role:** conceptual reference. It may lag behind `lib/db.ts`, which currently contains executable schema statements. Before production, replace runtime initialization with versioned migrations and regenerate this document from the migrated schema. Financial transition, idempotency, chain-event, reconciliation, and audit/outbox structures described in `TRADE-STATE-MACHINE.md` still need to be added.
+
+Draft schema for the P2P domain. Verify every field against `lib/db.ts` until versioned migrations become authoritative.
 
 ---
 

@@ -4,6 +4,9 @@ import { createNotification, updateTradeNotification } from "@/lib/p2p/notificat
 import { getFees } from "@/lib/p2p/fees";
 import { getLiveRate } from "@/lib/p2p/price-feed";
 import { SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
+import { isAddress } from "viem";
+import { isEscrowDeployed } from "@/lib/web3/escrow";
+import { verifyEscrowTransaction, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
 
 function fmtCryptoAmount(n: number): string {
   if (!Number.isFinite(n)) return "0";
@@ -38,6 +41,8 @@ function tradeNoticeCopy(t: TradeNoticeRow): { title: string; body: string } {
       return { title: "Order expired", body: `Order ${ref} expired without payment, so the escrow was not released.` };
     case "disputed":
       return { title: "Order under dispute", body: `Order ${ref} is under dispute review.` };
+    case "reconciliation_required":
+      return { title: "Trade needs reconciliation", body: `Order ${ref} has a chain/database mismatch and is waiting for operator review.` };
     default:
       return { title: "Order update", body: `Order ${ref} moved to ${t.status}.` };
   }
@@ -108,9 +113,10 @@ export type TradeStatus =
   | "completed" // buyer claimed crypto
   | "cancelled"
   | "expired"
-  | "disputed";
+  | "disputed"
+  | "reconciliation_required";
 
-export const ACTIVE_TRADE_STATUSES: TradeStatus[] = ["created", "escrow_locked", "payment_sent", "released"];
+export const ACTIVE_TRADE_STATUSES: TradeStatus[] = ["created", "escrow_locked", "payment_sent", "released", "disputed", "reconciliation_required"];
 
 export const TRADE_STATUS_LABELS: Record<string, string> = {
   created: "Awaiting approval",
@@ -120,7 +126,8 @@ export const TRADE_STATUS_LABELS: Record<string, string> = {
   completed: "Completed",
   cancelled: "Cancelled",
   expired: "Expired",
-  disputed: "Disputed"
+  disputed: "Disputed",
+  reconciliation_required: "Needs reconciliation"
 };
 
 type TradeRow = Omit<Trade, "crypto_amount" | "fiat_amount" | "price_at_trade" | "fee_rate" | "release_hold_minutes" | "my_role" | "payment_details"> & {
@@ -363,6 +370,7 @@ export async function listTrades(userId: string, isSuperAdmin = false): Promise<
 export type TradeAction = "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "decline" | "proceed";
 
 export type TradeActionInput = {
+  actionRequestId?: string;
   receipt?: string;
   receiptImage?: string;
   walletAddress?: string;
@@ -370,6 +378,34 @@ export type TradeActionInput = {
   destAddress?: string;
   declineFeedback?: string;
 };
+
+const ESCROW_ACTIONS = new Set<TradeAction>(["accept", "release", "claim", "refund"]);
+
+function assertEscrowMutationInput(action: TradeAction, input: TradeActionInput) {
+  if (!ESCROW_ACTIONS.has(action)) return;
+
+  const txHash = input.txHash?.trim();
+  if (txHash && !/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+    throw new Error("The wallet transaction hash is invalid.");
+  }
+
+  if (input.walletAddress && !isAddress(input.walletAddress.trim())) {
+    throw new Error("The connected wallet address is invalid.");
+  }
+  if (input.destAddress && !isAddress(input.destAddress.trim())) {
+    throw new Error("The receive wallet address is invalid.");
+  }
+
+  // Demo escrow is useful for local UI work, but must never be able to mutate
+  // financial state in a production deployment. Receipt/event verification is
+  // the next required layer; a valid-looking hash is not proof of settlement.
+  if (process.env.NODE_ENV === "production" && !isEscrowDeployed()) {
+    throw new Error("Escrow is not configured for production settlement.");
+  }
+  if (process.env.NODE_ENV === "production" && !txHash) {
+    throw new Error("A confirmed escrow transaction is required.");
+  }
+}
 
 const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) => string }> = {
   accept: {
@@ -414,6 +450,7 @@ export async function applyTradeAction(
   isSuperAdmin = false
 ): Promise<Trade> {
   await ensureDatabase();
+  assertEscrowMutationInput(action, input);
   const ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];
   const rows = await dbQuery<TradeRow>(
@@ -427,6 +464,23 @@ export async function applyTradeAction(
   const isSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds) || isSuperAdmin;
   const status = row.status;
   const escrowFunded = row.escrow_status === "funded";
+
+  let chainVerification: { blockNumber: bigint; logIndex: number } | null = null;
+  if (isEscrowDeployed() && ESCROW_ACTIONS.has(action)) {
+    if (action === "accept" && !row.buyer_wallet_address) {
+      throw new Error("The buyer must set a receive wallet before escrow can be funded.");
+    }
+    chainVerification = await verifyEscrowTransaction({
+      action: action as EscrowVerificationAction,
+      txHash: input.txHash!,
+      tradeRef: row.trade_ref,
+      cryptoCurrency: row.crypto_currency,
+      cryptoAmount: toNumber(row.crypto_amount),
+      buyerWalletAddress: row.buyer_wallet_address,
+      sellerWalletAddress: action === "accept" ? input.walletAddress ?? null : row.seller_wallet_address,
+      destinationAddress: input.destAddress
+    });
+  }
 
   let newStatus = status;
   let escrowStatus: string | null = null;
@@ -502,7 +556,22 @@ export async function applyTradeAction(
     }
   }
 
-  await dbQuery(
+  const requestId = input.actionRequestId?.trim();
+  if (requestId) {
+    if (!/^[A-Za-z0-9._:-]{8,120}$/.test(requestId)) {
+      throw new Error("The action request identifier is invalid.");
+    }
+    const requestRows = await dbQuery<{ id: string }>(
+      `INSERT INTO p2p_trade_action_requests (trade_id, user_id, action, request_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (trade_id, user_id, action, request_id) DO NOTHING
+       RETURNING id`,
+      [tradeId, userId, action, requestId]
+    );
+    if (requestRows.length === 0) return getTrade(userId, tradeId, ownedVendorIds, isSuperAdmin);
+  }
+
+  const updatedTradeRows = await dbQuery<{ id: string }>(
     `UPDATE p2p_trades SET
         status = $2,
         escrow_locked_at = CASE WHEN $2 = 'escrow_locked' THEN NOW() ELSE escrow_locked_at END,
@@ -518,9 +587,13 @@ export async function applyTradeAction(
                                 WHEN $7 = 'decline' THEN $6
                                 ELSE decline_feedback END,
         updated_at = NOW()
-      WHERE id = $1`,
-    [tradeId, newStatus, input.walletAddress ?? null, input.receipt ?? null, input.receiptImage ?? null, input.declineFeedback ?? null, action]
+      WHERE id = $1 AND status = $8
+      RETURNING id`,
+    [tradeId, newStatus, input.walletAddress ?? null, input.receipt ?? null, input.receiptImage ?? null, input.declineFeedback ?? null, action, status]
   );
+  if (updatedTradeRows.length === 0) {
+    throw new Error("This trade changed while you were acting. Refresh and try again.");
+  }
 
   const escrowTx = input.txHash ?? null;
   if (escrowStatus) {
@@ -533,9 +606,13 @@ export async function applyTradeAction(
           claim_tx_hash = CASE WHEN $2 = 'claimed' THEN COALESCE($3, claim_tx_hash) ELSE claim_tx_hash END,
           refund_tx_hash = CASE WHEN $2 = 'refunded' THEN COALESCE($3, refund_tx_hash) ELSE refund_tx_hash END,
           release_to = CASE WHEN $2 = 'claimed' THEN COALESCE($4, release_to) ELSE release_to END,
-          released_at = CASE WHEN $2 IN ('released', 'claimed') AND released_at IS NULL THEN NOW() ELSE released_at END
+          released_at = CASE WHEN $2 IN ('released', 'claimed') AND released_at IS NULL THEN NOW() ELSE released_at END,
+          chain_block_number = $5,
+          chain_log_index = $6,
+          chain_verified_at = CASE WHEN $5 IS NOT NULL THEN NOW() ELSE NULL END,
+          chain_verifier_version = CASE WHEN $5 IS NOT NULL THEN 'escrow-events-v1' ELSE NULL END
         WHERE trade_id = $1`,
-      [tradeId, escrowStatus, escrowTx, input.destAddress ?? null]
+      [tradeId, escrowStatus, escrowTx, input.destAddress ?? null, chainVerification?.blockNumber.toString() ?? null, chainVerification?.logIndex ?? null]
     );
   }
 

@@ -25,6 +25,12 @@ export default function SignUpPage() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
+  const [referralCode, setReferralCode] = useState<string>();
+
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("ref")?.trim();
+    if (code) setReferralCode(code);
+  }, []);
 
   useEffect(() => {
     fetch("/api/auth/status")
@@ -54,7 +60,7 @@ export default function SignUpPage() {
     const res = await fetch("/api/p2p/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password })
+      body: JSON.stringify({ name, email, password, referral_code: referralCode })
     });
     const data = await readJson<{ error?: string }>(res);
     setLoading(false);
@@ -70,7 +76,19 @@ export default function SignUpPage() {
 
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
-    await signIn("google", { callbackUrl: "/" });
+    setError("");
+    try {
+      const result = await signIn("google", { callbackUrl: "/", redirect: false });
+      if (result?.error) {
+        setError("Google sign-in could not be started. Please try again or use email and password.");
+        setGoogleLoading(false);
+        return;
+      }
+      if (result?.url) window.location.assign(result.url);
+    } catch {
+      setError("Google sign-in could not be started. Please try again or use email and password.");
+      setGoogleLoading(false);
+    }
   }
 
   if (done) {
@@ -191,6 +209,7 @@ export default function SignUpPage() {
         </div>
 
         <button
+          type="button"
           disabled={!config.google || status === "loading" || googleLoading}
           onClick={() => void handleGoogleSignIn()}
           className="flex h-11 w-full items-center justify-center gap-2 border border-line bg-white px-5 text-sm font-semibold text-ink transition-colors hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50"

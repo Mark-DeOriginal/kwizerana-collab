@@ -1,117 +1,123 @@
 # Kwizerana Collab
 
-A curated archive of crypto Twitter/X influencers, built for community-driven discovery and vetting. Browse verified profiles, submit new influencers, and help build the most accurate directory of voices shaping the crypto space.
+Kwizerana Collab is a Next.js platform for discovering credible crypto voices and facilitating non-custodial P2P crypto trades. The repository contains a mature influencer-archive foundation and a substantial P2P prototype targeting USDT/USDC trades on Avalanche.
 
-## What is Kwizerana Collab?
+> **Production status:** the influencer archive is implemented but still needs operational hardening. The P2P marketplace is not approved for real-value production use. Escrow simulation, unverified client transaction hashes, database/chain consistency, and the prototype smart contract are explicit blockers. See `docs/PRODUCTION-READINESS.md`.
 
-Kwizerana Collab is a web application that maintains a searchable archive of crypto-related Twitter/X influencers. It combines automated profile data (via the XFlux API) with community-submitted profiles and admin review to ensure quality.
+## Product areas
 
-**Key features:**
+### Influencer archive
 
-- **Public archive** — Browse influencer profiles with follower counts, bios, niches, and verification status
-- **Profile submission** — Anyone can submit a Twitter/X profile for inclusion
-- **Admin review queue** — Admins review, edit, approve, or reject submissions
-- **Batch submit** — Admins can add multiple profiles at once via comma-separated handles
-- **Live profile updates** — Pull fresh data from the X data provider to keep profiles current
-- **Niche tagging** — Profiles are categorized by crypto niche (DeFi, Bitcoin, Trading, etc.)
-- **Favorites** — Save profiles to a local favorites list
-- **Export CSV** — Download filtered results as CSV
+- Search and filter approved crypto X/Twitter profiles.
+- View follower, biography, niche, verification, location, and freshness data.
+- Submit profiles for review.
+- Admin review, edit, refresh, approve, reject, and batch-submit profiles.
+- Manage niche ranking boards.
+- Store browser-local favorites and export results.
+- Enrich profiles through XFlux with twitterapi.io and development fallback behavior.
 
-## Tech Stack
+### P2P marketplace
 
-- **Framework:** Next.js 14 (App Router)
-- **Database:** Neon PostgreSQL (serverless)
-- **Auth:** NextAuth.js with Google OAuth
-- **Styling:** Tailwind CSS
-- **Profile data:** XFlux API (with twitterapi.io fallback)
+Current code includes:
 
-## Getting Started
+- Email/password registration, Google sign-in, email verification, 2FA, backup codes, and anti-phishing codes.
+- Wallet connection through RainbowKit/wagmi on Avalanche.
+- USDT/USDC offers, fiat currencies, price feeds, payment methods, ads, vendor profiles, inventory, fees, and applications.
+- Trades, receipts, chat, notifications, reviews, referrals, disputes, and administrative operations.
+- A prototype ERC-20 escrow contract and browser integration.
 
-### Prerequisites
+Presence in code does not mean production verification. Current implementation status is tracked in `docs/p2p-marketplace/MILESTONES.md`.
 
-- Node.js 18+
-- A Neon PostgreSQL database
-- An XFlux or twitterapi.io API key (optional — fallback profiles are used if not configured)
-- Google OAuth credentials (for admin authentication)
+## Stack
 
-### Installation
+- Next.js 14 App Router, React 18, and TypeScript.
+- Tailwind CSS and Lucide icons.
+- Neon serverless PostgreSQL.
+- NextAuth v4 with Google and a ticket-backed credentials flow.
+- RainbowKit, wagmi, and viem.
+- Avalanche C-Chain with native USDT/USDC addresses.
+- Resend for email.
+- CoinGecko for reference rates.
+- XFlux/twitterapi.io for X profile data.
+
+## Repository map
+
+```text
+app/                  Pages and API route handlers
+components/           Shared UI and P2P components
+contracts/            Prototype Solidity escrow
+docs/                 Architecture, security, design, and roadmap
+lib/                  Domain services and database access
+lib/p2p/              P2P domain logic
+lib/web3/             Wallet and contract integration
+public/               Brand and static assets
+scripts/              Database and escrow utility scripts
+types/                Shared type augmentation
+```
+
+## Start here
+
+- Contributors and AI agents: `AGENTS.md`.
+- Product/interface direction: `DESIGN.md`.
+- Architecture: `docs/ARCHITECTURE.md`.
+- Roadmap: `docs/ROADMAP.md`.
+- Launch blockers: `docs/PRODUCTION-READINESS.md`.
+- Dashboard plan: `docs/DASHBOARD-PLAN.md`.
+- P2P guide: `docs/p2p-marketplace/README.md`.
+- Trade lifecycle: `docs/p2p-marketplace/TRADE-STATE-MACHINE.md`.
+- Escrow risk: `docs/p2p-marketplace/ESCROW-SECURITY.md`.
+
+## Local setup
+
+Requirements: Node.js 18+, a Neon PostgreSQL database, and values from `.env.example`.
 
 ```bash
-git clone https://github.com/Mark-DeOriginal/twitter-influencers-archive.git
-cd twitter-influencers-archive
 npm install
-```
-
-### Environment Variables
-
-Copy `.env.example` to `.env.local` and fill in your values:
-
-```bash
-cp .env.example .env.local
-```
-
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | Neon PostgreSQL connection string |
-| `NEXTAUTH_URL` | Your app URL (e.g. `http://localhost:3000`) |
-| `NEXTAUTH_SECRET` | Random secret for NextAuth session encryption |
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `ADMIN_EMAILS` | Comma-separated emails that get admin access |
-| `XFLUX_API_KEY` | XFlux API key (primary provider, optional) |
-| `XFLUX_BASE_URL` | `https://www.xfluxapi.com/api/v1` |
-| `XFLUX_USER_LOOKUP_PATH` | `/users/:username` |
-| `TWITTERAPI_IO_API_KEY` | twitterapi.io API key (fallback provider, optional) |
-| `TWITTERAPI_IO_BASE_URL` | `https://api.twitterapi.io` |
-| `TWITTERAPI_IO_USER_LOOKUP_PATH` | `/twitter/user/info` |
-
-### Running
-
-```bash
 npm run dev
 ```
 
-The app runs at `http://localhost:3000`. The database schema is auto-created on first request.
+The development server normally runs at `http://localhost:3000`.
 
-## How It Works
+The application currently calls `ensureDatabase()` from domain services, which initializes schema from `lib/db.ts`. This is prototype behavior. Use `npm run db:setup` only for local/staging setup and do not treat runtime schema initialization as a production migration strategy.
 
-### Public Archive
+## Environment groups
 
-The main page shows all approved influencers with filters for search, follower tiers, verification status, and crypto niches. Profiles are sorted by followers by default.
+Use `.env.example` as the canonical variable list. Main groups are:
 
-### Submitting a Profile
+- Application and NextAuth URLs/secrets.
+- Google OAuth and admin email configuration.
+- Neon database connection.
+- Resend email configuration.
+- X profile provider configuration.
+- WalletConnect and Avalanche RPC configuration.
+- Escrow contract and deployment configuration.
 
-Anyone can submit a profile from the **Submit profile** page:
-
-1. Paste a Twitter/X profile link or handle
-2. Preview the profile data fetched from the X data provider
-3. Select relevant crypto niches
-4. Submit for review
-
-### Admin Review
-
-Admins access the **Review profiles** page where they can:
-
-- **Approve** — Adds the profile to the public archive
-- **Reject** — Permanently deletes the submission
-- **Edit** — Modify location, commentary, and niche tags
-- **Update** — Pull fresh profile data from the X data provider
-- **Batch submit** — Paste comma-separated handles to add multiple profiles at once
-
-### Batch Submit
-
-Click **Batch submit** on the review page, paste Twitter handles (comma or newline separated, with or without `@`), and submit. Each profile is looked up via the X data provider and added to the review queue. Rate-limited profiles are automatically retried.
+Never commit environment files or deployer private keys. A production arbitrator/deployer key should not be stored as a normal web application environment variable.
 
 ## Scripts
 
 ```bash
-npm run dev          # Start development server
-npm run build        # Build for production
-npm run start        # Start production server
-npm run lint         # TypeScript check + lint
-npm run db:setup     # Manually initialize database schema
+npm run dev
+npm run build
+npm run start
+npm run lint
+npm run format
+npm run db:setup
+npm run deploy:escrow
 ```
+
+`deploy:escrow` is a prototype utility, not approval to deploy the current contract with real funds.
+
+## Development expectations
+
+- Keep route handlers thin and business rules in `lib/`.
+- Add versioned migrations before production database changes.
+- Use exact decimal/integer handling for financial values.
+- Verify on-chain receipts and events server-side.
+- Update roadmap and milestones with evidence when behavior changes.
+- Add tests for successful, failed, unauthorized, concurrent, and recovery paths.
 
 ## License
 
-Private — Kwizerana
+Private — Kwizerana.
+

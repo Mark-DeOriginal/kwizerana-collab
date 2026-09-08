@@ -31,7 +31,8 @@ import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
 const ALL_PERMISSIONS: { key: Permission; label: string; description: string }[] = [
   { key: "manage_admins", label: "Can manage admins", description: "Promote and demote other users" },
   { key: "remove_profiles", label: "Can remove profiles", description: "Delete profiles from the review page" },
-  { key: "view_dashboard", label: "Can view dashboard", description: "Access this admin dashboard" }
+  { key: "view_dashboard", label: "Can view dashboard", description: "Access this admin dashboard" },
+  { key: "manage_disputes", label: "Can manage disputes", description: "Review and resolve P2P disputes" }
 ];
 
 type DashboardUser = {
@@ -335,20 +336,22 @@ export default function AdminDashboardPage() {
       </div>
 
       {error && (
-        <div className="mb-6 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">
+        <div className="mb-6 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral" role="alert">
           {error}
         </div>
       )}
 
       {successMessage && (
-        <div className="mb-6 border border-moss/30 bg-moss/5 px-4 py-3 text-sm text-moss">
+        <div className="mb-6 border border-moss/30 bg-moss/5 px-4 py-3 text-sm text-moss" role="status">
           {successMessage}
         </div>
       )}
 
-      <div className="mb-6 flex border-b border-line">
+      <div className="mb-6 flex overflow-x-auto border-b border-line" role="tablist" aria-label="Admin workspaces">
         <button
           onClick={() => setActiveTab("users")}
+          role="tab"
+          aria-selected={activeTab === "users"}
           className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
             activeTab === "users"
               ? "border-ocean text-ink"
@@ -360,6 +363,8 @@ export default function AdminDashboardPage() {
         </button>
         <button
           onClick={() => setActiveTab("vendors")}
+          role="tab"
+          aria-selected={activeTab === "vendors"}
           className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
             activeTab === "vendors"
               ? "border-ocean text-ink"
@@ -371,6 +376,8 @@ export default function AdminDashboardPage() {
         </button>
         <button
           onClick={() => setActiveTab("rankings")}
+          role="tab"
+          aria-selected={activeTab === "rankings"}
           className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
             activeTab === "rankings"
               ? "border-ocean text-ink"
@@ -382,6 +389,8 @@ export default function AdminDashboardPage() {
         </button>
         <button
           onClick={() => setActiveTab("disputes")}
+          role="tab"
+          aria-selected={activeTab === "disputes"}
           className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
             activeTab === "disputes"
               ? "border-ocean text-ink"
@@ -393,6 +402,8 @@ export default function AdminDashboardPage() {
         </button>
         <button
           onClick={() => setActiveTab("verifications")}
+          role="tab"
+          aria-selected={activeTab === "verifications"}
           className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
             activeTab === "verifications"
               ? "border-ocean text-ink"
@@ -400,10 +411,12 @@ export default function AdminDashboardPage() {
           }`}
         >
           <ShieldCheck className="h-4 w-4" />
-          Verifications
+          Vendor verification
         </button>
         <button
           onClick={() => setActiveTab("rates")}
+          role="tab"
+          aria-selected={activeTab === "rates"}
           className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
             activeTab === "rates"
               ? "border-ocean text-ink"
@@ -948,7 +961,7 @@ function VerificationsTab() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-bold">Verification Requests</h2>
+      <h2 className="mb-4 text-lg font-bold">Vendor verification</h2>
       {error && <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>}
 
       {loading ? (

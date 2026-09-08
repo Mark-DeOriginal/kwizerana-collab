@@ -7,6 +7,10 @@
     {
       "path": "/api/p2p/cron/expire-trades",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/p2p/cron/reconcile-escrow",
+      "schedule": "*/2 * * * *"
     }
   ]
 }

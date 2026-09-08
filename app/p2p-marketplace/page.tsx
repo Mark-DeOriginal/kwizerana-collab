@@ -1,231 +1,117 @@
-import {
-  BadgeCheck,
-  Coins,
-  Globe2,
-  Lock,
-  Scale,
-  ShieldCheck,
-  Smartphone,
-  Users,
-  Wallet
-} from "lucide-react";
-import { HeroActions, BottomCta } from "@/components/p2p/MarketplaceCta";
-import { CRYPTO_CURRENCIES, FIAT_CURRENCIES } from "@/lib/p2p/currencies-shared";
-import { PAYMENT_METHOD_CATEGORY_LABELS, SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
+import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, CircleCheck, CreditCard, ShieldCheck, UsersRound } from "lucide-react";
 
-const features = [
+const tradeSteps = [
   {
-    icon: ShieldCheck,
-    title: "Escrow-protected",
-    body: "Every trade is held in a non-custodial smart-contract escrow until both sides confirm. Funds are never held by the platform."
+    icon: UsersRound,
+    title: "Choose an offer",
+    body: "Compare the rate, limits, payment method, and seller history before you open a trade."
   },
   {
-    icon: Wallet,
-    title: "Self-custody",
-    body: "Connect your own wallet — MetaMask, WalletConnect, Phantom, or TronLink. Your crypto stays in your control until you trade."
+    icon: CreditCard,
+    title: "Complete the payment",
+    body: "Send the exact fiat amount using the payment instructions shown inside the trade."
   },
   {
-    icon: Lock,
-    title: "No KYC required",
-    body: "Trade freely without submitting government ID. Trust is built on reputation, not identity documents."
-  },
-  {
-    icon: Globe2,
-    title: "Multi-currency",
-    body: "Trade USDT and USDC against fiat currencies across Africa, Europe, the Americas, Asia, and the Middle East."
-  },
-  {
-    icon: Scale,
-    title: "Fair dispute resolution",
-    body: "Independent moderators review evidence and rule quickly when trades go wrong — the arbitrator key only acts on disputes."
-  },
-  {
-    icon: Users,
-    title: "Reputation that matters",
-    body: "Completion rate, trading volume, and counterparties build your trust score. Verified advertisers stand out."
+    icon: CircleCheck,
+    title: "Release and receive",
+    body: "After the seller confirms receipt, the crypto is released from escrow to the buyer's wallet."
   }
 ];
-
-const steps = [
-  { icon: Wallet, title: "Connect your wallet", body: "Link your own non-custodial wallet. No platform deposits — ever." },
-  { icon: Coins, title: "Find an offer", body: "Browse offers by crypto, fiat currency, payment method, and amount." },
-  { icon: ShieldCheck, title: "Trade in escrow", body: "Crypto locks into escrow while you settle the fiat leg off-platform." },
-  { icon: BadgeCheck, title: "Release & rate", body: "Confirm receipt, release funds, and rate your counterparty." }
-];
-
-function groupByRegion() {
-  const map = new Map<string, typeof FIAT_CURRENCIES>();
-  for (const c of FIAT_CURRENCIES) {
-    const list = map.get(c.region) ?? [];
-    list.push(c);
-    map.set(c.region, list);
-  }
-  return Array.from(map.entries());
-}
-
-function groupByCategory() {
-  const map = new Map<string, typeof SUPPORTED_METHODS>();
-  for (const m of SUPPORTED_METHODS) {
-    const list = map.get(m.category) ?? [];
-    list.push(m);
-    map.set(m.category, list);
-  }
-  return Array.from(map.entries());
-}
 
 export default function P2PMarketplacePage() {
-  const regions = groupByRegion();
-  const methodCategories = groupByCategory();
-
   return (
-    <div className="text-ink">
-      {/* Hero */}
-      <section className="relative overflow-hidden bg-ink text-white">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(60% 80% at 80% 0%, rgba(47,111,145,0.35) 0%, transparent 60%), radial-gradient(50% 60% at 0% 100%, rgba(216,239,224,0.08) 0%, transparent 60%)"
-          }}
-        />
-        <div className="relative mx-auto max-w-[1200px] px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
-          <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold tracking-wide text-mint">
-            <Lock className="h-3.5 w-3.5" />
-            Non-custodial · No KYC required
-          </span>
-
-          <h1 className="mt-6 max-w-3xl text-4xl font-bold leading-[1.1] tracking-tight sm:text-5xl lg:text-6xl">
-            Buy &amp; sell crypto, <span className="text-mint">peer to peer</span>
+    <div className="bg-[#fbfcfa] text-ink">
+      <section className="mx-auto grid max-w-[1280px] gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[0.92fr_1.08fr] lg:items-center lg:px-8 lg:py-24">
+        <div className="max-w-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">People to people. A clearer way to trade.</p>
+          <h1 className="mt-6 text-5xl font-semibold leading-[0.98] tracking-[-0.045em] sm:text-6xl lg:text-[4.8rem]">
+            Trade crypto directly. Keep control of your funds.
           </h1>
-          <p className="mt-5 max-w-2xl text-lg leading-relaxed text-white/70">
-            Trade USDT and USDC directly with other people in your local currency. Escrow-protected, self-custodial, and built on trust — not paperwork.
+          <p className="mt-7 max-w-lg text-lg leading-8 text-muted">
+            Buy and sell USDT or USDC with another person using a payment method that works for both of you. Kwizerana keeps the crypto in escrow while the payment is completed.
           </p>
-
-          <HeroActions />
-
-          <dl className="mt-14 grid grid-cols-2 gap-6 border-t border-white/10 pt-8 sm:grid-cols-4">
-            {[
-              { value: "0%", label: "Taker fees at launch" },
-              { value: "15+", label: "Fiat currencies" },
-              { value: "2", label: "Assets — USDT & USDC" },
-              { value: "2-of-3", label: "Escrow multisig" }
-            ].map((stat) => (
-              <div key={stat.label}>
-                <dt className="text-2xl font-bold sm:text-3xl">{stat.value}</dt>
-                <dd className="mt-1 text-sm text-white/60">{stat.label}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </section>
-
-      {/* Features */}
-      <section className="mx-auto max-w-[1200px] px-4 py-16 sm:px-6 lg:px-8">
-        <div className="max-w-2xl">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Why Kwizerana</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Built for trust, not custody</h2>
-        </div>
-
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map((feature) => (
-            <div key={feature.title} className="group border border-line bg-white p-6 transition-colors hover:border-ocean">
-              <span className="grid h-11 w-11 place-items-center rounded-full bg-mint text-ocean ring-1 ring-ocean/15">
-                <feature.icon className="h-5 w-5" />
-              </span>
-              <h3 className="mt-4 text-lg font-semibold">{feature.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-muted">{feature.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Currencies */}
-      <section className="border-y border-line bg-panel/60">
-        <div className="mx-auto max-w-[1200px] px-4 py-16 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Markets</p>
-              <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Supported currencies</h2>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-muted">
-                Trade {CRYPTO_CURRENCIES.join(" and ")} against fiat across five regions.
-              </p>
-            </div>
-            <span className="flex items-center gap-2 border border-line bg-white px-3 py-2 text-sm font-semibold text-muted">
-              <Coins className="h-4 w-4 text-ocean" />
-              {CRYPTO_CURRENCIES.join(" · ")}
-            </span>
-          </div>
-
-          <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
-            {regions.map(([region, currencies]) => (
-              <div key={region}>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">{region}</p>
-                <ul className="mt-3 flex flex-wrap gap-2">
-                  {currencies.map((c) => (
-                    <li key={c.code} className="flex items-center gap-2 border border-line bg-white px-3 py-1.5 text-sm font-semibold">
-                      {c.code}
-                      <span className="text-xs font-normal text-muted">{c.name}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+          <div className="mt-9 flex flex-wrap items-center gap-5">
+            <Link href="/p2p-marketplace/trade" className="inline-flex h-12 items-center gap-2 rounded-md bg-ocean px-6 text-sm font-semibold text-white hover:bg-ink">
+              Browse offers <ArrowRight className="h-4 w-4" />
+            </Link>
+            <a href="#how-it-works" className="inline-flex h-12 items-center gap-2 text-sm font-semibold text-ocean hover:text-ink">
+              See how it works <ArrowRight className="h-4 w-4" />
+            </a>
           </div>
         </div>
-      </section>
 
-      {/* Payment methods */}
-      <section className="mx-auto max-w-[1200px] px-4 py-16 sm:px-6 lg:px-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Payment methods</p>
-        <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Pay the way you want</h2>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-muted">
-          Bank transfers, mobile money, digital wallets, and more — expanded based on regional demand.
-        </p>
-
-        <div className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {methodCategories.map(([category, methods]) => (
-            <div key={category} className="border border-line bg-white p-5">
-              <span className="grid h-9 w-9 place-items-center rounded-full bg-panel text-ocean ring-1 ring-line">
-                <Smartphone className="h-4 w-4" />
-              </span>
-              <h3 className="mt-3 font-semibold">{PAYMENT_METHOD_CATEGORY_LABELS[category] ?? category}</h3>
-              <ul className="mt-3 flex flex-wrap gap-1.5">
-                {methods.map((m) => (
-                  <li key={m.slug} className="border border-line bg-panel px-2 py-1 text-xs font-semibold text-ink">
-                    {m.name}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+        <div className="relative overflow-hidden rounded-2xl bg-panel">
+          <Image
+            src="/images/p2p/peer-payment-hero.png"
+            alt="Two people using their phones to complete a direct payment"
+            width={1376}
+            height={1147}
+            priority
+            className="aspect-[1.12/1] h-full w-full object-cover"
+          />
+          <p className="absolute right-6 top-6 max-w-[9rem] text-xs font-semibold uppercase leading-5 tracking-[0.16em] text-ink/55">
+            Your wallet. Your payment. One clear trade.
+          </p>
         </div>
       </section>
 
-      {/* How it works */}
-      <section id="how-it-works" className="border-y border-line bg-ink text-white">
-        <div className="mx-auto max-w-[1200px] px-4 py-16 sm:px-6 lg:px-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mint">How it works</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Four steps to your first trade</h2>
+      <section id="how-it-works" className="border-y border-line bg-white">
+        <div className="mx-auto max-w-[1280px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">How it works</p>
+          <h2 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-[-0.035em] sm:text-5xl lg:text-6xl">
+            A direct trade, with escrow in the middle.
+          </h2>
+          <div className="mt-8 grid max-w-5xl gap-6 text-base leading-7 text-muted md:grid-cols-2 md:gap-16">
+            <p>You and another user agree on the price, amount, and payment method. The local payment moves directly between both parties.</p>
+            <p>The seller&apos;s crypto is locked in smart-contract escrow during the trade and can only move through the defined trade process.</p>
+          </div>
 
-          <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {steps.map((step, index) => (
-              <li key={step.title} className="relative border border-white/10 bg-white/10 p-6">
-                <span className="absolute right-4 top-4 text-5xl font-bold text-white/10">{index + 1}</span>
-                <span className="grid h-11 w-11 place-items-center rounded-full bg-ocean text-white">
-                  <step.icon className="h-5 w-5" />
-                </span>
-                <h3 className="mt-4 text-lg font-semibold">{step.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-white/60">{step.body}</p>
+          <ol className="mt-16 grid gap-10 md:grid-cols-3 md:gap-0">
+            {tradeSteps.map((step, index) => (
+              <li key={step.title} className="border-line md:border-l md:px-8 md:first:border-l-0 md:first:pl-0">
+                <div className="flex items-center justify-between">
+                  <span className="grid h-14 w-14 place-items-center rounded-full bg-mint text-moss"><step.icon className="h-6 w-6" /></span>
+                  <span className="text-sm font-semibold tabular-nums text-muted/60">0{index + 1}</span>
+                </div>
+                <h3 className="mt-7 text-xl font-semibold">{step.title}</h3>
+                <p className="mt-3 max-w-xs text-sm leading-6 text-muted">{step.body}</p>
               </li>
             ))}
           </ol>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="mx-auto max-w-[1200px] px-4 py-20 sm:px-6 lg:px-8">
-        <div className="border border-line bg-white p-8 sm:p-10">
-          <BottomCta />
+      <section className="relative isolate overflow-hidden bg-[#eaf3eb]">
+        <Image src="/images/p2p/escrow-still-life.png" alt="A stone representing stability and protection" fill className="-z-10 object-cover object-center opacity-90" sizes="100vw" />
+        <div className="mx-auto max-w-[1280px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
+          <div className="max-w-xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">What escrow protects</p>
+            <h2 className="mt-5 text-4xl font-semibold leading-[1.04] tracking-[-0.035em] sm:text-5xl">Crypto is held while payment is completed.</h2>
+            <p className="mt-6 text-base leading-7 text-muted">
+              Escrow protects the crypto side of the trade. Fiat payments still happen between users, so follow the listed instructions and keep all trade communication on Kwizerana.
+            </p>
+            <div className="mt-7 flex gap-3 border-l-2 border-moss pl-4 text-sm leading-6 text-ink">
+              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-moss" />
+              <p>Buyers should mark a trade paid only after sending the full amount. Sellers should release only after the payment is visible in their account.</p>
+            </div>
+            <Link href="/p2p-marketplace/trade" className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-ocean hover:text-ink">
+              Read the offer terms before trading <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white">
+        <div className="mx-auto flex max-w-[1280px] flex-col items-start justify-between gap-8 px-4 py-20 sm:px-6 md:flex-row md:items-end lg:px-8 lg:py-24">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">Ready when you are</p>
+            <h2 className="mt-5 max-w-3xl text-4xl font-semibold leading-[1.04] tracking-[-0.035em] sm:text-5xl">Find an offer that works for both sides.</h2>
+          </div>
+          <Link href="/p2p-marketplace/trade" className="inline-flex h-12 shrink-0 items-center gap-2 rounded-md bg-ink px-6 text-sm font-semibold text-white hover:bg-ocean">
+            Browse offers <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
       </section>
     </div>

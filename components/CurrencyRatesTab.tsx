@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, Save } from "lucide-react";
+import { Check, Loader2, RefreshCw, Save } from "lucide-react";
 import { friendlyError, readJson } from "@/lib/client-request";
 
 type CurrencyRateRow = {
@@ -14,16 +14,14 @@ type CurrencyRateRow = {
 const CRYPTO_LIST = ["USDT", "USDC"];
 const FIAT_LIST = ["USD", "NGN", "KES", "GHS", "ZAR", "UGX", "EUR", "GBP", "CAD", "INR", "PHP", "VND", "THB", "AED", "SAR"];
 
-function relativeTime(dateStr: string) {
+function formatUpdatedAt(dateStr: string) {
   if (!dateStr) return "Never";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(date);
 }
 
 export function CurrencyRatesTab() {
@@ -31,12 +29,13 @@ export function CurrencyRatesTab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [ratesUpdated, setRatesUpdated] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
 
-  const loadRates = useCallback(async () => {
-    setLoading(true);
+  const loadRates = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/admin/rates");
@@ -52,7 +51,7 @@ export function CurrencyRatesTab() {
     } catch (err: unknown) {
       setError(friendlyError(err, "Something went wrong."));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -74,13 +73,14 @@ export function CurrencyRatesTab() {
         for (const fiat of FIAT_LIST) {
           const val = draft[`${crypto}:${fiat}`];
           const rate = Number(val);
-          if (Number.isFinite(rate) && rate > 0) {
+          const existing = rates.find((item) => item.crypto_currency === crypto && item.fiat_currency === fiat);
+          if (Number.isFinite(rate) && rate > 0 && rate !== existing?.rate) {
             payload.push({ crypto_currency: crypto, fiat_currency: fiat, rate });
           }
         }
       }
       if (payload.length === 0) {
-        setError("No valid rates to save.");
+        setError("There are no rate changes to save.");
         return;
       }
       const res = await fetch("/api/admin/rates", {
@@ -92,7 +92,7 @@ export function CurrencyRatesTab() {
       if (!res.ok) throw new Error(data?.error ?? "Failed to save rates.");
       setSuccess(`Updated ${data?.updated ?? 0} rates. Changes take effect immediately.`);
       setTimeout(() => setSuccess(""), 6000);
-      await loadRates();
+      await loadRates({ silent: true });
     } catch (err: unknown) {
       setError(friendlyError(err, "Something went wrong."));
     } finally {
@@ -102,27 +102,21 @@ export function CurrencyRatesTab() {
 
   async function autoRefresh() {
     setRefreshing(true);
+    setRatesUpdated(false);
     setError("");
-    setSuccess("");
     try {
       const res = await fetch("/api/admin/rates/refresh", { method: "POST" });
       const data = await readJson<{ error?: string }>(res);
-      if (!res.ok) throw new Error(data?.error ?? "Failed to fetch rates from CoinGecko.");
-      setSuccess("Rates auto-updated from CoinGecko. Changes take effect immediately.");
-      setTimeout(() => setSuccess(""), 6000);
-      await loadRates();
-    } catch (err: unknown) {
-      setError(friendlyError(err, "Something went wrong."));
+      if (!res.ok) throw new Error(data?.error ?? "Unable to update rates.");
+      await loadRates({ silent: true });
+      setRatesUpdated(true);
+      setTimeout(() => setRatesUpdated(false), 3000);
+    } catch {
+      setError("Unable to update rates. Please try again.");
     } finally {
       setRefreshing(false);
     }
   }
-
-  const latestUpdatedAt = rates.reduce((latest, r) => {
-    if (!r.updated_at) return latest;
-    const t = new Date(r.updated_at).getTime();
-    return t > latest ? t : latest;
-  }, 0);
 
   return (
     <div>
@@ -130,10 +124,7 @@ export function CurrencyRatesTab() {
         <div>
           <h2 className="text-lg font-bold">Currency Rates</h2>
           <p className="mt-0.5 text-xs text-muted">
-            Rates are quoted as fiat units per 1 USDT/USDC. Edit manually or auto-refresh from CoinGecko.
-            {latestUpdatedAt > 0 && (
-              <span className="ml-2 text-ocean font-semibold">Last updated: {relativeTime(new Date(latestUpdatedAt).toISOString())}</span>
-            )}
+            Rates are quoted as fiat units per 1 USDT/USDC. Edit them manually or fetch the latest available rates.
           </p>
         </div>
         <div className="flex gap-2">
@@ -142,15 +133,15 @@ export function CurrencyRatesTab() {
             disabled={refreshing}
             className="flex h-9 items-center gap-2 border border-ocean bg-white px-4 text-xs font-bold text-ocean transition-colors hover:bg-ocean/5 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.97]"
           >
-            {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            Auto-refresh (CoinGecko)
+            {ratesUpdated ? <Check className="h-3.5 w-3.5" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {ratesUpdated ? "Updated" : "Update rates"}
           </button>
           <button
             onClick={() => void saveRates()}
             disabled={saving}
             className="flex h-9 items-center gap-2 bg-ink px-4 text-xs font-bold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.97]"
           >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            <Save className="h-3.5 w-3.5" />
             Save changes
           </button>
         </div>
@@ -164,11 +155,11 @@ export function CurrencyRatesTab() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted" />
+        <div className="flex min-h-72 items-center justify-center border border-line bg-white" role="status" aria-label="Loading currency rates">
+          <Loader2 className="h-6 w-6 animate-spin text-ocean" aria-hidden="true" />
         </div>
       ) : (
-        <div className="overflow-x-auto border border-line bg-white">
+      <div className="overflow-x-auto border border-line bg-white">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line bg-panel">
@@ -210,7 +201,7 @@ export function CurrencyRatesTab() {
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-xs text-muted">
-                        {existing?.updated_at ? relativeTime(existing.updated_at) : <span className="text-coral">Not set</span>}
+                        {existing?.updated_at ? formatUpdatedAt(existing.updated_at) : <span className="text-coral">Not set</span>}
                       </td>
                     </tr>
                   );
@@ -218,7 +209,7 @@ export function CurrencyRatesTab() {
               )}
             </tbody>
           </table>
-        </div>
+      </div>
       )}
     </div>
   );

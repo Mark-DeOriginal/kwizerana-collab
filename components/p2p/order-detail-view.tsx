@@ -214,7 +214,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         const res = await fetch(`/api/p2p/trades/${trade.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action, ...payload })
+         body: JSON.stringify({ action, action_request_id: `${trade.id}-${action}-${crypto.randomUUID()}`, ...payload })
         });
         const data = await readJson<{ error?: string }>(res);
         if (!res.ok) {

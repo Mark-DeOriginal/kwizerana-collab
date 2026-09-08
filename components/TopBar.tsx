@@ -32,6 +32,18 @@ export function TopBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!menuOpen && !userDropdownOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        setUserDropdownOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [menuOpen, userDropdownOpen]);
+
   const isActive = (path: string) => {
     if (path === "/") return pathname === "/";
     return pathname.startsWith(path);
@@ -71,6 +83,9 @@ export function TopBar() {
             <div className="relative" ref={dropdownRef}>
               <button
                 onClick={() => setUserDropdownOpen((prev) => !prev)}
+                aria-expanded={userDropdownOpen}
+                aria-haspopup="menu"
+                aria-controls="account-menu"
                 className="flex h-10 items-center gap-2 rounded-md border border-line px-2.5 text-sm font-semibold transition-colors hover:bg-panel"
               >
                 {session.user.image ? (
@@ -85,7 +100,7 @@ export function TopBar() {
               </button>
 
               {userDropdownOpen && (
-                <div className="absolute right-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-md border border-line bg-white shadow-tight">
+                <div id="account-menu" role="menu" className="absolute right-0 top-full z-50 mt-1 w-60 overflow-hidden rounded-md border border-line bg-white shadow-tight">
                   <div className="border-b border-line bg-panel px-4 py-3">
                     <p className="truncate text-sm font-semibold">{session.user.name ?? "Signed in"}</p>
                     <p className="truncate text-xs text-muted">{session.user.email}</p>
@@ -144,6 +159,8 @@ export function TopBar() {
           {/* Mobile hamburger */}
           <button
             onClick={() => setMenuOpen((prev) => !prev)}
+            aria-expanded={menuOpen}
+            aria-controls="mobile-navigation"
             className="flex h-10 w-10 items-center justify-center rounded-md text-muted transition-colors hover:bg-panel md:hidden"
             aria-label="Toggle menu"
           >
@@ -154,7 +171,7 @@ export function TopBar() {
 
       {/* Mobile menu */}
       {menuOpen && (
-        <div className="border-t border-line bg-white md:hidden">
+        <div id="mobile-navigation" className="border-t border-line bg-white md:hidden">
           <nav className="flex flex-col gap-1 px-4 py-3" aria-label="Mobile navigation">
             {navItems.map((item) => (
               <Link

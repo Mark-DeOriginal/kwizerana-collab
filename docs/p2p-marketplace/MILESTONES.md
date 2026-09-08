@@ -1,187 +1,101 @@
-# P2P Crypto Marketplace — Milestones & Progress
+# P2P Milestones and Current Status
 
-Track development phases, milestones, and completion status.
+Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`. “Implemented” does not mean production-verified.
 
----
+## Accounts and security
 
-## Phase 1: Foundation (Database & Auth)
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Email/password, Google, email verification | Implemented | P2P auth routes, NextAuth, signed verification |
+| TOTP 2FA, backup codes, anti-phishing | Implemented | Recovery and high-risk enforcement remain |
+| Session/device management | Planned | Add device list, revocation, alerts, recent-auth policy |
+| Distributed rate limiting | Unsafe for production | Current limiter is per-process and narrowly applied |
+| Wallet account linking | Partial | Connected addresses are saved without ownership proof; reassess this security tradeoff before production |
 
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 1.1 | Database schema design (users, ads, trades, escrow, disputes, payments, wallets, reviews) | Pending | |
-| 1.2 | Extend existing user system with P2P fields (trust score, advertiser status, completion rate, 30-day volume, counterparties) | Pending | |
-| 1.3 | Payment methods table and CRUD | Pending | |
-| 1.4 | Currency + rate tables (multi-country fiat currencies, USDT/USDC rates) | Pending | |
-| 1.5 | 2FA setup and enforcement | Pending | |
-| 1.6 | Anti-phishing code setup | Pending | |
+## Market, ads, pricing, and payments
 
----
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Offer discovery, fiat/crypto data | Implemented | Market UI, offer and currency APIs |
+| CoinGecko rate refresh | Partial | Resilience/monitoring required |
+| Payment methods and ad CRUD | Implemented | Account/dashboard/API support |
+| Floating/vendor-margin pricing | Partial | Precision, snapshots, deviation controls needed |
+| Payment-method binding | Partial | Ownership/applicability validation needs hardening |
+| Inventory | Partial | Vendor-declared, not cryptographically verified |
+| One-click matching | Planned | No verified implementation found |
 
-## Phase 2: Advertisement System
+## Vendors and reputation
 
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 2.1 | Ad CRUD API (create, read, update, delete, pause/resume) | Pending | |
-| 2.2 | Ad search and filter API (crypto, fiat, payment method, amount) | Pending | |
-| 2.3 | Floating price engine (CoinGecko integration) | Pending | |
-| 2.4 | Ad detail page UI | Pending | |
-| 2.5 | My Ads management page UI | Pending | |
-| 2.6 | Ad creation form UI | Pending | |
-| 2.7 | Ad visibility rules (advertiser priority, completion rate ranking) | Pending | |
-| 2.8 | Ad sorting rules (verified > general, completion rate) | Pending | |
-| 2.9 | Per-ad trade limits enforcement by advertiser level | Pending | |
-| 2.10 | One-Click Buy / Sell auto-matching | Pending | |
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Vendor profile, application, admin review | Implemented | Vendor/admin routes and UI |
+| Tier eligibility/enforcement | Partial | Data/services exist; full policy enforcement needs verification |
+| Vendor fee configuration | Implemented | Buy/sell fee fields and interfaces |
+| Reviews and rating summaries | Implemented | Anti-gaming remains |
+| Completion statistics | Partial | Must derive from verified settlement and correct rolling windows |
+| Fraud/wash-trade detection | Planned | No robust implementation found |
 
----
+## Trade lifecycle
 
-## Phase 3: Trade Flow & Escrow
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Trade creation and snapshot | Partial | Needs atomicity, precise math, eligibility, wallet validation |
+| Seller accept/fund | Simulated/unsafe | Wallet call exists; backend trusts client hash |
+| Buyer payment submission | Implemented | Secure upload controls required |
+| Seller release and buyer claim | Simulated/unsafe | Server does not verify chain events |
+| Cancel/expiry/refund | Partial/unsafe | Funded recovery is not contract-enforced |
+| Chat and trade export | Implemented | Retention/rate/abuse controls remain |
+| Notifications/email | Partial | Durable delivery queue and telemetry needed |
+| Formal state machine | Documented target | Implementation migration pending |
 
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 3.1 | Trade initiation API (debit seller wallet via escrow contract, start timer) | Pending | |
-| 3.2 | Trade state machine (Created -> Pending -> Sent -> Completed/Disputed/Cancelled/Expired) | Pending | |
-| 3.3 | Escrow smart contract (EVM) — approve + transferFrom, transfer, refund | Pending | |
-| 3.4 | Payment confirmation flow (buyer marks sent, seller confirms) | Pending | |
-| 3.5 | Auto-release timer logic + time-lock fallback | Pending | |
-| 3.6 | Trade flow UI (initiate, pay, confirm, complete) | Pending | |
-| 3.7 | Trade history page UI | Pending | |
-| 3.8 | Active trades dashboard UI | Pending | |
-| 3.9 | Payment reference code generation + validation | Pending | |
-| 3.10 | Escrow credit to buyer wallet on release | Pending | |
+## Escrow and chain integration
 
----
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Avalanche wallet connection | Implemented | RainbowKit/wagmi |
+| Prototype ERC-20 contract | Implemented prototype | Lock/release/claim/refund only |
+| Production escrow | Planned | Current contract fails security/decentralization gates |
+| Receipt/event verification | Planned, P0 | Required before real funds |
+| Confirmation/reorg policy | Planned, P0 | Required before real funds |
+| Event reconciliation | Partial, P0 | Receipt verifier and scheduled projection reconciliation now exist; operator workflow and reorg handling remain |
+| Contract tests/testnet/audit | Planned, P0 | All required before mainnet |
 
-## Phase 4: Dispute Resolution
+## Disputes
 
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 4.1 | Dispute creation API | Pending | |
-| 4.2 | Evidence upload and submission API | Pending | |
-| 4.3 | Admin dispute queue API | Pending | |
-| 4.4 | Dispute resolution API (release escrow, rule in favor) | Pending | |
-| 4.5 | Appeal system API (5-day filing window) | Pending | |
-| 4.6 | Fast-track dispute path for verifiable cases | Pending | |
-| 4.7 | Dispute UI (raise, submit evidence, track status) | Pending | |
-| 4.8 | Admin dispute moderation UI | Pending | |
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Participant and admin dispute flows | Implemented | Routes/services/UI exist |
+| Evidence workspace | Partial | Secure uploads and structured evidence needed |
+| On-chain resolution | Unsafe for production | Current resolution changes database only |
+| Split resolution | Unsupported | Prototype contract cannot split funds |
+| Appeals/SLA/escalation | Planned | Policy and workflow required |
 
----
+## Dashboards and administration
 
-## Phase 5: Chat & Notifications
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Member/vendor dashboard | Implemented, needs redesign | Large multi-workflow page; see `../DASHBOARD-PLAN.md` |
+| Admin dashboard | Implemented, needs redesign | Exception queues and auditability needed |
+| Escrow reconciliation queue | Planned, P0 | Required before real-value operation |
+| Immutable admin audit log | Planned, P0 | Required for financial/permission actions |
+| Provider/job health | Planned | Surface RPC, rate, email, cron, worker failures |
 
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 5.1 | WebSocket server setup | Pending | |
-| 5.2 | In-trade chat API (send, receive, history) | Pending | |
-| 5.3 | Chat UI (message bubbles, image upload, quick replies) | Pending | |
-| 5.4 | Notification system (in-app) | Pending | |
-| 5.5 | Email notification integration | Pending | |
-| 5.6 | Notification center UI | Pending | |
+## Platform quality
 
----
+| Capability | Status | Evidence / remaining work |
+|---|---|---|
+| Shared visual identity | Partial | Existing palette; incomplete system and inconsistent pages |
+| Responsive/accessibility | Partial | Core flows need keyboard, focus, screen-reader, zoom validation |
+| Automated tests and CI | Planned | None found during audit |
+| Versioned migrations | Planned | Runtime schema initialization currently used |
+| Observability/runbooks | Planned | Required before production |
+| Legal/privacy/risk readiness | Planned | Counsel and operating policies required |
 
-## Phase 6: Reputation & Ratings
+## Immediate sequence
 
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 6.1 | Trust score + completion rate calculation engine (30-day) | Pending | |
-| 6.2 | Post-trade rating API (anonymous, final) | Pending | |
-| 6.3 | User profile / P2P User Center UI | Pending | |
-| 6.4 | Trust tier display and enforcement | Pending | |
-| 6.5 | Wash-trading / feedback-manipulation detection | Pending | |
-
----
-
-## Phase 7: Advertiser / Merchant System
-
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 7.1 | General advertiser tier logic (Beginner/Regular/Veteran) | Pending | |
-| 7.2 | Verified advertiser tier logic (Bronze/Silver/Gold) | Pending | |
-| 7.3 | Security deposit management | Pending | |
-| 7.4 | Advertiser application + eligibility check API | Pending | |
-| 7.5 | Advertiser approval workflow (admin) | Pending | |
-| 7.6 | Advertiser badge + benefits enforcement | Pending | |
-| 7.7 | Disqualification rules (identity binding revocation, completion rate drop) | Pending | |
-| 7.8 | Trial Advertiser program | Pending | |
-| 7.9 | Advertiser analytics dashboard | Pending | |
-| 7.10 | Advertiser application UI | Pending | |
-
----
-
-## Phase 8: Wallet Connect & Crypto
-
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 8.1 | Wallet connect integration (MetaMask, WalletConnect, Phantom, TronLink) | Pending | |
-| 8.2 | Multi-chain support (Ethereum, BSC, Polygon, Tron, Solana) | Pending | |
-| 8.3 | Connected wallet management (link, unlink, set primary) | Pending | |
-| 8.4 | On-chain transaction tracking (debit/release tx hashes) | Pending | |
-| 8.5 | Currency + rate tables (fiat currencies, USDT/USDC rates) | Pending | |
-| 8.6 | Escrow contract deployment + arbitrator key setup | Pending | |
-| 8.7 | Wallet UI (connect, view address, on-chain history) | Pending | |
-
----
-
-## Phase 9: Admin Dashboard (P2P)
-
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 9.1 | P2P admin overview (volume, fees, active trades) | Pending | |
-| 9.2 | Trade monitoring and management | Pending | |
-| 9.3 | Payment account binding review | Pending | |
-| 9.4 | Advertiser approval queue (general + verified) | Pending | |
-| 9.5 | User management (suspend, ban, risk-control) | Pending | |
-| 9.6 | Fraud detection and flagging | Pending | |
-| 9.7 | Financial dashboard (revenue, escrow balance, float) | Pending | |
-| 9.8 | Fee configuration (maker/taker, per-advertiser-status) | Pending | |
-
----
-
-## Phase 10: Security & Polish
-
-| # | Milestone | Status | Notes |
-|---|-----------|--------|-------|
-| 10.1 | Rate limiting on all endpoints | Pending | |
-| 10.2 | Input validation hardening | Pending | |
-| 10.3 | Escrow audit trail logging | Pending | |
-| 10.4 | Login alerts and session management | Pending | |
-| 10.5 | Anti-fraud velocity checks | Pending | |
-| 10.6 | Triangle-scam / name-matching enforcement | Pending | |
-| 10.7 | Payment-reversal hold periods | Pending | |
-| 10.8 | Mobile responsive design pass | Pending | |
-| 10.9 | End-to-end testing | Pending | |
-
----
-
-## Phase 11: Future / Post-MVP
-
-| # | Feature | Status | Notes |
-|---|---------|--------|-------|
-| 11.1 | Mobile app (React Native / Flutter) | Future | |
-| 11.2 | API access for third-party integrations | Future | |
-| 11.3 | Sponsored ad placements / boosts | Future | |
-| 11.4 | Analytics & insights reports | Future | |
-| 11.5 | Cross-chain trading support | Future | |
-| 11.6 | Smart contract escrow (on-chain) | Future | |
-| 11.7 | AI-powered dispute triage | Future | |
-| 11.8 | Referral program | Future | |
-| 11.9 | Multi-market expansion (SEA, LATAM) | Future | |
-
----
-
-## Summary
-
-| Phase | Total Items | Completed | In Progress | Pending |
-|-------|------------|-----------|-------------|---------|
-| 1. Foundation | 6 | 0 | 0 | 6 |
-| 2. Advertisements | 10 | 0 | 0 | 10 |
-| 3. Trade Flow | 10 | 0 | 0 | 10 |
-| 4. Disputes | 8 | 0 | 0 | 8 |
-| 5. Chat & Notifications | 6 | 0 | 0 | 6 |
-| 6. Reputation | 5 | 0 | 0 | 5 |
-| 7. Advertisers | 10 | 0 | 0 | 10 |
-| 8. Wallet Connect | 7 | 0 | 0 | 7 |
-| 9. Admin | 8 | 0 | 0 | 8 |
-| 10. Security | 9 | 0 | 0 | 9 |
-| 11. Future | 9 | 0 | 0 | 9 |
-| **Total** | **88** | **0** | **0** | **88** |
+1. P0 trade integrity and chain verification.
+2. Escrow v2 specification, tests, testnet, and audit.
+3. Reconciliation, audit logging, durable rate limiting, and secure uploads.
+4. Shared design system and dashboard restructuring.
+5. End-to-end P2P UX and accessibility.
+6. Operational and legal launch gates.

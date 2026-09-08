@@ -16,3 +16,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Refresh failed." }, { status: 500 });
   }
 }
+
+export async function POST(request: Request) {
+  return GET(request);
+}

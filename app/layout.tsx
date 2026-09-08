@@ -5,21 +5,24 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
-  title: "Kwizerana Influencer Archive",
-  description: "A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with.",
+  title: {
+    default: "Kwizerana — Crypto voices and P2P markets",
+    template: "%s · Kwizerana"
+  },
+  description: "Discover credible crypto voices and explore self-custody P2P markets with clear, human-centered tools.",
   icons: {
     icon: "/kwizerana-logo-icon.svg"
   },
   openGraph: {
-    title: "Kwizerana Influencer Archive",
-    description: "A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with.",
+    title: "Kwizerana — Crypto voices and P2P markets",
+    description: "Discover credible crypto voices and explore self-custody P2P markets with clear, human-centered tools.",
     images: ["/opengraph-image.jpg"],
     type: "website"
   },
   twitter: {
     card: "summary_large_image",
-    title: "Kwizerana Influencer Archive",
-    description: "A curated archive for discovering credible X/Twitter voices. Find the right accounts to collaborate with.",
+    title: "Kwizerana — Crypto voices and P2P markets",
+    description: "Discover credible crypto voices and explore self-custody P2P markets with clear, human-centered tools.",
     images: ["/opengraph-image.jpg"]
   }
 };
@@ -33,6 +36,9 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Providers>
+          <a href="#main-content" className="skip-link">
+            Skip to content
+          </a>
           <SiteShell>{children}</SiteShell>
         </Providers>
       </body>

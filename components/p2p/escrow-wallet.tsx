@@ -27,6 +27,10 @@ export function useEscrowReal(): boolean {
   return isEscrowDeployed();
 }
 
+function isEscrowDemoAllowed(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
 export function EscrowModeNotice() {
   const real = useEscrowReal();
   if (real) return null;
@@ -34,10 +38,10 @@ export function EscrowModeNotice() {
     <div className="flex items-start gap-2 border border-line bg-panel p-3 text-xs leading-5 text-muted">
       <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-ink" />
       <span>
-        <strong className="font-semibold text-ink">Demo mode:</strong> the escrow contract address isn&apos;t configured
-        yet ({`NEXT_PUBLIC_ESCROW_CONTRACT_ADDRESS`} not set in <code className="font-mono">.env.local</code>), so wallet
-        transactions are simulated so you can test the full flow. Deploy <code className="font-mono">KwizeranaEscrow.sol</code>{" "}
-        and set the address to switch to real transactions.
+        <strong className="font-semibold text-ink">{isEscrowDemoAllowed() ? "Demo mode:" : "Escrow unavailable:"}</strong>{" "}
+        {isEscrowDemoAllowed()
+          ? <>the escrow contract address isn&apos;t configured yet, so wallet transactions are simulated for local testing. Deploy <code className="font-mono">KwizeranaEscrow.sol</code> and set the address to switch to real transactions.</>
+          : <>the escrow contract is not configured for this production deployment. Real-value trading is disabled until it is configured and verified.</>}
       </span>
     </div>
   );
@@ -125,6 +129,10 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   async function run() {
     const tradeId = tradeRefToBytes32(trade.trade_ref);
     if (!real) {
+      if (!isEscrowDemoAllowed()) {
+        onError("Escrow is not configured for production settlement.");
+        return;
+      }
       setPhase("tx");
       setSimDone(false);
       setTimeout(() => {
@@ -208,6 +216,10 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
 
   async function run() {
     if (!real) {
+      if (!isEscrowDemoAllowed()) {
+        onError("Escrow is not configured for production settlement.");
+        return;
+      }
       setPhase("tx");
       setTimeout(() => {
         setPhase("done");
@@ -269,6 +281,10 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
       return;
     }
     if (!real) {
+      if (!isEscrowDemoAllowed()) {
+        onError("Escrow is not configured for production settlement.");
+        return;
+      }
       setPhase("tx");
       setTimeout(() => {
         setPhase("idle");
@@ -387,6 +403,10 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
 
   async function run() {
     if (!real) {
+      if (!isEscrowDemoAllowed()) {
+        onError("Escrow is not configured for production settlement.");
+        return;
+      }
       setPhase("tx");
       setTimeout(() => {
         setPhase("idle");

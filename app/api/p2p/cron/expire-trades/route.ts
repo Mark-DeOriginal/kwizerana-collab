@@ -12,3 +12,7 @@ export async function GET(request: Request) {
   const expired = await expireStaleTrades();
   return NextResponse.json({ ok: true, expired });
 }
+
+export async function POST(request: Request) {
+  return GET(request);
+}

@@ -46,6 +46,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const input = {
+    actionRequestId: body.action_request_id ? String(body.action_request_id) : undefined,
     receipt: body.receipt ? String(body.receipt) : undefined,
     receiptImage: body.receipt_image ? String(body.receipt_image) : undefined,
     walletAddress: body.wallet_address ? String(body.wallet_address) : undefined,

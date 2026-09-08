@@ -1,26 +1,40 @@
-# Database Recommendation
+# Database Direction
 
-Use Neon Postgres for the production database.
+## Current implementation
 
-Why Neon fits this app:
+The application uses Neon serverless PostgreSQL through `@neondatabase/serverless`. `lib/db.ts` contains `dbQuery()`, the complete schema statement list, and `ensureDatabase()`.
 
-- It is the actively maintained Vercel-native Postgres path.
-- Postgres is the right model for users, roles, submissions, influencer profiles, and niche mappings.
-- It works well with serverless Next.js deployments.
-- It keeps the project portable because the app depends on standard Postgres, not a proprietary document model.
+`ensureDatabase()` executes schema/data statements in one transaction under a PostgreSQL advisory lock. Many domain functions call it before querying.
 
-Current tables in this project:
+## Decision
 
-- `users`
-- `influencers`
-- `influencer_niches`
-- `submissions`
+Keep PostgreSQL/Neon, but replace request-time schema creation with versioned migrations before production.
 
-Setup flow:
+The migration system must provide:
 
-1. Create a Neon database from the Vercel Marketplace or Neon directly.
-2. Add the connection string to `.env.local` as `DATABASE_URL`.
-3. Run `npm run db:setup`.
-4. Start the app and sign in with Google.
+- ordered immutable migration files;
+- a migration history table;
+- staging rehearsal and rollback/forward-fix procedures;
+- compatibility rules for rolling deployments;
+- explicit data migrations separate from request handling;
+- backup and restoration checks before destructive changes.
 
-On Vercel, add the same `DATABASE_URL` value to the project environment variables.
+## Financial data rules
+
+- Use `NUMERIC` or integer base units; never floating-point arithmetic for settlement.
+- Add check constraints for allowed states, positive amounts, deadlines, and supported assets.
+- Add unique constraints for idempotency keys and chain event identity.
+- Use transactions and row-level locks for trade/escrow mutations.
+- Write transition audit events and an outbox record in the same commit.
+- Treat on-chain events as financial evidence and the database as a verified projection.
+
+## Privacy and operations
+
+- Minimize and protect payment account and receipt data.
+- Define retention and deletion rules.
+- Audit privileged reads and writes.
+- Configure point-in-time recovery, restoration drills, monitoring, and connection limits.
+- Never seed production with demo vendors or mock transaction hashes.
+
+See `docs/ARCHITECTURE.md` and `docs/PRODUCTION-READINESS.md`.
+

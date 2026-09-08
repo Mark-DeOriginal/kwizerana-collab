@@ -37,6 +37,7 @@ contract KwizeranaEscrow {
     event Refunded(bytes32 indexed tradeId, address to, uint256 amount);
 
     constructor(address _arbitrator) {
+        require(_arbitrator != address(0), "invalid arbitrator");
         arbitrator = _arbitrator;
     }
 
@@ -49,6 +50,10 @@ contract KwizeranaEscrow {
     function lock(bytes32 tradeId, address buyer, address token, uint256 amount) external {
         Trade storage t = trades[tradeId];
         require(t.seller == address(0), "trade already locked");
+        require(tradeId != bytes32(0), "invalid trade id");
+        require(buyer != address(0), "invalid buyer");
+        require(token != address(0), "invalid token");
+        require(amount > 0, "invalid amount");
         require(IERC20(token).transferFrom(msg.sender, address(this), amount), "transferFrom failed");
         trades[tradeId] = Trade({
             seller: msg.sender,
@@ -65,6 +70,7 @@ contract KwizeranaEscrow {
     /// @notice Confirm fiat received. Does NOT transfer — the buyer then claims.
     function release(bytes32 tradeId) external onlySellerOrArbitrator(tradeId) {
         Trade storage t = trades[tradeId];
+        require(t.seller != address(0), "unknown trade");
         require(!t.released && !t.claimed && !t.refunded, "already settled");
         t.released = true;
         emit Released(tradeId, t.seller);
@@ -76,6 +82,7 @@ contract KwizeranaEscrow {
     function claim(bytes32 tradeId, address to) external {
         Trade storage t = trades[tradeId];
         require(msg.sender == t.buyer, "only buyer");
+        require(to != address(0), "invalid destination");
         require(t.released, "not released");
         require(!t.claimed && !t.refunded, "already settled");
         t.claimed = true;
@@ -86,6 +93,7 @@ contract KwizeranaEscrow {
     /// @notice Return funds to the seller (cancel / expiry / dispute resolution).
     function refund(bytes32 tradeId) external onlySellerOrArbitrator(tradeId) {
         Trade storage t = trades[tradeId];
+        require(t.seller != address(0), "unknown trade");
         require(!t.released && !t.claimed && !t.refunded, "already settled");
         t.refunded = true;
         require(IERC20(t.token).transfer(t.seller, t.amount), "transfer failed");

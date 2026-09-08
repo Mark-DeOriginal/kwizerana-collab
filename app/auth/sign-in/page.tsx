@@ -124,7 +124,19 @@ export default function SignInPage() {
 
   async function handleGoogleSignIn() {
     setGoogleLoading(true);
-    await signIn("google", { callbackUrl: "/" });
+    setError("");
+    try {
+      const result = await signIn("google", { callbackUrl: "/", redirect: false });
+      if (result?.error) {
+        setError("Google sign-in could not be started. Please try again or use email and password.");
+        setGoogleLoading(false);
+        return;
+      }
+      if (result?.url) window.location.assign(result.url);
+    } catch {
+      setError("Google sign-in could not be started. Please try again or use email and password.");
+      setGoogleLoading(false);
+    }
   }
 
   const isSignedIn = Boolean(session?.user?.email);

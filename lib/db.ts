@@ -413,12 +413,28 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS p2p_verification_tokens_hash_idx ON p2p_verification_tokens(token_hash)`,
   `CREATE INDEX IF NOT EXISTS p2p_auth_tickets_hash_idx ON p2p_auth_tickets(ticket_hash)`,
   `UPDATE p2p_ads SET price_type = 'floating', price_margin = CASE WHEN ad_type = 'sell' THEN 1.5 ELSE -1.5 END WHERE user_id LIKE 'kwizerana-dao-%' AND price_type = 'fixed'`,
-  `UPDATE p2p_currency_rates SET updated_at = NOW()`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_fee_percent NUMERIC NOT NULL DEFAULT 0`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_buy_fee_percent NUMERIC`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_sell_fee_percent NUMERIC`,
   `UPDATE users SET vendor_buy_fee_percent = vendor_fee_percent, vendor_sell_fee_percent = vendor_fee_percent WHERE vendor_buy_fee_percent IS NULL`,
-  `ALTER TABLE p2p_reviews ADD COLUMN IF NOT EXISTS star_rating INTEGER`
+  `ALTER TABLE p2p_reviews ADD COLUMN IF NOT EXISTS star_rating INTEGER`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS chain_block_number NUMERIC`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS chain_log_index INTEGER`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS chain_verified_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS chain_verifier_version TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_debit_tx_unique ON p2p_escrow(debit_tx_hash) WHERE debit_tx_hash IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_release_tx_unique ON p2p_escrow(release_tx_hash) WHERE release_tx_hash IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_claim_tx_unique ON p2p_escrow(claim_tx_hash) WHERE claim_tx_hash IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_refund_tx_unique ON p2p_escrow(refund_tx_hash) WHERE refund_tx_hash IS NOT NULL`,
+  `CREATE TABLE IF NOT EXISTS p2p_trade_action_requests (
+    id BIGSERIAL PRIMARY KEY,
+    trade_id BIGINT NOT NULL REFERENCES p2p_trades(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(trade_id, user_id, action, request_id)
+  )`
 ];
 
 export function getDatabaseUrl() {
