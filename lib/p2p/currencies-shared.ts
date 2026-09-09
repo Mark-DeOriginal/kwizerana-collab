@@ -36,8 +36,8 @@ export const FIAT_CURRENCIES: FiatSeed[] = [
   { code: "SAR", name: "Saudi Riyal", region: "Middle East" }
 ];
 
-// Approximate initial rates: fiat units per 1 USDT/USDC.
-// Admin can update these via the dashboard or auto-refresh from CoinGecko.
+// Bootstrap-only rates used when a currency pair does not yet exist.
+// Seeding must never overwrite a persisted admin or provider rate.
 export const SEED_RATES: Record<string, number> = {
   USD: 1,
   EUR: 0.85,

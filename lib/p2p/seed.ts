@@ -32,8 +32,7 @@ async function seedP2PData(): Promise<void> {
       await dbQuery(
         `INSERT INTO p2p_currency_rates (crypto_currency, fiat_currency, rate, updated_at)
          VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (crypto_currency, fiat_currency)
-         DO UPDATE SET rate = EXCLUDED.rate, updated_at = NOW()`,
+         ON CONFLICT (crypto_currency, fiat_currency) DO NOTHING`,
         [crypto, fiatCode, SEED_RATES[fiatCode]]
       );
       await dbQuery(

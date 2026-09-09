@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS p2p_currency_rates (
 );
 ```
 
+`SEED_RATES` values are bootstrap data only. Runtime seeding inserts missing
+pairs with `ON CONFLICT DO NOTHING`; persisted admin or provider updates are
+the source of truth and must never be overwritten during application startup.
+
 ### `p2p_payment_methods`
 ```sql
 CREATE TABLE IF NOT EXISTS p2p_payment_methods (

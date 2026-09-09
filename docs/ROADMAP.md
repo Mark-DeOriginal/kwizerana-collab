@@ -29,6 +29,7 @@ Status: **planned; highest priority**
 - Remove production escrow simulation.
 - Harden authorization, validation, uploads, rate limiting, secrets, and audit logs.
   - Partial evidence: protected application pages are centrally session-gated in `middleware.ts`, with safe post-auth return paths through `/redirect`; API authorization remains route-local.
+  - Rate integrity fix: runtime P2P seeding now inserts only missing currency pairs and preserves persisted admin/provider rates and their timestamps.
 
 Exit: database state cannot be advanced by a fabricated hash or invalid actor, and divergence is detected and recoverable.
 
