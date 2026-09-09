@@ -41,6 +41,11 @@ export async function reconcileEscrowProjections(limit = 50): Promise<{ checked:
     [Math.min(Math.max(limit, 1), 200)]
   );
 
+  return reconcileRows(rows);
+}
+
+async function reconcileRows(rows: ReconciliationRow[]): Promise<{ checked: number; verified: number; failed: number }> {
+
   let verified = 0;
   let failed = 0;
   for (const row of rows) {
@@ -79,3 +84,41 @@ export async function reconcileEscrowProjections(limit = 50): Promise<{ checked:
   return { checked: rows.length, verified, failed };
 }
 
+/** Rechecks one trade when it is opened or acted on. */
+export async function reconcileEscrowTrade(tradeId: string): Promise<{ checked: number; verified: number; failed: number }> {
+  await ensureDatabase();
+  const rows = await dbQuery<ReconciliationRow>(
+    `SELECT t.id::TEXT AS trade_id, t.trade_ref, t.crypto_currency, t.crypto_amount::TEXT AS crypto_amount,
+            t.buyer_wallet_address, t.seller_wallet_address, t.status,
+            e.status AS escrow_status,
+            CASE e.status WHEN 'funded' THEN e.debit_tx_hash
+                          WHEN 'released' THEN e.release_tx_hash
+                          WHEN 'claimed' THEN e.claim_tx_hash
+                          WHEN 'refunded' THEN e.refund_tx_hash END AS tx_hash
+     FROM p2p_trades t
+     JOIN LATERAL (SELECT * FROM p2p_escrow WHERE trade_id = t.id ORDER BY id DESC LIMIT 1) e ON TRUE
+     WHERE t.id = $1
+       AND e.status IN ('funded', 'released', 'claimed', 'refunded')
+       AND e.chain_verified_at IS NULL
+     LIMIT 1`,
+    [tradeId]
+  );
+  return reconcileRows(rows);
+}
+
+/** Resolves a provider webhook hash to a stored escrow action, then verifies it from chain data. */
+export async function reconcileEscrowTransaction(txHash: string): Promise<{ checked: number; verified: number; failed: number }> {
+  await ensureDatabase();
+  const rows = await dbQuery<{ trade_id: string }>(
+    `SELECT trade_id::TEXT AS trade_id
+     FROM p2p_escrow
+     WHERE LOWER(debit_tx_hash) = LOWER($1)
+        OR LOWER(release_tx_hash) = LOWER($1)
+        OR LOWER(claim_tx_hash) = LOWER($1)
+        OR LOWER(refund_tx_hash) = LOWER($1)
+     ORDER BY id DESC LIMIT 1`,
+    [txHash]
+  );
+  if (!rows[0]) return { checked: 0, verified: 0, failed: 0 };
+  return reconcileEscrowTrade(rows[0].trade_id);
+}

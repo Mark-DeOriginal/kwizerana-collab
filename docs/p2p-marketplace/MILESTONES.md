@@ -17,7 +17,7 @@ Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
 | Offer discovery, fiat/crypto data | Implemented | Market UI, offer and currency APIs |
-| CoinGecko rate refresh | Partial | Resilience/monitoring required |
+| Admin-triggered rate refresh | Partial | Manual dashboard update is implemented; resilience/monitoring required |
 | Payment methods and ad CRUD | Implemented | Account/dashboard/API support |
 | Floating/vendor-margin pricing | Partial | Precision, snapshots, deviation controls needed |
 | Payment-method binding | Partial | Ownership/applicability validation needs hardening |
@@ -57,7 +57,7 @@ Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`
 | Production escrow | Planned | Current contract fails security/decentralization gates |
 | Receipt/event verification | Planned, P0 | Required before real funds |
 | Confirmation/reorg policy | Planned, P0 | Required before real funds |
-| Event reconciliation | Partial, P0 | Receipt verifier and scheduled projection reconciliation now exist; operator workflow and reorg handling remain |
+| Event reconciliation | Partial, P0 | Immediate verification, request-time checks, manual admin recheck, and an authenticated webhook route exist; provider delivery/retries and reorg handling remain |
 | Contract tests/testnet/audit | Planned, P0 | All required before mainnet |
 
 ## Disputes
@@ -78,7 +78,7 @@ Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`
 | Admin dashboard | Implemented, needs redesign | Exception queues and auditability needed |
 | Escrow reconciliation queue | Planned, P0 | Required before real-value operation |
 | Immutable admin audit log | Planned, P0 | Required for financial/permission actions |
-| Provider/job health | Planned | Surface RPC, rate, email, cron, worker failures |
+| Provider/event health | Planned | Surface RPC, rate, email, and webhook delivery failures |
 
 ## Platform quality
 

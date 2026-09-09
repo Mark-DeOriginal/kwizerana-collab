@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { hasPermission, isAdminEmail } from "@/lib/roles";
 import { dbQuery, ensureDatabase } from "@/lib/db";
+import { reconcileEscrowProjections } from "@/lib/p2p/reconciliation";
 
 export const dynamic = "force-dynamic";
 
@@ -30,3 +31,11 @@ export async function GET() {
   return NextResponse.json({ items: rows });
 }
 
+export async function POST() {
+  if (!(await canReview())) return NextResponse.json({ error: "Reconciliation access required." }, { status: 403 });
+  try {
+    return NextResponse.json({ ok: true, ...(await reconcileEscrowProjections(200)) });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Reconciliation failed." }, { status: 500 });
+  }
+}

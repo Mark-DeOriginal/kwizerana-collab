@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { ArrowLeft, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { readJson } from "@/lib/client-request";
+import { authHref, safeReturnPath } from "@/lib/auth/redirects";
 
 type Config = { google?: boolean; database?: boolean };
 type LoginStep = "credentials" | "twoFactor";
@@ -13,6 +14,8 @@ type LoginStep = "credentials" | "twoFactor";
 export default function SignInPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = safeReturnPath(searchParams.get("next"));
 
   const [config, setConfig] = useState<Config>({});
   const [checkedConfig, setCheckedConfig] = useState(false);
@@ -41,9 +44,9 @@ export default function SignInPage() {
 
   useEffect(() => {
     if (session?.user?.email) {
-      router.replace("/");
+      router.replace(returnTo);
     }
-  }, [session, router]);
+  }, [session, router, returnTo]);
 
   async function completeLogin(loginEmail: string, ticket: string) {
     const result = await signIn("credentials", { email: loginEmail, ticket, redirect: false });
@@ -52,7 +55,7 @@ export default function SignInPage() {
       setStep("credentials");
       return;
     }
-    router.replace("/");
+    router.replace(returnTo);
     router.refresh();
   }
 
@@ -126,7 +129,7 @@ export default function SignInPage() {
     setGoogleLoading(true);
     setError("");
     try {
-      const result = await signIn("google", { callbackUrl: "/", redirect: false });
+      const result = await signIn("google", { callbackUrl: returnTo, redirect: false });
       if (result?.error) {
         setError("Google sign-in could not be started. Please try again or use email and password.");
         setGoogleLoading(false);
@@ -162,25 +165,25 @@ export default function SignInPage() {
   }
 
   return (
-    <div className="px-4 py-12 text-ink sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-md">
+    <div className="px-4 py-12 text-ink sm:px-6 sm:py-16 lg:px-8">
+      <div className="mx-auto max-w-lg border border-line bg-white p-6 shadow-tight sm:p-9">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Welcome to Kwizerana</p>
-          <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">
+          <p className="text-sm font-semibold text-ocean">Welcome back</p>
+          <h1 className="mt-2 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
             {step === "twoFactor" ? "Two-factor authentication" : "Sign in"}
           </h1>
           <p className="mt-4 text-base leading-7 text-muted">
             {step === "twoFactor"
               ? "Enter the 6-digit code from your authenticator app, or a backup code."
-              : "Sign in to browse, trade, and manage your account."}
+              : "Access your trades, payment methods, and account settings."}
           </p>
         </div>
 
-        <div className="mt-8">
+        <div className="mt-9">
           {step === "credentials" ? (
             <form onSubmit={handleCredentialsSubmit} className="space-y-4">
               <div>
-                <label htmlFor="email" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                <label htmlFor="email" className="mb-2 block text-sm font-semibold text-ink">
                   Email
                 </label>
                 <input
@@ -190,12 +193,12 @@ export default function SignInPage() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+                  className="min-h-[52px] w-full border border-line bg-panel/40 px-4 text-base outline-none transition-colors placeholder:text-muted/70 focus:border-ocean focus:bg-white"
                   placeholder="you@example.com"
                 />
               </div>
               <div>
-                <label htmlFor="password" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                <label htmlFor="password" className="mb-2 block text-sm font-semibold text-ink">
                   Password
                 </label>
                 <input
@@ -205,7 +208,7 @@ export default function SignInPage() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+                  className="min-h-[52px] w-full border border-line bg-panel/40 px-4 text-base outline-none transition-colors placeholder:text-muted/70 focus:border-ocean focus:bg-white"
                   placeholder="Your password"
                 />
               </div>
@@ -229,7 +232,7 @@ export default function SignInPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex h-11 w-full items-center justify-center gap-2 bg-ink px-5 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-ink px-5 text-base font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
                 Sign in
@@ -238,7 +241,7 @@ export default function SignInPage() {
           ) : (
             <form onSubmit={handleTwoFactorSubmit} className="space-y-4">
               <div>
-                <label htmlFor="twoFactorCode" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+                <label htmlFor="twoFactorCode" className="mb-2 block text-sm font-semibold text-ink">
                   Authentication code
                 </label>
                 <input
@@ -248,7 +251,7 @@ export default function SignInPage() {
                   required
                   value={twoFactorCode}
                   onChange={(e) => setTwoFactorCode(e.target.value)}
-                  className="h-11 w-full border border-line bg-white px-3 text-center text-lg tracking-[0.3em] outline-none transition-colors focus:border-ocean"
+                  className="min-h-[52px] w-full border border-line bg-panel/40 px-4 text-center text-xl tracking-[0.3em] outline-none transition-colors focus:border-ocean focus:bg-white"
                   placeholder="••••••"
                   maxLength={11}
                 />
@@ -263,7 +266,7 @@ export default function SignInPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex h-11 w-full items-center justify-center gap-2 bg-ink px-5 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-60"
+                className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-ink px-5 text-base font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                 Verify & sign in
@@ -295,7 +298,7 @@ export default function SignInPage() {
             <button
               disabled={!config.google || status === "loading" || googleLoading}
               onClick={handleGoogleSignIn}
-              className="flex h-11 w-full items-center justify-center gap-2 border border-line bg-white px-5 text-sm font-semibold text-ink transition-colors hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-[52px] w-full items-center justify-center gap-2 border border-line bg-white px-5 text-base font-semibold text-ink transition-colors hover:border-ocean hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50"
             >
               {googleLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -321,7 +324,7 @@ export default function SignInPage() {
         {step === "credentials" && (
           <p className="mt-6 text-center text-sm text-muted">
             Don&apos;t have an account?{" "}
-            <Link href="/auth/sign-up" className="font-semibold text-ocean underline underline-offset-2">
+            <Link href={authHref("/auth/sign-up", returnTo)} className="font-semibold text-ocean underline underline-offset-2">
               Create one
             </Link>
           </p>

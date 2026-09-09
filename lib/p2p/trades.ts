@@ -7,6 +7,7 @@ import { SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
 import { isAddress } from "viem";
 import { isEscrowDeployed } from "@/lib/web3/escrow";
 import { verifyEscrowTransaction, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
+import { reconcileEscrowTrade } from "@/lib/p2p/reconciliation";
 
 function fmtCryptoAmount(n: number): string {
   if (!Number.isFinite(n)) return "0";
@@ -334,6 +335,12 @@ export async function createTrade(
 
 export async function getTrade(userId: string, tradeId: string, ownedVendorIds?: Set<string>, isSuperAdmin = false): Promise<Trade> {
   await ensureDatabase();
+  await expireStaleTrade(tradeId);
+  if (isEscrowDeployed()) {
+    await reconcileEscrowTrade(tradeId).catch((error) => {
+      console.error("On-demand escrow reconciliation failed", { tradeId, error: error instanceof Error ? error.message : "unknown" });
+    });
+  }
   if (!ownedVendorIds) ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];
   const rows = await dbQuery<TradeRow>(
@@ -343,6 +350,17 @@ export async function getTrade(userId: string, tradeId: string, ownedVendorIds?:
   const row = rows[0];
   if (!row) throw new Error("Trade not found.");
   return mapTrade(row, userId, ownedVendorIds, isSuperAdmin);
+}
+
+async function expireStaleTrade(tradeId: string): Promise<boolean> {
+  const expired = await dbQuery<{ id: string }>(
+    `UPDATE p2p_trades SET status = 'expired', updated_at = NOW()
+     WHERE id = $1 AND status IN ('created', 'escrow_locked') AND expires_at < NOW()
+     RETURNING id`,
+    [tradeId]
+  );
+  if (expired[0]) await syncTradeNotification(expired[0].id);
+  return Boolean(expired[0]);
 }
 
 export async function expireStaleTrades(): Promise<number> {
@@ -450,6 +468,8 @@ export async function applyTradeAction(
   isSuperAdmin = false
 ): Promise<Trade> {
   await ensureDatabase();
+  await expireStaleTrade(tradeId);
+  if (isEscrowDeployed()) await reconcileEscrowTrade(tradeId);
   assertEscrowMutationInput(action, input);
   const ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, CircleCheck, CreditCard, ShieldCheck, UsersRound } from "lucide-react";
+import { ArrowRight, CircleCheck, CreditCard, UsersRound } from "lucide-react";
 
 const tradeSteps = [
   {
@@ -51,13 +51,10 @@ export default function P2PMarketplacePage() {
             priority
             className="aspect-[1.12/1] h-full w-full object-cover"
           />
-          <p className="absolute right-6 top-6 max-w-[9rem] text-xs font-semibold uppercase leading-5 tracking-[0.16em] text-ink/55">
-            Your wallet. Your payment. One clear trade.
-          </p>
         </div>
       </section>
 
-      <section id="how-it-works" className="border-y border-line bg-white">
+      <section id="how-it-works" className="border-b border-line bg-white">
         <div className="mx-auto max-w-[1280px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">How it works</p>
           <h2 className="mt-5 max-w-4xl text-4xl font-semibold leading-[1.04] tracking-[-0.035em] sm:text-5xl lg:text-6xl">
@@ -92,13 +89,6 @@ export default function P2PMarketplacePage() {
             <p className="mt-6 text-base leading-7 text-muted">
               Escrow protects the crypto side of the trade. Fiat payments still happen between users, so follow the listed instructions and keep all trade communication on Kwizerana.
             </p>
-            <div className="mt-7 flex gap-3 border-l-2 border-moss pl-4 text-sm leading-6 text-ink">
-              <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-moss" />
-              <p>Buyers should mark a trade paid only after sending the full amount. Sellers should release only after the payment is visible in their account.</p>
-            </div>
-            <Link href="/p2p-marketplace/trade" className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-ocean hover:text-ink">
-              Read the offer terms before trading <ArrowRight className="h-4 w-4" />
-            </Link>
           </div>
         </div>
       </section>

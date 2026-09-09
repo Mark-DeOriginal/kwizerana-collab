@@ -10,7 +10,7 @@ This document defines the target authoritative lifecycle. Current code approxima
 - **Seller:** funds crypto escrow and confirms fiat receipt.
 - **Arbitrator:** resolves exceptional disputes under the published trust model.
 - **Chain verifier:** confirms contract events and required block depth.
-- **System worker:** handles expiry, reconciliation, notifications, and retryable work.
+- **Event processor:** handles provider webhooks, reconciliation, notifications, and retryable work.
 
 An administrator is not automatically the buyer or seller. Administrative database permission does not grant an on-chain capability unless the contract explicitly grants it.
 
@@ -138,4 +138,3 @@ The current `split` concept is unsupported by the prototype contract and must no
 ## Current implementation mapping
 
 The current code uses `created`, `escrow_locked`, `payment_sent`, `released`, `completed`, `cancelled`, `expired`, and `disputed`. It often moves directly to those states after a browser action and client-provided hash. Migration to the target model must preserve historical records and label unverifiable/demo hashes explicitly.
-

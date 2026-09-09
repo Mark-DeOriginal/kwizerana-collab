@@ -3,6 +3,8 @@
 ## Implemented flows
 
 - NextAuth JWT sessions.
+- Central page-route protection in `middleware.ts` for account, dashboard, notification, personal P2P, submission, and administration surfaces.
+- Signed-out visits to protected pages are redirected to `/redirect`; a validated internal `next` path carries the intended destination through sign-in, registration, and Google OAuth.
 - Optional Google OAuth.
 - Email/password registration with bcrypt hashing.
 - Email verification through signed tokens and Resend.
@@ -39,6 +41,7 @@ Use the production origin for both `NEXTAUTH_URL` and the production OAuth redir
 
 ## Current security notes
 
+- Page access is centrally guarded, while API authorization is still enforced inside individual route handlers and needs further consolidation and automated coverage.
 - Auth rate limiting is in-memory and does not coordinate across serverless instances.
 - Rate limiting currently covers only selected registration/login/verification endpoints.
 - `NEXTAUTH_SECRET` also derives TOTP encryption and signed application tokens; rotation needs a planned migration/recovery procedure.
@@ -48,4 +51,3 @@ Use the production origin for both `NEXTAUTH_URL` and the production OAuth redir
 - Sensitive P2P actions should require recent authentication and, where appropriate, 2FA.
 
 See `docs/PRODUCTION-READINESS.md` for launch gates.
-

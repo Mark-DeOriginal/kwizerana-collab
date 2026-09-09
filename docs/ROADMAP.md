@@ -24,10 +24,11 @@ Status: **planned; highest priority**
 - Add transactional mutations, row locks, idempotency, and replay protection.
 - Decide whether wallet ownership proof is required before launch. Connected addresses are currently linked without a signature challenge.
 - Verify Avalanche receipts and escrow events server-side.
-- Add an event indexer/reconciliation worker.
+- Complete provider webhook delivery, retry handling, and on-demand reconciliation operations.
 - Complete durable action idempotency across every trade mutation.
 - Remove production escrow simulation.
 - Harden authorization, validation, uploads, rate limiting, secrets, and audit logs.
+  - Partial evidence: protected application pages are centrally session-gated in `middleware.ts`, with safe post-auth return paths through `/redirect`; API authorization remains route-local.
 
 Exit: database state cannot be advanced by a fabricated hash or invalid actor, and divergence is detected and recoverable.
 

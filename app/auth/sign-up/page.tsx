@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 import { CheckCircle2, Loader2, UserPlus } from "lucide-react";
 import { readJson } from "@/lib/client-request";
+import { authHref, safeReturnPath } from "@/lib/auth/redirects";
 
 type Config = { google?: boolean };
 
 export default function SignUpPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = safeReturnPath(searchParams.get("next"));
 
   const [config, setConfig] = useState<Config>({});
   const [checkedConfig, setCheckedConfig] = useState(false);
@@ -43,9 +46,9 @@ export default function SignUpPage() {
 
   useEffect(() => {
     if (session?.user?.email) {
-      router.replace("/");
+      router.replace(returnTo);
     }
-  }, [session, router]);
+  }, [session, router, returnTo]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -78,7 +81,7 @@ export default function SignUpPage() {
     setGoogleLoading(true);
     setError("");
     try {
-      const result = await signIn("google", { callbackUrl: "/", redirect: false });
+      const result = await signIn("google", { callbackUrl: returnTo, redirect: false });
       if (result?.error) {
         setError("Google sign-in could not be started. Please try again or use email and password.");
         setGoogleLoading(false);
@@ -105,7 +108,7 @@ export default function SignUpPage() {
               </p>
             </div>
           </div>
-          <Link href="/auth/sign-in" className="mt-4 inline-flex h-10 items-center gap-2 bg-ink px-5 text-sm font-semibold text-white transition-colors hover:bg-ocean">
+          <Link href={authHref("/auth/sign-in", returnTo)} className="mt-4 inline-flex min-h-12 items-center gap-2 bg-ink px-5 text-base font-semibold text-white transition-colors hover:bg-ocean">
             Go to sign in
           </Link>
         </div>
@@ -114,20 +117,20 @@ export default function SignUpPage() {
   }
 
   return (
-    <div className="px-4 py-12 text-ink sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-md">
+    <div className="px-4 py-12 text-ink sm:px-6 sm:py-16 lg:px-8">
+      <div className="mx-auto max-w-lg border border-line bg-white p-6 shadow-tight sm:p-9">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">Join Kwizerana</p>
-          <h1 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">Create your account</h1>
+          <p className="text-sm font-semibold text-ocean">Join Kwizerana</p>
+          <h1 className="mt-2 text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">Create your account</h1>
           <p className="mt-4 text-base leading-7 text-muted">
-            A decentralized marketplace for trading crypto directly with other people. No KYC required.
+            Set up your profile to manage trades, payment methods, and account security in one place.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-9 space-y-5">
           <div>
-            <label htmlFor="name" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              Display name <span className="normal-case text-muted/70">(optional)</span>
+            <label htmlFor="name" className="mb-2 block text-sm font-semibold text-ink">
+              Display name <span className="font-normal text-muted">(optional)</span>
             </label>
             <input
               id="name"
@@ -135,12 +138,12 @@ export default function SignUpPage() {
               autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+              className="min-h-[52px] w-full border border-line bg-panel/40 px-4 text-base outline-none transition-colors placeholder:text-muted/70 focus:border-ocean focus:bg-white"
               placeholder="Your name"
             />
           </div>
           <div>
-            <label htmlFor="email" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+            <label htmlFor="email" className="mb-2 block text-sm font-semibold text-ink">
               Email
             </label>
             <input
@@ -150,12 +153,12 @@ export default function SignUpPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+              className="min-h-[52px] w-full border border-line bg-panel/40 px-4 text-base outline-none transition-colors placeholder:text-muted/70 focus:border-ocean focus:bg-white"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label htmlFor="password" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+            <label htmlFor="password" className="mb-2 block text-sm font-semibold text-ink">
               Password
             </label>
             <input
@@ -165,13 +168,13 @@ export default function SignUpPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+              className="min-h-[52px] w-full border border-line bg-panel/40 px-4 text-base outline-none transition-colors placeholder:text-muted/70 focus:border-ocean focus:bg-white"
               placeholder="At least 8 characters"
             />
-            <p className="mt-1 text-xs text-muted">Must be at least 8 characters with a letter and a number.</p>
+            <p className="mt-2 text-sm text-muted">Use at least 8 characters with a letter and a number.</p>
           </div>
           <div>
-            <label htmlFor="confirmPassword" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
+            <label htmlFor="confirmPassword" className="mb-2 block text-sm font-semibold text-ink">
               Confirm password
             </label>
             <input
@@ -181,7 +184,7 @@ export default function SignUpPage() {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
+              className="min-h-[52px] w-full border border-line bg-panel/40 px-4 text-base outline-none transition-colors placeholder:text-muted/70 focus:border-ocean focus:bg-white"
               placeholder="Re-enter your password"
             />
           </div>
@@ -195,7 +198,7 @@ export default function SignUpPage() {
           <button
             type="submit"
             disabled={loading}
-            className="flex h-11 w-full items-center justify-center gap-2 bg-ink px-5 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex min-h-[52px] w-full items-center justify-center gap-2 bg-ink px-5 text-base font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-60"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
             Create account
@@ -212,7 +215,7 @@ export default function SignUpPage() {
           type="button"
           disabled={!config.google || status === "loading" || googleLoading}
           onClick={() => void handleGoogleSignIn()}
-          className="flex h-11 w-full items-center justify-center gap-2 border border-line bg-white px-5 text-sm font-semibold text-ink transition-colors hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex min-h-[52px] w-full items-center justify-center gap-2 border border-line bg-white px-5 text-base font-semibold text-ink transition-colors hover:border-ocean hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50"
         >
           {googleLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -235,7 +238,7 @@ export default function SignUpPage() {
 
         <p className="mt-6 text-center text-sm text-muted">
           Already have an account?{" "}
-          <Link href="/auth/sign-in" className="font-semibold text-ocean underline underline-offset-2">
+          <Link href={authHref("/auth/sign-in", returnTo)} className="font-semibold text-ocean underline underline-offset-2">
             Sign in
           </Link>
         </p>

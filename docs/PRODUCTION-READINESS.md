@@ -29,6 +29,7 @@ This is a launch gate, not a claim that the application is ready. P0 items block
 ## P0: Application security
 
 - [ ] Central authorization policies replace inconsistent route-level checks.
+  - Partial: protected page routes now share a fail-closed middleware guard and signed-out redirect flow; API and permission policies remain distributed across route handlers.
 - [ ] Development admin bypasses are impossible in production and covered by tests.
 - [ ] Durable distributed rate limiting protects auth, wallet, trade, chat, upload, and admin endpoints.
 - [ ] CSRF/session behavior is reviewed for every mutation mechanism.
@@ -78,6 +79,7 @@ This is a launch gate, not a claim that the application is ready. P0 items block
 
 ## Current known blockers
 
+- Protected pages now have consistent session enforcement, but API authorization policies still need consolidation and automated route coverage.
 - Client-provided hashes are trusted.
 - Escrow simulation can advance application state.
 - The contract lacks documented multisig and timeout behavior.
