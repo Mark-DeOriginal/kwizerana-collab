@@ -77,13 +77,6 @@ function sameAddress(a: string | null | undefined, b: string | null | undefined)
   }
 }
 
-function expectedEvent(action: EscrowVerificationAction): "Locked" | "Released" | "Claimed" | "Refunded" {
-  if (action === "accept") return "Locked";
-  if (action === "release") return "Released";
-  if (action === "claim") return "Claimed";
-  return "Refunded";
-}
-
 /**
  * Verifies the minimum facts required to project a browser-submitted escrow
  * transaction into application state. A valid hash alone is never enough.
@@ -93,7 +86,9 @@ export async function verifyEscrowTransaction(input: VerificationInput): Promise
   if (receipt.status !== "success") throw new Error("The escrow transaction reverted.");
   const latestBlock = await client.getBlockNumber();
   const requiredConfirmations = Math.max(1, Number(process.env.ESCROW_CONFIRMATIONS ?? 3));
-  const confirmations = latestBlock >= receipt.blockNumber ? latestBlock - receipt.blockNumber + 1n : 0n;
+  const confirmations = latestBlock >= receipt.blockNumber
+    ? latestBlock - receipt.blockNumber + BigInt(1)
+    : BigInt(0);
   if (confirmations < BigInt(requiredConfirmations)) {
     throw new Error(`The escrow transaction needs ${requiredConfirmations} confirmations before settlement.`);
   }
@@ -108,25 +103,45 @@ export async function verifyEscrowTransaction(input: VerificationInput): Promise
       : sameAddress(receipt.from, input.sellerWalletAddress) || sameAddress(receipt.from, arbitrator);
   if (!senderAllowed) throw new Error("The escrow transaction was submitted by an unauthorized wallet.");
 
-  const logs = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: expectedEvent(input.action) });
   const tradeId = tradeRefToBytes32(input.tradeRef);
   const token = getTokenAddress(input.cryptoCurrency);
   if (!token) throw new Error("This crypto asset is not supported by the escrow verifier.");
   const amount = parseUnits(String(input.cryptoAmount), 6);
-  const matching = logs.find((log) => {
-    if (log.args.tradeId !== tradeId) return false;
-    if (input.action === "accept") {
-      return sameAddress(log.args.seller, input.sellerWalletAddress) &&
-        (!input.buyerWalletAddress || sameAddress(log.args.buyer, input.buyerWalletAddress)) &&
-        sameAddress(log.args.token, token) && log.args.amount === amount;
-    }
-    if (input.action === "release") return sameAddress(log.args.seller, input.sellerWalletAddress);
-    if (input.action === "claim") {
-      return log.args.amount === amount && (!input.destinationAddress || sameAddress(log.args.to, input.destinationAddress));
-    }
-    return log.args.amount === amount && sameAddress(log.args.to, input.sellerWalletAddress);
-  });
 
-  if (!matching) throw new Error("The escrow receipt does not match this trade.");
-  return { blockNumber: receipt.blockNumber, logIndex: matching.logIndex ?? 0 };
+  let matchedLogIndex: number | null | undefined;
+
+  if (input.action === "accept") {
+    const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "Locked" }).find((log) =>
+      log.args.tradeId === tradeId &&
+      sameAddress(log.args.seller, input.sellerWalletAddress) &&
+      (!input.buyerWalletAddress || sameAddress(log.args.buyer, input.buyerWalletAddress)) &&
+      sameAddress(log.args.token, token) &&
+      log.args.amount === amount
+    );
+    matchedLogIndex = matching?.logIndex;
+  } else if (input.action === "release") {
+    const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "Released" }).find((log) =>
+      log.args.tradeId === tradeId && sameAddress(log.args.seller, input.sellerWalletAddress)
+    );
+    matchedLogIndex = matching?.logIndex;
+  } else if (input.action === "claim") {
+    const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "Claimed" }).find((log) =>
+      log.args.tradeId === tradeId &&
+      log.args.amount === amount &&
+      (!input.destinationAddress || sameAddress(log.args.to, input.destinationAddress))
+    );
+    matchedLogIndex = matching?.logIndex;
+  } else {
+    const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "Refunded" }).find((log) =>
+      log.args.tradeId === tradeId &&
+      log.args.amount === amount &&
+      sameAddress(log.args.to, input.sellerWalletAddress)
+    );
+    matchedLogIndex = matching?.logIndex;
+  }
+
+  if (matchedLogIndex === undefined || matchedLogIndex === null) {
+    throw new Error("The escrow receipt does not match this trade.");
+  }
+  return { blockNumber: receipt.blockNumber, logIndex: matchedLogIndex };
 }
