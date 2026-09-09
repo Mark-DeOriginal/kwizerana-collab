@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
@@ -10,7 +10,7 @@ import { authHref, safeReturnPath } from "@/lib/auth/redirects";
 
 type Config = { google?: boolean };
 
-export default function SignUpPage() {
+function SignUpContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -242,6 +242,25 @@ export default function SignUpPage() {
             Sign in
           </Link>
         </p>
+      </div>
+    </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<AuthPageLoading label="Loading account creation" />}>
+      <SignUpContent />
+    </Suspense>
+  );
+}
+
+function AuthPageLoading({ label }: { label: string }) {
+  return (
+    <div className="px-4 py-12 text-ink sm:px-6 sm:py-16 lg:px-8" role="status" aria-label={label}>
+      <div className="mx-auto flex min-h-[520px] max-w-lg items-center justify-center border border-line bg-white p-9 shadow-tight">
+        <Loader2 className="h-6 w-6 animate-spin text-ocean" aria-hidden="true" />
+        <span className="sr-only">{label}</span>
       </div>
     </div>
   );
