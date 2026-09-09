@@ -622,10 +622,10 @@ export async function applyTradeAction(
           refund_tx_hash = CASE WHEN $2 = 'refunded' THEN COALESCE($3, refund_tx_hash) ELSE refund_tx_hash END,
           release_to = CASE WHEN $2 = 'claimed' THEN COALESCE($4, release_to) ELSE release_to END,
           released_at = CASE WHEN $2 IN ('released', 'claimed') AND released_at IS NULL THEN NOW() ELSE released_at END,
-          chain_block_number = $5,
-          chain_log_index = $6,
-          chain_verified_at = CASE WHEN $5 IS NOT NULL THEN NOW() ELSE NULL END,
-          chain_verifier_version = CASE WHEN $5 IS NOT NULL THEN 'escrow-events-v1' ELSE NULL END
+          chain_block_number = $5::NUMERIC,
+          chain_log_index = $6::INTEGER,
+          chain_verified_at = CASE WHEN $5::NUMERIC IS NOT NULL THEN NOW() ELSE NULL END,
+          chain_verifier_version = CASE WHEN $5::NUMERIC IS NOT NULL THEN 'escrow-events-v1' ELSE NULL END
         WHERE trade_id = $1`,
       [tradeId, escrowStatus, escrowTx, input.destAddress ?? null, chainVerification?.blockNumber.toString() ?? null, chainVerification?.logIndex ?? null]
     );

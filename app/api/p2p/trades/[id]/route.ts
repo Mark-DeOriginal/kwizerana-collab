@@ -7,6 +7,38 @@ import { isAdminEmail } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
+const PUBLIC_TRADE_ACTION_ERRORS = [
+  /^Trade not found\.$/,
+  /^The wallet transaction hash is invalid\.$/,
+  /^The connected wallet address is invalid\.$/,
+  /^The receive wallet address is invalid\.$/,
+  /^A confirmed escrow transaction is required\.$/,
+  /^The buyer must set a receive wallet/,
+  /^Only the /,
+  /^This order /,
+  /^Connect your wallet /,
+  /^Payment can only /,
+  /^There is no /,
+  /^This payment method /,
+  /^The crypto is not /,
+  /^Choose where /,
+  /^The escrow /,
+  /^Please provide /,
+  /^The action request identifier /,
+  /^This trade changed /,
+  /^Inventory can only /,
+  /^The transaction was sent /,
+  /^This crypto asset /,
+  /^The escrow receipt /,
+  /^The escrow transaction /,
+  /^The escrow transaction was submitted /
+];
+
+function publicTradeActionError(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  return PUBLIC_TRADE_ACTION_ERRORS.some((pattern) => pattern.test(error.message)) ? error.message : null;
+}
+
 async function getSuperAdmin(): Promise<boolean> {
   const session = await getServerSession(authOptions);
   return isAdminEmail(session?.user?.email);
@@ -59,6 +91,17 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const trade = await applyTradeAction(userId, params.id, action as TradeAction, input, await getSuperAdmin());
     return NextResponse.json({ trade });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to update trade." }, { status: 400 });
+    const publicMessage = publicTradeActionError(err);
+    if (!publicMessage) {
+      console.error("Trade action failed", {
+        tradeId: params.id,
+        action,
+        error: err instanceof Error ? err.message : "Unknown error"
+      });
+    }
+    return NextResponse.json(
+      { error: publicMessage ?? "Unable to update this trade right now. Please try again." },
+      { status: publicMessage ? 400 : 500 }
+    );
   }
 }

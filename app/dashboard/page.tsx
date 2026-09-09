@@ -15,7 +15,6 @@ import {
   Copy,
   Gift,
   History,
-  Landmark,
   Loader2,
   LogIn,
   MessageSquare,
@@ -38,7 +37,6 @@ import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
 import type { UserWallet } from "@/lib/p2p/wallets";
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import type { P2PNotification } from "@/lib/p2p/notifications";
-import type { CurrencyRate } from "@/lib/p2p/currencies-shared";
 import type { VendorStatus } from "@/lib/p2p/vendor";
 import type { Review } from "@/lib/p2p/reviews";
 import type { DisputeDetail } from "@/lib/p2p/disputes";
@@ -135,7 +133,6 @@ function EmptyState({ icon, title, subtitle, cta }: { icon: React.ReactNode; tit
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
-  const [rates, setRates] = useState<CurrencyRate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -145,19 +142,14 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
       setError("");
     }
     try {
-      const [dashRes, ratesRes] = await Promise.all([
-        fetch("/api/p2p/dashboard", { cache: "no-store" }),
-        fetch("/api/p2p/currencies", { cache: "no-store" })
-      ]);
+      const dashRes = await fetch("/api/p2p/dashboard", { cache: "no-store" });
       const dash = await readJson<DashboardData & { error?: string }>(dashRes);
-      const ratesData = await readJson<{ rates: CurrencyRate[] }>(ratesRes);
 
       if (!dashRes.ok || !dash) {
         if (!opts.silent) throw new Error(dash?.error ?? "Unable to load dashboard.");
         return;
       }
       setData(dash as DashboardData);
-      setRates(ratesData?.rates ?? []);
     } catch {
       if (!opts.silent) setError("Unable to load your dashboard. Please try again.");
     } finally {
@@ -290,8 +282,6 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
           <div id="trade-history" className="mt-4 scroll-mt-24">
           <VendorPanel vendor={data?.vendor} paymentMethods={data?.paymentMethods ?? []} loading={loading && !data} onChanged={load} isSuperAdmin={data?.isSuperAdmin} vendorApplication={data?.vendorApplication} />
         </div>
-
-        <TickerStrip rates={rates} />
 
         {/* Active trades + activity */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -613,29 +603,6 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
         <Clock className="h-3.5 w-3.5" />
         Avg release time <span className="font-semibold text-ink">{formatReleaseSeconds(stats.avgReleaseSeconds)}</span>
       </p>
-    </Card>
-  );
-}
-
-function TickerStrip({ rates }: { rates: CurrencyRate[] }) {
-  const pairs = useMemo(() => rates.slice(0, 16), [rates]);
-
-  return (
-    <Card title="Market rates" subtitle="Live fiat prices" icon={<Landmark className="h-4 w-4" />} className="mt-4">
-      {pairs.length === 0 ? (
-        <p className="text-sm text-muted">Market rates will appear here once the price feed is live.</p>
-      ) : (
-        <div className="thin-scrollbar flex gap-2 overflow-x-auto pb-1">
-          {pairs.map((r) => (
-            <div key={`${r.crypto_currency}-${r.fiat_currency}`} className="min-w-[150px] shrink-0 rounded-md border border-line bg-panel px-3 py-2.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                {r.crypto_currency}/{r.fiat_currency}
-              </div>
-              <p className="mt-0.5 text-sm font-bold">{formatAmount(Number(r.rate))}</p>
-            </div>
-          ))}
-        </div>
-      )}
     </Card>
   );
 }
