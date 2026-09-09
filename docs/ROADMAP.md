@@ -64,6 +64,7 @@ Status: **planned on top of partially implemented features**
 - Refine market discovery and price transparency.
 - Rebuild order entry and trade detail around authoritative state.
 - Complete receipts, chat, notification, cancellation, refund, review, and dispute journeys.
+- Preserve a single clear completion activity entry for both participants when a trade settles.
 - Add member dashboard routes for orders, wallets, payment methods, security, and reputation.
 
 Exit: realistic end-to-end buy and sell journeys pass happy-path and failure-path tests on testnet.

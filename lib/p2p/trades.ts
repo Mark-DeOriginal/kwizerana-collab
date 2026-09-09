@@ -35,7 +35,7 @@ function tradeNoticeCopy(t: TradeNoticeRow): { title: string; body: string } {
     case "released":
       return { title: "Payment confirmed — crypto ready", body: `Payment confirmed for order ${ref}. The ${amt} ${t.crypto_currency} is ready to receive.` };
     case "completed":
-      return { title: "Trade completed", body: `Trade ${ref} (${amt} ${t.crypto_currency}) completed.` };
+      return { title: "Transaction completed", body: `Order ${ref} is complete. The buyer received ${amt} ${t.crypto_currency}.` };
     case "cancelled":
       return { title: "Order cancelled", body: `Order ${ref} was cancelled, so no funds were released.` };
     case "expired":
@@ -58,6 +58,36 @@ async function syncTradeNotification(tradeId: string): Promise<void> {
   const t = rows[0];
   if (!t) return;
   await updateTradeNotification(tradeId, tradeNoticeCopy(t));
+}
+
+async function ensureTradeCompletionActivity(
+  tradeId: string,
+  trade: { buyer_id: string; seller_id: string; trade_ref: string; crypto_amount: number | string; crypto_currency: string }
+): Promise<void> {
+  const amount = fmtCryptoAmount(Number(trade.crypto_amount));
+
+  // The participant who received the original order request already has that
+  // activity row updated to "Trade completed" by syncTradeNotification. Add a
+  // completion row only for participants who are not represented by that row.
+  // Owned vendor profiles route activity to the account that manages them.
+  await dbQuery(
+    `INSERT INTO p2p_notifications (user_id, notification_type, title, body, data)
+     SELECT DISTINCT COALESCE(u.owner_user_id, u.id),
+            'trade_completed',
+            'Transaction completed',
+            $4,
+            jsonb_build_object('tradeId', $1::TEXT)
+     FROM users u
+     WHERE u.id IN ($2, $3)
+       AND NOT EXISTS (
+         SELECT 1
+         FROM p2p_notifications n
+         WHERE n.user_id = COALESCE(u.owner_user_id, u.id)
+           AND n.data->>'tradeId' = $1::TEXT
+           AND n.notification_type IN ('trade_created', 'trade_completed')
+       )`,
+    [tradeId, trade.buyer_id, trade.seller_id, `Order ${trade.trade_ref} is complete. The buyer received ${amount} ${trade.crypto_currency}.`]
+  );
 }
 
 export type Trade = {
@@ -655,7 +685,9 @@ export async function applyTradeAction(
     );
   }
 
-  // Notify the counterparty — route to owner if it's an owned vendor
+  // Notify the counterparty — route to owner if it's an owned vendor.
+  // Completion is handled separately so both participants receive one clear
+  // activity entry without duplicating an updated order-request notification.
   const rawCounterpartyId = isBuyer ? row.seller_id : row.buyer_id;
   const label = ACTION_LABELS[action];
 
@@ -665,15 +697,21 @@ export async function applyTradeAction(
   );
   const notifyUserId = counterpartyRows[0]?.owner_user_id || rawCounterpartyId;
 
-  await createNotification(notifyUserId, {
-    type: `trade_${action}`,
-    title: label.title,
-    body: label.body(row.trade_ref),
-    data: { tradeId }
-  });
+  if (action !== "claim") {
+    await createNotification(notifyUserId, {
+      type: `trade_${action}`,
+      title: label.title,
+      body: label.body(row.trade_ref),
+      data: { tradeId }
+    });
+  }
 
   if (newStatus !== status) {
     await syncTradeNotification(tradeId);
+  }
+
+  if (newStatus === "completed") {
+    await ensureTradeCompletionActivity(tradeId, row);
   }
 
   return getTrade(userId, tradeId, ownedVendorIds, isSuperAdmin);

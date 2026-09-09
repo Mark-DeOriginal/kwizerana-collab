@@ -632,7 +632,7 @@ function ActivityPanel({ notifications, loading }: { notifications: P2PNotificat
                 <p className="text-sm font-semibold">{n.title}</p>
                 <p className="text-sm text-muted">{n.body}</p>
               </div>
-              <span className="shrink-0 text-xs text-muted">{timeAgo(n.created_at)}</span>
+              <span className="shrink-0 text-xs text-muted">{timeAgo(n.updated_at ?? n.created_at)}</span>
             </li>
           ))}
         </ul>

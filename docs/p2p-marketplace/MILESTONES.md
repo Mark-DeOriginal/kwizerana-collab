@@ -45,7 +45,7 @@ Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`
 | Seller release and buyer claim | Simulated/unsafe | Server does not verify chain events |
 | Cancel/expiry/refund | Partial/unsafe | Funded recovery is not contract-enforced |
 | Chat and trade export | Implemented | Retention/rate/abuse controls remain |
-| Notifications/email | Partial | Durable delivery queue and telemetry needed |
+| Notifications/email | Partial | Dashboard completion activity now reaches both trade participants without duplicating the updated order row; durable delivery queue and telemetry still needed |
 | Formal state machine | Documented target | Implementation migration pending |
 
 ## Escrow and chain integration
