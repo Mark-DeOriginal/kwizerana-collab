@@ -11,7 +11,7 @@ The current contract supports:
 - buyer `claim()` to a chosen destination after release;
 - seller or arbitrator `refund()` before release.
 
-The frontend targets Avalanche C-Chain and native USDT/USDC addresses. When no contract address is configured, the UI simulates hashes and transitions for demonstration.
+The frontend targets Avalanche C-Chain and native USDT/USDC addresses. When no contract address is configured, the UI simulates hashes and transitions for demonstration, including on the current deployed test environment. These transitions update application records but do not move tokens on-chain and remain unsafe for real-value trading.
 
 ## Accurate trust description
 
@@ -115,4 +115,3 @@ The governance address should be a multisig with signer policy, key rotation, in
 - Store canonical chain facts and make reconciliation idempotent.
 - Disable demo settlement in production at configuration validation time.
 - Display contract, network, asset, amount, destination, confirmations, and explorer proof.
-
