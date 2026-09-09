@@ -511,7 +511,7 @@ function SortMenu({ value, onChange }: { value: SortKey; onChange: (value: SortK
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         className={`flex h-10 w-full items-center justify-between border bg-panel px-3 text-left text-sm transition-colors ${
-          isOpen ? "border-ocean ring-2 ring-ocean/15" : "border-line hover:border-ocean"
+          isOpen ? "border-ocean" : "border-line hover:border-ocean"
         }`}
       >
         <span className="flex min-w-0 items-center gap-3">

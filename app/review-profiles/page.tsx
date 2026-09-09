@@ -552,7 +552,7 @@ export default function AdminReviewPage() {
                           aria-haspopup="listbox"
                           aria-expanded={sortMenuOpen}
                           className={`flex h-8 items-center gap-2 border bg-white px-3 text-xs font-semibold transition-colors ${
-                            sortMenuOpen ? "border-ocean ring-2 ring-ocean/15" : "border-line hover:border-ocean"
+                            sortMenuOpen ? "border-ocean" : "border-line hover:border-ocean"
                           }`}
                         >
                           <ArrowUpDown className="h-3.5 w-3.5 text-muted" />

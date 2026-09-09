@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, RefreshCw, Save } from "lucide-react";
 import { friendlyError, readJson } from "@/lib/client-request";
 
@@ -30,9 +30,10 @@ export function CurrencyRatesTab() {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [ratesUpdated, setRatesUpdated] = useState(false);
+  const [ratesSaved, setRatesSaved] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const saveResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadRates = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) setLoading(true);
@@ -59,14 +60,27 @@ export function CurrencyRatesTab() {
     void loadRates();
   }, [loadRates]);
 
+  useEffect(() => () => {
+    if (saveResetTimer.current) clearTimeout(saveResetTimer.current);
+  }, []);
+
+  function confirmSaved() {
+    if (saveResetTimer.current) clearTimeout(saveResetTimer.current);
+    setRatesSaved(true);
+    saveResetTimer.current = setTimeout(() => {
+      setRatesSaved(false);
+      saveResetTimer.current = null;
+    }, 1000);
+  }
+
   function updateDraft(crypto: string, fiat: string, value: string) {
     setDraft((prev) => ({ ...prev, [`${crypto}:${fiat}`]: value }));
   }
 
   async function saveRates() {
     setSaving(true);
+    setRatesSaved(false);
     setError("");
-    setSuccess("");
     try {
       const payload: { crypto_currency: string; fiat_currency: string; rate: number }[] = [];
       for (const crypto of CRYPTO_LIST) {
@@ -80,7 +94,7 @@ export function CurrencyRatesTab() {
         }
       }
       if (payload.length === 0) {
-        setError("There are no rate changes to save.");
+        confirmSaved();
         return;
       }
       const res = await fetch("/api/admin/rates", {
@@ -90,9 +104,8 @@ export function CurrencyRatesTab() {
       });
       const data = await readJson<{ error?: string; updated?: number }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Failed to save rates.");
-      setSuccess(`Updated ${data?.updated ?? 0} rates. Changes take effect immediately.`);
-      setTimeout(() => setSuccess(""), 6000);
       await loadRates({ silent: true });
+      confirmSaved();
     } catch (err: unknown) {
       setError(friendlyError(err, "Something went wrong."));
     } finally {
@@ -141,8 +154,8 @@ export function CurrencyRatesTab() {
             disabled={saving}
             className="flex h-9 items-center gap-2 bg-ink px-4 text-xs font-bold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.97]"
           >
-            <Save className="h-3.5 w-3.5" />
-            Save changes
+            {ratesSaved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+            {ratesSaved ? "Saved" : "Save changes"}
           </button>
         </div>
       </div>
@@ -150,10 +163,6 @@ export function CurrencyRatesTab() {
       {error && (
         <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>
       )}
-      {success && (
-        <div className="mb-4 border border-moss/30 bg-moss/5 px-4 py-3 text-sm text-moss">{success}</div>
-      )}
-
       {loading ? (
         <div className="flex min-h-72 items-center justify-center border border-line bg-white" role="status" aria-label="Loading currency rates">
           <Loader2 className="h-6 w-6 animate-spin text-ocean" aria-hidden="true" />
@@ -191,7 +200,7 @@ export function CurrencyRatesTab() {
                           onChange={(e) => updateDraft(crypto, fiat, e.target.value)}
                           className={`h-9 w-32 border bg-transparent px-3 text-sm font-semibold outline-none transition-colors ${
                             hasChanged
-                              ? "border-ocean ring-1 ring-ocean/30 text-ocean"
+                              ? "border-ocean text-ocean"
                               : "border-line focus:border-ocean"
                           }`}
                           placeholder="0.00"

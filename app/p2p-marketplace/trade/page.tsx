@@ -65,7 +65,7 @@ function CurrencyInput({
   currency: string;
 }) {
   return (
-    <div className="border border-line bg-white transition-colors focus-within:border-ocean focus-within:ring-1 focus-within:ring-ocean/30">
+    <div className="border border-line bg-white transition-colors focus-within:border-ocean">
       <div className="flex items-stretch">
         <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-3">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</span>

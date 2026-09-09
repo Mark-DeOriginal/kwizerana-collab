@@ -46,6 +46,16 @@ a[href] {
   outline-offset: 3px;
 }
 
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
+button[aria-haspopup]:focus-visible {
+  outline: none;
+}
+
 .skip-link {
   position: fixed;
   left: 1rem;

@@ -46,6 +46,8 @@ export function CustomSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={`flex w-full items-center justify-between gap-2 border border-line bg-white px-3 text-sm font-semibold outline-none transition-colors focus:border-ocean disabled:cursor-not-allowed disabled:opacity-60 ${triggerClassName ?? ""}`}
       >
         <span className={`truncate text-left ${selected ? "text-ink" : "text-muted"}`}>
@@ -116,8 +118,10 @@ export function OptionsMenu({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="More options"
+        aria-haspopup="menu"
+        aria-expanded={open}
         className={`flex h-7 w-7 items-center justify-center border bg-white text-muted transition-colors ${
-          open ? "border-ink text-ink" : "border-line hover:border-ocean hover:text-ink"
+          open ? "border-ink text-ink" : "border-line hover:border-ocean focus:border-ocean hover:text-ink"
         }`}
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
