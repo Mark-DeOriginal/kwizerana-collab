@@ -18,10 +18,15 @@ function useSyncConnectedWallet() {
     void fetch("/api/p2p/wallets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chain: slug, address })
+      body: JSON.stringify({ chain: slug, address, make_primary: slug === "avalanche" })
     }).catch(() => {});
   }, [address, chainId, isConnected]);
 
+  return null;
+}
+
+export function ConnectedWalletSync() {
+  useSyncConnectedWallet();
   return null;
 }
 

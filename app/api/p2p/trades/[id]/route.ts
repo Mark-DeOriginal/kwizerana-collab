@@ -15,6 +15,7 @@ const PUBLIC_TRADE_ACTION_ERRORS = [
   /^A confirmed escrow transaction is required\.$/,
   /^The buyer must set a receive wallet/,
   /^Only the /,
+  /^The person who /,
   /^This order /,
   /^Connect your wallet /,
   /^Payment can only /,
@@ -44,21 +45,21 @@ async function getSuperAdmin(): Promise<boolean> {
   return isAdminEmail(session?.user?.email);
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
   try {
-    const trade = await getTrade(userId, params.id, undefined, await getSuperAdmin());
+    const trade = await getTrade(userId, (await params).id, undefined, await getSuperAdmin());
     return NextResponse.json({ trade });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Trade not found." }, { status: 404 });
   }
 }
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -72,7 +73,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const action = String(body.action ?? "");
-  const validActions: TradeAction[] = ["accept", "mark_paid", "release", "claim", "cancel", "refund", "decline", "proceed"];
+  const validActions: TradeAction[] = ["set_receive_wallet", "accept", "mark_paid", "release", "claim", "cancel", "refund", "decline", "proceed"];
   if (!validActions.includes(action as TradeAction)) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
@@ -88,13 +89,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   };
 
   try {
-    const trade = await applyTradeAction(userId, params.id, action as TradeAction, input, await getSuperAdmin());
+    const trade = await applyTradeAction(userId, (await params).id, action as TradeAction, input, await getSuperAdmin());
     return NextResponse.json({ trade });
   } catch (err) {
     const publicMessage = publicTradeActionError(err);
     if (!publicMessage) {
       console.error("Trade action failed", {
-        tradeId: params.id,
+        tradeId: (await params).id,
         action,
         error: err instanceof Error ? err.message : "Unknown error"
       });

@@ -114,7 +114,7 @@ async function seedDefaultVendors(): Promise<void> {
       );
     }
 
-    let pmRows = await dbQuery<{ id: string; method_type: string; method_name: string; details: string }>(
+    const pmRows = await dbQuery<{ id: string; method_type: string; method_name: string; details: string }>(
       `SELECT id::TEXT AS id, method_type, method_name, details::TEXT AS details
        FROM p2p_payment_methods WHERE user_id = $1 ORDER BY id ASC`,
       [vendorId]

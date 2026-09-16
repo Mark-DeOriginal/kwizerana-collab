@@ -16,14 +16,24 @@ import { linkUnlinkedDAOVendors } from "@/lib/p2p/seed";
 
 export const dynamic = "force-dynamic";
 
+function reportDashboardSection(name: string, result: PromiseSettledResult<unknown>) {
+  if (result.status === "rejected") {
+    console.error(`Dashboard section failed: ${name}`, result.reason instanceof Error ? result.reason.message : result.reason);
+  }
+}
+
 export async function GET() {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  // Ensure DAO vendor accounts are linked to admin (handles late admin signup)
-  await linkUnlinkedDAOVendors();
+  // This housekeeping must never prevent a member from opening the dashboard.
+  try {
+    await linkUnlinkedDAOVendors();
+  } catch (error) {
+    console.error("Dashboard vendor linking failed", error instanceof Error ? error.message : error);
+  }
 
   const session = await getServerSession(authOptions);
   const isSuperAdmin = isAdminEmail(session?.user?.email);
@@ -35,7 +45,7 @@ export async function GET() {
   );
   const vendorApplication = appRows.length > 0 ? { status: appRows[0].status } : null;
 
-  const [stats, security, wallets, paymentMethods, notifications, vendor, trades, submittedReviews, disputes] = await Promise.all([
+  const results = await Promise.allSettled([
     getP2PStats(userId),
     getSecuritySummary(userId),
     listWallets(userId),
@@ -47,7 +57,33 @@ export async function GET() {
     listMyDisputes(userId)
   ]);
 
-  const unreadCount = await getUnreadNotificationCount(userId);
+  const names = ["stats", "security", "wallets", "payment methods", "notifications", "vendor", "trades", "reviews", "disputes"];
+  results.forEach((result, index) => reportDashboardSection(names[index], result));
+
+  const value = <T,>(index: number, fallback: T): T =>
+    results[index].status === "fulfilled" ? results[index].value as T : fallback;
+
+  const stats = value(0, {
+    totalTrades: 0, completedTrades: 0, completionRate30d: 0, volume30d: 0,
+    avgReleaseSeconds: 0, cumulativeCounterparties: 0, trustScore: 0,
+    advertiserStatus: "none", advertiserLevel: "none", verifiedTier: "none",
+    firstTradeAt: null, isOnline: false
+  });
+  const security = value(1, { twoFactorEnabled: false, antiPhishingSet: false, hasPassword: false, emailVerified: false });
+  const wallets = value(2, []);
+  const paymentMethods = value(3, []);
+  const notifications = value(4, []);
+  const vendor = value(5, { isVendor: false, advertiserStatus: "none", advertiserLevel: "none", verifiedTier: "none", availableCrypto: 0, availableFiat: 0 });
+  const trades = value(6, []);
+  const submittedReviews = value(7, []);
+  const disputes = value(8, []);
+
+  let unreadCount = 0;
+  try {
+    unreadCount = await getUnreadNotificationCount(userId);
+  } catch (error) {
+    console.error("Dashboard section failed: unread count", error instanceof Error ? error.message : error);
+  }
 
   return NextResponse.json({
     stats,

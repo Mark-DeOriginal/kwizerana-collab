@@ -20,13 +20,17 @@ import {
   Store,
   Scale,
   Trophy,
-  DollarSign
+  DollarSign,
+  ChartNoAxesCombined
 } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { friendlyError, readJson } from "@/lib/client-request";
 import type { Permission } from "@/lib/roles";
 import { RankingsTab } from "@/components/RankingsTab";
 import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
+import { EscrowAdminOverview } from "@/components/EscrowAdminOverview";
+import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
 
 const ALL_PERMISSIONS: { key: Permission; label: string; description: string }[] = [
   { key: "manage_admins", label: "Can manage admins", description: "Promote and demote other users" },
@@ -77,7 +81,7 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState("");
   const [serverDenied, setServerDenied] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [activeTab, setActiveTab] = useState<"users" | "rankings" | "vendors" | "disputes" | "verifications" | "rates">("users");
+  const [activeTab, setActiveTab] = useState<"p2p" | "users" | "rankings" | "vendors" | "disputes" | "verifications" | "rates">("p2p");
 
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [selectedPermissions, setSelectedPermissions] = useState<Permission[]>([]);
@@ -349,6 +353,19 @@ export default function AdminDashboardPage() {
 
       <div className="mb-6 flex overflow-x-auto border-b border-line" role="tablist" aria-label="Admin workspaces">
         <button
+          onClick={() => setActiveTab("p2p")}
+          role="tab"
+          aria-selected={activeTab === "p2p"}
+          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+            activeTab === "p2p"
+              ? "border-ocean text-ink"
+              : "border-transparent text-muted hover:border-line hover:text-ink"
+          }`}
+        >
+          <ChartNoAxesCombined className="h-4 w-4" />
+          P2P overview
+        </button>
+        <button
           onClick={() => setActiveTab("users")}
           role="tab"
           aria-selected={activeTab === "users"}
@@ -428,7 +445,9 @@ export default function AdminDashboardPage() {
         </button>
       </div>
 
-      {activeTab === "rankings" ? (
+      {activeTab === "p2p" ? (
+        <EscrowAdminOverview />
+      ) : activeTab === "rankings" ? (
         <RankingsTab />
       ) : activeTab === "vendors" ? (
         <VendorApplicationsTab />
@@ -817,6 +836,12 @@ function DisputesTab() {
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [pendingHashes, setPendingHashes] = useState<Record<string, string>>({});
+  const { address } = useAccount();
+  const { writeContractAsync } = useWriteContract();
+  const escrow = getEscrowAddress();
+  const realEscrow = isEscrowDeployed();
+  const { data: arbitrator } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "arbitrator", query: { enabled: realEscrow } });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -837,17 +862,36 @@ function DisputesTab() {
     void load();
   }, [load]);
 
-  async function resolve(id: string, resolution: string) {
+  async function resolve(dispute: AdminDispute, resolution: "release_buyer" | "refund_seller") {
+    const id = dispute.id;
     setActionId(id);
     setError("");
     try {
+      let txHash = pendingHashes[`${id}:${resolution}`];
+      if (realEscrow && !txHash) {
+        if (!address || !arbitrator || address.toLowerCase() !== arbitrator.toLowerCase()) {
+          throw new Error("Connect the escrow arbitrator wallet or Safe before resolving this dispute.");
+        }
+        txHash = await writeContractAsync({
+          address: escrow,
+          abi: ESCROW_ABI,
+          functionName: resolution === "release_buyer" ? "resolveToBuyer" : "resolveToSeller",
+          args: [tradeRefToBytes32(dispute.trade_ref)]
+        });
+        setPendingHashes((current) => ({ ...current, [`${id}:${resolution}`]: txHash }));
+      }
       const res = await fetch(`/api/admin/disputes/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolution })
+        body: JSON.stringify({ resolution, tx_hash: txHash })
       });
       const data = await readJson<{ error?: string }>(res);
       if (!res.ok) throw new Error(data?.error ?? "Action failed.");
+      setPendingHashes((current) => {
+        const next = { ...current };
+        delete next[`${id}:${resolution}`];
+        return next;
+      });
       await load();
     } catch (err: unknown) {
       setError(friendlyError(err, "Something went wrong."));
@@ -883,14 +927,11 @@ function DisputesTab() {
                 </div>
                 {d.status === "open" ? (
                   <div className="flex shrink-0 flex-col gap-1.5">
-                    <button onClick={() => void resolve(d.id, "release_buyer")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 bg-moss px-3 text-xs font-bold text-white transition-colors hover:bg-moss/90 disabled:opacity-60">
+                    <button onClick={() => void resolve(d, "release_buyer")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 bg-moss px-3 text-xs font-bold text-white transition-colors hover:bg-moss/90 disabled:opacity-60">
                       {actionId === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Release to buyer
                     </button>
-                    <button onClick={() => void resolve(d.id, "refund_seller")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ocean/30 bg-white px-3 text-xs font-bold text-ocean transition-colors hover:bg-ocean/5 disabled:opacity-60">
+                    <button onClick={() => void resolve(d, "refund_seller")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ocean/30 bg-white px-3 text-xs font-bold text-ocean transition-colors hover:bg-ocean/5 disabled:opacity-60">
                       Refund seller
-                    </button>
-                    <button onClick={() => void resolve(d.id, "split")} disabled={actionId === d.id} className="flex h-8 items-center justify-center border border-line bg-white px-3 text-xs font-bold text-muted transition-colors hover:text-ink disabled:opacity-60">
-                      Split 50/50
                     </button>
                   </div>
                 ) : (

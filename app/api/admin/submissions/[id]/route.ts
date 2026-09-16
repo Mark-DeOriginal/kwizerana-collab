@@ -11,7 +11,7 @@ const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ??
 if (!connectionString) throw new Error("Missing DATABASE_URL");
 const sql = neon(connectionString, { fetchOptions: { headersTimeout: 60000, bodyTimeout: 60000 } });
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const allowOverride = isAdminReviewOverrideEnabled();
@@ -28,20 +28,20 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (body.action === "edit") {
     try {
       if (body.niches !== undefined) {
-        await sql`UPDATE submissions SET suggested_niches = ${body.niches} WHERE id = ${params.id}`;
+        await sql`UPDATE submissions SET suggested_niches = ${body.niches} WHERE id = ${(await params).id}`;
       }
 
       const updated = await sql`UPDATE influencers
         SET location = ${body.location ?? ""}, commentary = ${body.commentary ?? ""}, updated_at = NOW()
-        WHERE source_submission_id = ${params.id}
+        WHERE source_submission_id = ${(await params).id}
         RETURNING id`;
 
-      const submission = await sql`SELECT * FROM submissions WHERE id = ${params.id} LIMIT 1`;
+      const submission = await sql`SELECT * FROM submissions WHERE id = ${(await params).id} LIMIT 1`;
       if (!submission || submission.length === 0) {
         return NextResponse.json({ error: "Submission not found." }, { status: 404 });
       }
 
-      return NextResponse.json({ data: { id: params.id, niches: body.niches, location: body.location, commentary: body.commentary } });
+      return NextResponse.json({ data: { id: (await params).id, niches: body.niches, location: body.location, commentary: body.commentary } });
     } catch (error) {
       console.error("Failed to edit profile:", error);
       return NextResponse.json({ error: "Failed to edit profile." }, { status: 500 });
@@ -55,7 +55,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   try {
-    const submission = await updateSubmissionStatus(params.id, status, {
+    const submission = await updateSubmissionStatus((await params).id, status, {
       location: body.location,
       commentary: body.commentary,
     });
@@ -70,7 +70,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const allowOverride = isAdminReviewOverrideEnabled();
@@ -83,7 +83,7 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
   }
 
   try {
-    const deleted = await sql`DELETE FROM submissions WHERE id = ${params.id} RETURNING id`;
+    const deleted = await sql`DELETE FROM submissions WHERE id = ${(await params).id} RETURNING id`;
     if (!deleted || deleted.length === 0) {
       return NextResponse.json({ error: "Submission not found." }, { status: 404 });
     }

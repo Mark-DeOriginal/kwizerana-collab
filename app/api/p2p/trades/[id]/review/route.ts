@@ -4,17 +4,17 @@ import { createReview, getUserReviewForTrade } from "@/lib/p2p/reviews";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  const existing = await getUserReviewForTrade(params.id, userId);
+  const existing = await getUserReviewForTrade((await params).id, userId);
   return NextResponse.json({ reviewed: Boolean(existing), star_rating: existing?.rating ?? null });
 }
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -33,7 +33,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   try {
-    const review = await createReview(userId, { tradeId: params.id, starRating });
+    const review = await createReview(userId, { tradeId: (await params).id, starRating });
     return NextResponse.json({ review }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to submit review." }, { status: 400 });

@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { useAccount } from "wagmi";
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect, OptionsMenu } from "@/components/p2p/custom-ui";
@@ -499,6 +500,7 @@ function OrderForm({
   onMethodsChanged: (methods: UserPaymentMethod[]) => void;
   onTradeCreated: (trade: Trade) => void;
 }) {
+  const { address } = useAccount();
   const [amount, setAmount] = useState("");
   const [paymentMethodId, setPaymentMethodId] = useState("");
   const [creating, setCreating] = useState(false);
@@ -529,7 +531,7 @@ function OrderForm({
     const res = await fetch("/api/p2p/trades", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adId: offer.id, cryptoAmount, paymentMethodId })
+      body: JSON.stringify({ adId: offer.id, cryptoAmount, paymentMethodId, buyerWalletAddress: isBuy ? address : undefined })
     });
     const data = await readJson<{ trade?: Trade; error?: string }>(res);
     setCreating(false);

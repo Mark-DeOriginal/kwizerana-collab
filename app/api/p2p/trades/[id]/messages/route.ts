@@ -4,21 +4,21 @@ import { listChatMessages, sendChatMessage } from "@/lib/p2p/chat";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
   try {
-    const messages = await listChatMessages(userId, params.id);
+    const messages = await listChatMessages(userId, (await params).id);
     return NextResponse.json({ messages });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to load messages." }, { status: 400 });
   }
 }
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const text = String(body.text ?? "");
 
   try {
-    const message = await sendChatMessage(userId, params.id, text);
+    const message = await sendChatMessage(userId, (await params).id, text);
     return NextResponse.json({ message }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to send message." }, { status: 400 });

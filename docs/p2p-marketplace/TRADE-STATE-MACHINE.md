@@ -27,7 +27,8 @@ An administrator is not automatically the buyer or seller. Administrative databa
 | `claim_submitted` | Buyer claim transaction is unconfirmed | Chain verifier |
 | `completed` | Valid claim/settlement event confirmed and reconciled | None/review |
 | `cancelled_unfunded` | Request ended before funding | None |
-| `refund_required` | Funded order ended and must be refunded | Seller/arbitrator/timeout path |
+| `cancellation_pending` | Seller requested cancellation; buyer protection window is active | Buyer or chain clock |
+| `refund_required` | Cancellation protection elapsed without payment being marked | Anyone through the contract |
 | `refund_submitted` | Refund transaction is unconfirmed | Chain verifier |
 | `refunded` | Valid refund event confirmed and reconciled | None |
 | `disputed` | Normal settlement is frozen pending decision | Arbitrator |
@@ -46,7 +47,7 @@ requested
 
 escrow_funded
   -> payment_marked_sent
-  -> refund_required
+  -> cancellation_pending -> refund_required
   -> disputed
 
 payment_marked_sent
@@ -74,7 +75,7 @@ Terminal states are `completed`, `refunded`, `cancelled_unfunded`, and `expired_
 ## Transition invariants
 
 - A user cannot trade with the same effective account/vendor identity.
-- Asset, chain, token, participants, decimals, price, fiat amount, fees, payment method, deadlines, and contract address are immutable snapshots after request creation.
+- Asset, chain, token, participants, decimals, price, fiat amount, fees, payment method, and contract address are immutable snapshots after request creation.
 - `escrow_funded` requires a confirmed `Locked` event matching the snapshot.
 - `payment_marked_sent` requires funded escrow.
 - `released` requires a confirmed release event; a client callback is insufficient.
@@ -94,11 +95,14 @@ Terminal states are `completed`, `refunded`, `cancelled_unfunded`, and `expired_
 | Release | Seller wallet or permitted arbitrator path |
 | Claim | Snapshotted buyer wallet, subject to destination policy |
 | Cancel before funding | Policy-defined buyer/seller/system |
-| Refund | Contract-authorized seller/arbitrator/timeout path |
+| Request cancellation | Snapshotted seller wallet while payment is unmarked |
+| Refund | Buyer approval or permissionless finalization after the contract protection window |
 | Open dispute | Buyer or seller while policy permits |
 | Resolve dispute | Authorized arbitrator governance |
 
 Owned/managed vendor accounts require explicit delegation records and audit events. Do not infer financial authority only from a database ownership column.
+
+For requested trades, the participant who selected an existing advertisement is the initiator and may cancel their request. The advertisement owner is the receiving counterparty and may decline it. Buyer/seller asset roles must not be used as a substitute for initiator/counterparty roles.
 
 ## Transaction verification
 
@@ -125,9 +129,11 @@ Store transaction hash, block hash/number, log index, confirmations, event paylo
 - Deliver notifications from an outbox after commit.
 - Re-running a valid request returns the existing result; it does not repeat effects.
 
-## Expiry
+## Cancellation and recovery
 
-Off-chain jobs can mark intent or surface work, but cannot recover funds by changing a database field. Funded expiry must use a contract-enforced deadline or an authorized on-chain refund. The UI must distinguish “expired; refund required” from “refunded”.
+Off-chain jobs can mark intent or surface work, but cannot recover funds by changing a database field. A funded trade does not expire automatically. The seller must request cancellation on-chain. For 30 minutes the buyer may still mark payment, which permanently blocks cancellation and requires release or arbitration. If payment remains unmarked, the buyer may approve an immediate cancellation or anyone may finalize the refund after the protection window. The UI must distinguish “cancellation requested” from “refunded”.
+
+Product decision (2026-09-16): a requested or funded trade is not automatically removed from Active Trades on a timer. It remains active until a participant explicitly cancels it or a verified on-chain terminal outcome is reconciled. Once the buyer marks payment, cancellation is unavailable and the parties must release or dispute the trade.
 
 ## Disputes
 

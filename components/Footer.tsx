@@ -24,10 +24,7 @@ export function Footer() {
             <Link href="/" className="inline-flex items-center" aria-label="Kwizerana home">
               <Image src="/kwizerana-logo.svg" alt="Kwizerana" width={32} height={32} className="h-8 w-auto" />
             </Link>
-            <h2 className="mt-7 max-w-md text-2xl font-semibold leading-tight tracking-tight sm:text-3xl">
-              Crypto context and direct trading, in one place.
-            </h2>
-            <p className="mt-4 max-w-md text-sm leading-6 text-[#56615a]">
+            <p className="mt-7 max-w-md text-sm leading-6 text-[#56615a]">
               Discover credible crypto voices and exchange USDT or USDC with other people using familiar payment methods.
             </p>
           </div>

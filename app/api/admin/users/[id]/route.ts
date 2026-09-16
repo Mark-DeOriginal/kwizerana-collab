@@ -5,7 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { ALL_PERMISSIONS, hasPermission, isAdminEmail, isSuperAdmin, type Permission } from "@/lib/roles";
 import { updateUserRole } from "@/lib/users";
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
 
@@ -23,7 +23,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       ? body.permissions.filter((p: string) => ALL_PERMISSIONS.includes(p as Permission))
       : [];
 
-    const updated = await updateUserRole(params.id, "admin", selectedPermissions);
+    const updated = await updateUserRole((await params).id, "admin", selectedPermissions);
     if (!updated) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
@@ -34,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (body.action === "demote") {
     const rows = await dbQuery<{ email: string }>(
       `SELECT email FROM users WHERE id = $1`,
-      [params.id]
+      [(await params).id]
     );
     const targetEmail = rows[0]?.email;
 
@@ -46,7 +46,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return NextResponse.json({ error: "Cannot demote a super admin." }, { status: 403 });
     }
 
-    const updated = await updateUserRole(params.id, "member", []);
+    const updated = await updateUserRole((await params).id, "member", []);
     return NextResponse.json({ user: updated });
   }
 

@@ -4,7 +4,7 @@ import { createDispute } from "@/lib/p2p/disputes";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -23,7 +23,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   try {
-    const dispute = await createDispute(userId, { tradeId: params.id, reason });
+    const dispute = await createDispute(userId, { tradeId: (await params).id, reason });
     return NextResponse.json({ dispute }, { status: 201 });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to open dispute." }, { status: 400 });

@@ -6,7 +6,7 @@ import { resolveDispute, type DisputeResolution } from "@/lib/p2p/disputes";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const isAllowed = allowDevAdmin || isAdminEmail(session?.user?.email) ||
@@ -28,13 +28,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const resolution = String(body.resolution ?? "");
-  const valid: DisputeResolution[] = ["release_buyer", "refund_seller", "split"];
+  const valid: DisputeResolution[] = ["release_buyer", "refund_seller"];
   if (!valid.includes(resolution as DisputeResolution)) {
     return NextResponse.json({ error: "Invalid resolution." }, { status: 400 });
   }
 
   try {
-    await resolveDispute(adminId, params.id, resolution as DisputeResolution);
+    await resolveDispute(adminId, (await params).id, resolution as DisputeResolution, body.tx_hash ? String(body.tx_hash) : undefined);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to resolve dispute." }, { status: 400 });

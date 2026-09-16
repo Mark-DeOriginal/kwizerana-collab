@@ -1,6 +1,6 @@
 # P2P Milestones and Current Status
 
-Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`. “Implemented” does not mean production-verified.
+Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`. “Implemented” does not mean production-verified.
 
 ## Accounts and security
 
@@ -31,7 +31,7 @@ Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`
 | Vendor profile, application, admin review | Implemented | Vendor/admin routes and UI |
 | Tier eligibility/enforcement | Partial | Data/services exist; full policy enforcement needs verification |
 | Vendor fee configuration | Implemented | Buy/sell fee fields and interfaces |
-| Reviews and rating summaries | Implemented | Anti-gaming remains |
+| Reviews and rating summaries | Implemented | The dashboard trade modal remains open after buyer claim so the completed-state vendor rating panel is shown; anti-gaming remains. |
 | Completion statistics | Partial | Must derive from verified settlement and correct rolling windows |
 | Fraud/wash-trade detection | Planned | No robust implementation found |
 
@@ -39,11 +39,11 @@ Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`
 
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
-| Trade creation and snapshot | Partial | Needs atomicity, precise math, eligibility, wallet validation |
-| Seller accept/fund | Simulated/unsafe | Wallet call exists; backend trusts client hash |
-| Buyer payment submission | Implemented | Secure upload controls required |
-| Seller release and buyer claim | Simulated/unsafe | Server does not verify chain events |
-| Cancel/expiry/refund | Partial/unsafe | Funded recovery is not contract-enforced |
+| Trade creation and snapshot | Partial | Connected buyer wallets are captured during order creation; awaiting-approval orders have a server-validated receiving-wallet step; initiator/counterparty identity now controls cancel-versus-decline permissions independently of buyer/seller roles. Atomicity, precise math, and eligibility still need hardening. |
+| Seller accept/fund | Partial/testnet | Vendor action is exposed as `Approve trade` only after the buyer destination exists; the confirmed lock event is checked by the server. Submitted/confirmed projection separation remains. |
+| Buyer payment submission | Implemented | Buy and sell flows share the same enabled receipt action; authorization is enforced by the escrow transaction and verified server-side instead of a brittle client-side address gate. Secure upload controls remain required. |
+| Seller release and buyer claim | Partial/unsafe | Hardened contract ABI and immediate receipt/event checks exist; submitted/confirmed states and testnet reconciliation still need completion |
+| Cancel/expiry/refund | Partial/testnet | Replacement escrow requires an explicit seller cancellation request, preserves a 30-minute window for the buyer to mark payment, supports buyer-approved immediate cancellation, and permits refund only after the protection window. Application event persistence and full end-to-end testing remain. |
 | Chat and trade export | Implemented | Retention/rate/abuse controls remain |
 | Notifications/email | Partial | Dashboard completion activity now reaches both trade participants without duplicating the updated order row; durable delivery queue and telemetry still needed |
 | Formal state machine | Documented target | Implementation migration pending |
@@ -54,11 +54,11 @@ Last reconciled with the repository: 2026-09-08. Status terms follow `AGENTS.md`
 |---|---|---|
 | Avalanche wallet connection | Implemented | RainbowKit/wagmi |
 | Prototype ERC-20 contract | Implemented prototype | Lock/release/claim/refund only |
-| Production escrow | Planned | Current contract fails security/decentralization gates |
-| Receipt/event verification | Planned, P0 | Required before real funds |
+| Production escrow | Implemented candidate, unsafe for production | Explicit cancellation recovery, buyer payment protection, fixed recipients, fee accounting, allowlist, liability protection, and governed arbitration pass nine local scenarios. The replacement is deployed on Fuji; independent audit and launch gates remain. |
+| Receipt/event verification | Partial, P0 | Immediate receipt and expected-event verification exists for escrow mutations; durable confirmation/reorg processing remains required before real funds. |
 | Confirmation/reorg policy | Planned, P0 | Required before real funds |
 | Event reconciliation | Partial, P0 | Immediate verification, request-time checks, manual admin recheck, and an authenticated webhook route exist; provider delivery/retries and reorg handling remain |
-| Contract tests/testnet/audit | Planned, P0 | All required before mainnet |
+| Contract tests/testnet/audit | Partial, P0 | Nine local security scenarios pass and the replacement deployment transaction is confirmed on Fuji; configuration reads, end-to-end trade evidence, fuzz/invariants, static analysis, fork tests, multisig governance, and independent audit remain. |
 
 ## Disputes
 

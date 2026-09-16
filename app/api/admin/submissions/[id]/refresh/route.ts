@@ -11,7 +11,7 @@ const connectionString = process.env.DATABASE_URL ?? process.env.POSTGRES_URL ??
 if (!connectionString) throw new Error("Missing DATABASE_URL");
 const sql = neon(connectionString, { fetchOptions: { headersTimeout: 60000, bodyTimeout: 60000 } });
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const allowOverride = isAdminReviewOverrideEnabled();
@@ -23,7 +23,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
-  const rows = await sql`SELECT profile_url, profile_handle FROM submissions WHERE id = ${params.id} LIMIT 1`;
+  const rows = await sql`SELECT profile_url, profile_handle FROM submissions WHERE id = ${(await params).id} LIMIT 1`;
   if (!rows || rows.length === 0) {
     return NextResponse.json({ error: "Submission not found." }, { status: 404 });
   }
@@ -44,7 +44,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       profile_image_url = ${profile.profileImageUrl ?? null},
       profile_updated_at = ${profile.updatedAt},
       recent_signal = ${profile.recentSignal}
-    WHERE id = ${params.id}`;
+    WHERE id = ${(await params).id}`;
 
     return NextResponse.json({
       data: {

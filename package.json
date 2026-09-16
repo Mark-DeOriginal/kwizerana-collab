@@ -9,10 +9,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc --noEmit && next lint",
+    "lint": "tsc --noEmit && eslint .",
     "format": "bunx biome format --write",
     "db:setup": "node scripts/setup-db.mjs",
-    "deploy:escrow": "node scripts/deploy-escrow.mjs"
+    "contract:compile": "hardhat compile",
+    "contract:test": "hardhat test",
+    "deploy:fuji-tokens": "node scripts/deploy-fuji-test-tokens.mjs",
+    "deploy:escrow": "node scripts/deploy-escrow.mjs",
+    "verify:escrow": "node scripts/verify-escrow-deployment.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
@@ -22,31 +26,40 @@
     "bcryptjs": "^3.0.3",
     "cheerio": "^1.2.0",
     "lucide-react": "^0.468.0",
-    "next": "^14.2.5",
-    "next-auth": "^4.24.14",
+    "next": "16.3.5",
+    "next-auth": "4.24.15",
     "qrcode": "^1.5.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "resend": "^6.22.0",
     "viem": "^2.55.19",
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@openzeppelin/contracts": "^5.4.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20.14.10",
     "@types/qrcode": "^1.5.6",
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "autoprefixer": "^10.4.19",
+    "chai": "^4.5.0",
     "dotenv": "^17.4.2",
-    "eslint": "^8.57.0",
-    "eslint-config-next": "^14.2.5",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.5",
+    "ethers": "^6.15.0",
+    "hardhat": "^2.26.3",
     "postcss": "^8.4.39",
+    "solc": "^0.8.28",
     "tailwindcss": "^3.4.4",
     "tsx": "^4.23.12",
     "typescript": "^5.5.3"
   },
   "overrides": {
-    "@coinbase/cdp-sdk": "1.48.2"
+    "@coinbase/cdp-sdk": "1.49.2",
+    "axios": "1.20.0",
+    "undici": "7.29.0",
+    "use-sync-external-store": "1.7.0"
   }
 }

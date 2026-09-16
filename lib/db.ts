@@ -380,6 +380,7 @@ const schemaStatements = [
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS release_hold_minutes INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS funded_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS claim_tx_hash TEXT`,
+  `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS payment_tx_hash TEXT`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS refund_tx_hash TEXT`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS release_to TEXT`,
   `ALTER TABLE p2p_notifications ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
@@ -425,6 +426,7 @@ const schemaStatements = [
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_debit_tx_unique ON p2p_escrow(debit_tx_hash) WHERE debit_tx_hash IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_release_tx_unique ON p2p_escrow(release_tx_hash) WHERE release_tx_hash IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_claim_tx_unique ON p2p_escrow(claim_tx_hash) WHERE claim_tx_hash IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_payment_tx_unique ON p2p_escrow(payment_tx_hash) WHERE payment_tx_hash IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_refund_tx_unique ON p2p_escrow(refund_tx_hash) WHERE refund_tx_hash IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS p2p_trade_action_requests (
     id BIGSERIAL PRIMARY KEY,

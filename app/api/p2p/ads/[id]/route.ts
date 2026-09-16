@@ -4,7 +4,7 @@ import { updateAd, deleteAd } from "@/lib/p2p/ads";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -26,21 +26,21 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (body.status !== undefined) patch.status = String(body.status);
 
   try {
-    const ad = await updateAd(userId, params.id, patch);
+    const ad = await updateAd(userId, (await params).id, patch);
     return NextResponse.json({ ad });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to update ad." }, { status: 400 });
   }
 }
 
-export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
   try {
-    const ok = await deleteAd(userId, params.id);
+    const ok = await deleteAd(userId, (await params).id);
     if (!ok) {
       return NextResponse.json({ error: "Ad not found." }, { status: 404 });
     }

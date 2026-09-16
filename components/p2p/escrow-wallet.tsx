@@ -1,18 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { useEffect, useState } from "react";
+import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { parseUnits } from "viem";
-import { ArrowRight, Check, Loader2, RefreshCw, ShieldCheck, TriangleAlert, X } from "lucide-react";
+import { formatUnits, isAddress, parseUnits } from "viem";
+import { ArrowRight, Check, Loader2, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import {
   ERC20_ABI,
   ESCROW_ABI,
   getEscrowAddress,
   getTokenAddress,
   isEscrowDeployed,
-  tradeRefToBytes32,
-  validateDestinationAddress
+  tradeRefToBytes32
 } from "@/lib/web3/escrow";
 import type { Trade } from "@/lib/p2p/trades";
 
@@ -59,6 +58,111 @@ export type EscrowButtonProps = {
   onError: (message: string) => void;
 };
 
+export function ReceiveWalletSetup({
+  trade,
+  busy,
+  onSave,
+  onError
+}: {
+  trade: Trade;
+  busy: boolean;
+  onSave: (address: string) => Promise<boolean>;
+  onError: (message: string) => void;
+}) {
+  const { address, isConnected } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  const [useDifferent, setUseDifferent] = useState(Boolean(trade.buyer_wallet_address && trade.buyer_wallet_address.toLowerCase() !== address?.toLowerCase()));
+  const [customAddress, setCustomAddress] = useState(trade.buyer_wallet_address ?? "");
+  const [saved, setSaved] = useState(false);
+  const destination = useDifferent ? customAddress.trim() : address ?? "";
+  const valid = isAddress(destination);
+
+  async function save() {
+    if (!valid) {
+      onError("Enter a valid Avalanche wallet address.");
+      return;
+    }
+    const didSave = await onSave(destination);
+    if (didSave) setSaved(true);
+  }
+
+  return (
+    <div className="space-y-3 bg-panel p-4">
+      <div>
+        <p className="text-sm font-semibold text-ink">Where should we send your {trade.crypto_currency}?</p>
+        <p className="mt-1 text-xs leading-5 text-muted">Choose this before the vendor approves the trade. The address is secured when escrow is funded.</p>
+      </div>
+
+      {!isConnected ? (
+        <button
+          type="button"
+          onClick={() => openConnectModal?.()}
+          className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-moss"
+        >
+          Connect Avalanche wallet
+        </button>
+      ) : (
+        <label
+          className={`flex min-h-16 cursor-pointer items-start gap-3 border p-3 text-left transition-colors ${!useDifferent ? "border-moss bg-mint/60" : "border-line bg-white hover:border-moss/60 hover:bg-mint/25"}`}
+        >
+          <input
+            type="radio"
+            name="receiving-wallet"
+            checked={!useDifferent}
+            onChange={() => { setUseDifferent(false); setSaved(false); }}
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-moss"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-ink">Connected wallet</span>
+            <span className="mt-0.5 block truncate font-mono text-xs text-muted">{shortAddr(address ?? "")}</span>
+          </span>
+        </label>
+      )}
+
+      <label
+        className={`flex min-h-16 cursor-pointer items-start gap-3 border p-3 text-left transition-colors ${useDifferent ? "border-moss bg-mint/60" : "border-line bg-white hover:border-moss/60 hover:bg-mint/25"}`}
+      >
+        <input
+          type="radio"
+          name="receiving-wallet"
+          checked={useDifferent}
+          onChange={() => { setUseDifferent(true); setSaved(false); }}
+          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-moss"
+        />
+        <span>
+          <span className="block text-sm font-semibold text-ink">Use a different wallet</span>
+          <span className="mt-0.5 block text-xs text-muted">Send the crypto to another Avalanche wallet you can access.</span>
+        </span>
+      </label>
+
+      {useDifferent && (
+        <div className="space-y-1.5">
+          <input
+            value={customAddress}
+            onChange={(event) => { setCustomAddress(event.target.value); setSaved(false); }}
+            placeholder="0x..."
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Receiving wallet address"
+            className="h-11 w-full border border-line bg-white px-3 font-mono text-sm outline-none focus:border-moss"
+          />
+          <p className="text-xs leading-5 text-muted">You&apos;ll need to connect this wallet when you confirm that payment has been sent.</p>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={busy || !valid || saved}
+        className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-moss disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+        {saved ? "Saved" : "Save receiving wallet"}
+      </button>
+    </div>
+  );
+}
+
 /** Shortcut to toggle three button states used by all escrow controls. */
 function EscrowButtonShell({
   busy,
@@ -95,6 +199,16 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   const token = getTokenAddress(trade.crypto_currency);
   const escrow = getEscrowAddress();
   const amount = parseUnits(String(trade.crypto_amount), TOKEN_DECIMALS);
+  const publicClient = usePublicClient();
+
+  const { data: feeBps } = useReadContract({
+    address: escrow,
+    abi: ESCROW_ABI,
+    functionName: "feeBps",
+    query: { enabled: real }
+  });
+  const feeAmount = feeBps === undefined ? undefined : (amount * BigInt(feeBps) + BigInt(9999)) / BigInt(10000);
+  const totalDeposit = feeAmount === undefined ? undefined : amount + feeAmount;
 
   const { data: balance } = useReadContract({
     address: token,
@@ -112,8 +226,8 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   });
 
   const { writeContractAsync } = useWriteContract();
-  const needApproval = real && allowance !== undefined && allowance < amount;
-  const insufficient = real && balance !== undefined && balance < amount;
+  const needApproval = real && totalDeposit !== undefined && allowance !== undefined && allowance < totalDeposit;
+  const insufficient = real && totalDeposit !== undefined && balance !== undefined && balance < totalDeposit;
   const buyAddrOk = !real || Boolean(trade.buyer_wallet_address);
   const buyerAddr = (trade.buyer_wallet_address as `0x${string}`) ?? "0x0000000000000000000000000000000000000000";
 
@@ -131,7 +245,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
       }, 1000);
       return;
     }
-    if (!token || !escrow || !address) {
+    if (!token || !escrow || !address || feeBps === undefined || totalDeposit === undefined || !publicClient) {
       onError("Wallet not connected.");
       return;
     }
@@ -142,16 +256,16 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
           address: token,
           abi: ERC20_ABI,
           functionName: "approve",
-          args: [escrow, amount]
+          args: [escrow, totalDeposit]
         });
-        await new Promise((r) => setTimeout(r, 1200));
+        await publicClient.waitForTransactionReceipt({ hash: tx });
         onError("");
       }
       const lockHash = await writeContractAsync({
         address: escrow,
         abi: ESCROW_ABI,
         functionName: "lock",
-        args: [tradeId, buyerAddr, token, amount]
+        args: [tradeId, buyerAddr, token, amount, feeBps]
       });
       onCompleted(lockHash);
     } catch (e) {
@@ -162,37 +276,82 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
 
   if (!isConnected && real) return <ConnectPrompt label="approve this order" />;
 
-  const label = real ? (needApproval ? "Approve USDT & lock escrow" : "Lock escrow in wallet") : "Approve order (simulate escrow)";
-  const disabled = Boolean(!buyAddrOk || (real && insufficient) || phase !== "idle");
+  const label = "Approve trade";
+  const disabled = Boolean(!buyAddrOk || (real && (insufficient || feeBps === undefined)) || phase !== "idle");
 
   return (
     <div className="space-y-2">
       {real && insufficient && (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-coral">
           <TriangleAlert className="h-3.5 w-3.5" />
-          Insufficient balance — this wallet holds less than {trade.crypto_amount} {trade.crypto_currency}.
-        </p>
-      )}
-      {!buyAddrOk && (
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-coral">
-          <TriangleAlert className="h-3.5 w-3.5" />
-          The buyer hasn&apos;t set a receive wallet, so the escrow can&apos;t be funded on-chain.
+          Insufficient balance — funding requires the trade amount plus the escrow fee.
         </p>
       )}
       <EscrowButtonShell
         busy={phase === "tx"}
-        busyLabel={needApproval ? "Approving & locking …" : "Locking escrow …"}
+        busyLabel="Approving trade …"
         onClick={() => void run()}
         disabled={disabled}
         label={label}
         icon={<ShieldCheck className="h-4 w-4" />}
       />
+      {real && feeAmount !== undefined && (
+        <p className="text-xs text-muted">
+          Escrow fee: {formatUnits(feeAmount, TOKEN_DECIMALS)} {trade.crypto_currency} ({Number(feeBps) / 100}%). Refunded if the trade does not settle.
+        </p>
+      )}
       {simDone && (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-moss">
           <Check className="h-3.5 w-3.5" /> Escrow funded (simulated in demo mode).
         </p>
       )}
     </div>
+  );
+}
+
+// ── Buyer: record fiat payment on-chain before database transition ────────
+export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowButtonProps) {
+  const { isConnected } = useAccount();
+  const real = useEscrowReal();
+  const escrow = getEscrowAddress();
+  const { writeContractAsync } = useWriteContract();
+  const [phase, setPhase] = useState<"idle" | "tx">("idle");
+
+  async function run() {
+    if (!real) {
+      setPhase("tx");
+      setTimeout(() => {
+        setPhase("idle");
+        onCompleted(demoHash(trade.trade_ref, "PAYMENT"));
+      }, 900);
+      return;
+    }
+    setPhase("tx");
+    try {
+      const hash = await writeContractAsync({
+        address: escrow,
+        abi: ESCROW_ABI,
+        functionName: "markPaymentSent",
+        args: [tradeRefToBytes32(trade.trade_ref)]
+      });
+      setPhase("idle");
+      onCompleted(hash);
+    } catch (error) {
+      onError(error instanceof Error && error.message.includes("User rejected") ? "You rejected the wallet request." : "Unable to record the payment on-chain. Check your wallet and try again.");
+      setPhase("idle");
+    }
+  }
+
+  if (!isConnected && real) return <ConnectPrompt label="submit this payment" />;
+
+  return (
+    <EscrowButtonShell
+      busy={phase === "tx"}
+      busyLabel={real ? "Recording payment on-chain …" : "Submitting receipt …"}
+      onClick={() => void run()}
+      label={real ? "Submit receipt" : "Submit payment receipt"}
+      icon={<Check className="h-4 w-4" />}
+    />
   );
 }
 
@@ -248,35 +407,15 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
   const real = useEscrowReal();
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"connected" | "address">("connected");
-  const [dest, setDest] = useState("");
   const [phase, setPhase] = useState<"idle" | "tx">("idle");
 
-  const buyerWallet = trade.buyer_wallet_address?.toLowerCase();
-  const ownWallet = address?.toLowerCase();
-  const walletMatch = !trade.buyer_wallet_address || (buyerWallet === ownWallet);
-
-  const demoConnected = !real && mode === "connected";
-  const resolvedDest = mode === "connected" ? (address ?? "0x0000000000000000000000000000000000000000") : dest.trim();
-  const destValid = demoConnected ? true : mode === "connected" ? Boolean(address) : validateDestinationAddress(dest);
-
   async function run() {
-    if (!destValid) {
-      onError(mode === "address" ? "Enter a valid Avalanche wallet address." : "Connect your wallet first.");
-      return;
-    }
     if (!real) {
       setPhase("tx");
       setTimeout(() => {
         setPhase("idle");
-        setOpen(false);
-        onCompleted(demoHash(trade.trade_ref, "CLAIM"), { destAddress: resolvedDest });
+        onCompleted(demoHash(trade.trade_ref, "CLAIM"), { destAddress: trade.buyer_wallet_address ?? address });
       }, 900);
-      return;
-    }
-    if (!walletMatch) {
-      onError("Connect the wallet you used when the order was placed to receive the crypto.");
       return;
     }
     setPhase("tx");
@@ -285,92 +424,33 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
         address: escrow,
         abi: ESCROW_ABI,
         functionName: "claim",
-        args: [tradeRefToBytes32(trade.trade_ref), resolvedDest as `0x${string}`]
+        args: [tradeRefToBytes32(trade.trade_ref)]
       });
       setPhase("idle");
-      setOpen(false);
-      onCompleted(hash, { destAddress: resolvedDest });
+      onCompleted(hash, { destAddress: trade.buyer_wallet_address ?? address });
     } catch (e) {
       onError(e instanceof Error && e.message.includes("User rejected") ? "You rejected the wallet request." : "Transaction failed. Try again.");
       setPhase("idle");
     }
   }
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="flex h-11 w-full items-center justify-center gap-2 bg-moss text-sm font-semibold text-white transition-colors hover:bg-moss/85"
-      >
-        Receive {trade.crypto_currency}
-        <ArrowRight className="h-4 w-4" />
-      </button>
-    );
-  }
+  if (!isConnected && real) return <ConnectPrompt label={`receive ${trade.crypto_currency}`} />;
 
   return (
-    <div className="space-y-3 border border-moss/40 bg-moss/5 p-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold">Receive {trade.crypto_amount} {trade.crypto_currency}</p>
-        <button onClick={() => setOpen(false)} className="text-muted transition-colors hover:text-ink">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        <label className={`flex cursor-pointer items-start gap-2 border p-3 text-sm ${mode === "connected" ? "border-ocean bg-ocean/5" : "border-line bg-panel"}`}>
-          <input type="radio" checked={mode === "connected"} onChange={() => setMode("connected")} className="mt-0.5 accent-ocean" />
-          <span>
-            <span className="block font-semibold">Receive in my connected wallet</span>
-            <span className="block truncate font-mono text-xs text-muted">{address ?? "No wallet connected"}</span>
-          </span>
-        </label>
-        <label className={`flex cursor-pointer items-start gap-2 border p-3 text-sm ${mode === "address" ? "border-ocean bg-ocean/5" : "border-line bg-panel"}`}>
-          <input type="radio" checked={mode === "address"} onChange={() => setMode("address")} className="mt-0.5 accent-ocean" />
-          <span>
-            <span className="block font-semibold">Send to a wallet address</span>
-            <span className="block text-xs text-muted">The crypto is transferred there instead.</span>
-          </span>
-        </label>
-      </div>
-
-      {mode === "address" && (
-        <input
-          value={dest}
-          onChange={(e) => setDest(e.target.value)}
-          placeholder="0x…"
-          className="h-10 w-full border border-line bg-white px-3 font-mono text-sm outline-none focus:border-ocean"
-        />
+    <div className="space-y-2">
+      {trade.buyer_wallet_address && (
+        <div className="bg-panel px-3 py-2 text-xs text-muted">
+          Receiving wallet <span className="font-mono font-semibold text-ink">{shortAddr(trade.buyer_wallet_address)}</span>
+        </div>
       )}
-
-      {real && !walletMatch && trade.buyer_wallet_address && (
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-coral">
-          <TriangleAlert className="h-3.5 w-3.5" />
-          Connect the wallet <span className="font-mono">{shortAddr(trade.buyer_wallet_address)}</span> (used when the order was placed) to receive.
-        </p>
-      )}
-
-      {real && isConnected && (
-        <button
-          onClick={() => void run()}
-          disabled={phase === "tx" || !destValid}
-          className="flex h-11 w-full items-center justify-center gap-2 bg-moss text-sm font-semibold text-white transition-colors hover:bg-moss/85 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {phase === "tx" && <Loader2 className="h-4 w-4 animate-spin" />}
-          {phase === "tx" ? "Sending transaction …" : "Confirm & receive"}
-        </button>
-      )}
-      {!real && (
-        <button
-          onClick={() => void run()}
-          disabled={phase === "tx" || !destValid}
-          className="flex h-11 w-full items-center justify-center gap-2 bg-moss text-sm font-semibold text-white transition-colors hover:bg-moss/85 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {phase === "tx" && <Loader2 className="h-4 w-4 animate-spin" />}
-          {phase === "tx" ? "Simulating receipt …" : "Confirm & receive (simulate)"}
-        </button>
-      )}
-      {real && !isConnected && <ConnectPrompt label={`receive ${trade.crypto_currency}`} />}
+      <EscrowButtonShell
+        busy={phase === "tx"}
+        busyLabel={real ? "Finalizing on-chain …" : "Simulating receipt …"}
+        onClick={() => void run()}
+        label={real ? `Receive ${trade.crypto_currency}` : `Receive ${trade.crypto_currency} (simulate)`}
+        icon={<ArrowRight className="h-4 w-4" />}
+      />
+      {real && <p className="text-xs text-muted">Your connected wallet submits the transaction; the crypto is delivered to the receiving wallet shown above.</p>}
     </div>
   );
 }
@@ -382,6 +462,25 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
   const [phase, setPhase] = useState<"idle" | "tx">("idle");
+  const [requestRecorded, setRequestRecorded] = useState(false);
+  const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
+  const tradeId = tradeRefToBytes32(trade.trade_ref);
+  const { data: chainTrade, refetch } = useReadContract({
+    address: escrow,
+    abi: ESCROW_ABI,
+    functionName: "trades",
+    args: [tradeId],
+    query: { enabled: real }
+  });
+  const cancellationAvailableAt = chainTrade?.[5] ?? BigInt(0);
+  const cancellationRequested = cancellationAvailableAt > BigInt(0);
+  const cancellationReady = cancellationRequested && BigInt(nowSeconds) >= cancellationAvailableAt;
+
+  useEffect(() => {
+    if (!cancellationRequested || cancellationReady) return;
+    const timer = window.setInterval(() => setNowSeconds(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [cancellationReady, cancellationRequested]);
 
   async function run() {
     if (!real) {
@@ -394,12 +493,19 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
     }
     setPhase("tx");
     try {
-      const hash = await writeContractAsync({
-        address: escrow,
-        abi: ESCROW_ABI,
-        functionName: "refund",
-        args: [tradeRefToBytes32(trade.trade_ref)]
-      });
+      if (!cancellationRequested) {
+        await writeContractAsync({
+          address: escrow,
+          abi: ESCROW_ABI,
+          functionName: "requestCancellation",
+          args: [tradeId]
+        });
+        setRequestRecorded(true);
+        await refetch();
+        setPhase("idle");
+        return;
+      }
+      const hash = await writeContractAsync({ address: escrow, abi: ESCROW_ABI, functionName: "refund", args: [tradeId] });
       setPhase("idle");
       onCompleted(hash);
     } catch (e) {
@@ -411,13 +517,23 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
   if (!isConnected && real) return <ConnectPrompt label="refund the escrow" />;
 
   return (
-    <EscrowButtonShell
-      busy={phase === "tx"}
-      busyLabel="Refunding escrow …"
-      onClick={() => void run()}
-      label={real ? "Refund escrow in wallet" : `Refund escrowed ${trade.crypto_amount} ${trade.crypto_currency} (simulate)`}
-      icon={<RefreshCw className="h-4 w-4" />}
-    />
+    <div className="space-y-2">
+      <EscrowButtonShell
+        busy={phase === "tx"}
+        busyLabel={cancellationRequested ? "Refunding escrow …" : "Requesting cancellation …"}
+        onClick={() => void run()}
+        disabled={Boolean(real && cancellationRequested && !cancellationReady)}
+        label={real
+          ? cancellationRequested
+            ? cancellationReady ? "Refund escrow in wallet" : "Cancellation protection period active"
+            : "Request escrow cancellation"
+          : `Refund escrowed ${trade.crypto_amount} ${trade.crypto_currency} (simulate)`}
+        icon={<RefreshCw className="h-4 w-4" />}
+      />
+      {real && (requestRecorded || cancellationRequested) && !cancellationReady && (
+        <p className="text-xs text-muted">The buyer can still record a payment during the 30-minute protection period. Return afterward to complete the refund.</p>
+      )}
+    </div>
   );
 }
 

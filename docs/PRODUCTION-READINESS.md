@@ -80,11 +80,11 @@ This is a launch gate, not a claim that the application is ready. P0 items block
 ## Current known blockers
 
 - Protected pages now have consistent session enforcement, but API authorization policies still need consolidation and automated route coverage.
-- Client-provided hashes are trusted.
+- Client-provided hashes are receipt/event verified when escrow is configured, but submitted and confirmed states are still collapsed and projections are not fully transactional.
 - Escrow simulation can advance application state.
-- The contract lacks documented multisig and timeout behavior.
+- The escrow candidate has deadline recovery and a verified Fuji deployment, but no configured multisig governance, fuzz/invariant analysis, or independent audit yet. Its current Fuji owner, arbitrator, and treasury are intentionally one disposable test EOA.
 - Dispute database resolution is not coupled to on-chain settlement.
 - Financial operations lack comprehensive database transactions/locking.
 - Rate limiting is in-memory and narrow.
 - Runtime schema initialization replaces migrations.
-- No repository test suite or CI configuration was found during the September 2026 audit.
+- An eight-scenario local escrow test suite exists; application, integration, fuzz/invariant, static-analysis, and CI coverage remain missing.

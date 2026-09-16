@@ -22,6 +22,8 @@ import {
   ConfirmReleaseButton,
   EscrowModeNotice,
   FundEscrowButton,
+  MarkPaymentSentButton,
+  ReceiveWalletSetup,
   ReceiveCryptoButton,
   RefundEscrowButton
 } from "@/components/p2p/escrow-wallet";
@@ -54,7 +56,7 @@ export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => 
   const counterparty = isBuyer ? trade.seller_name : trade.buyer_name;
   const active = ["created", "escrow_locked", "payment_sent", "released"].includes(trade.status);
   const needsAction =
-    trade.status === "created" && !isBuyer ? true :
+    trade.status === "created" && !isBuyer && Boolean(trade.buyer_wallet_address) ? true :
     trade.status === "escrow_locked" && isBuyer ? true :
     trade.status === "payment_sent" && !isBuyer ? true :
     trade.status === "released" && isBuyer ? true : false;
@@ -132,8 +134,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const [disputeReason, setDisputeReason] = useState("");
   const [showDispute, setShowDispute] = useState(false);
   const [disputeCountdown, setDisputeCountdown] = useState(0);
-  const [showDecline, setShowDecline] = useState(false);
-  const [declineFeedback, setDeclineFeedback] = useState("");
   const [confirmBalance, setConfirmBalance] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [starRating, setStarRating] = useState(0);
@@ -416,7 +416,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         <Row label="Rate" value={`1 ${trade.crypto_currency} = ${fn(trade.price_at_trade)} ${trade.fiat_currency}`} />
         <Row label="Crypto amount" value={`${fn(trade.crypto_amount, 6)} ${trade.crypto_currency}`} />
         <Row label="Fiat amount" value={`${fn(trade.fiat_amount)} ${trade.fiat_currency}`} />
-        <Row label="Fee" value="0.00" note="0% platform fee" />
+        <Row label="Escrow fee" value="Paid by seller on settlement" note="exact amount shown before funding" />
         {trade.payment_reference && <Row label="Payment reference" value={<span className="font-mono">{trade.payment_reference}</span>} />}
       </div>
 
@@ -450,46 +450,22 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         {/* Seller: created → approve & fund escrow */}
         {!isBuyer && trade.status === "created" && (
           <>
-            <FundEscrowButton
-              trade={trade}
-              onCompleted={(txHash) => void doAction("accept", { wallet_address: address, tx_hash: txHash })}
-              onError={setError}
-            />
-            {!showDecline ? (
-              <button
-                onClick={() => setShowDecline(true)}
-                disabled={busy}
-                className="flex h-10 w-full items-center justify-center gap-2 border border-coral/40 text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white disabled:opacity-60"
-              >
-                Decline this order
-              </button>
+            {trade.buyer_wallet_address ? (
+              <FundEscrowButton
+                trade={trade}
+                onCompleted={(txHash) => void doAction("accept", { wallet_address: address, tx_hash: txHash })}
+                onError={setError}
+              />
             ) : (
-              <div className="flex flex-col gap-2 border border-coral/40 bg-coral/5 p-3">
-                <p className="text-sm font-semibold text-coral">Why are you declining?</p>
-                <textarea
-                  value={declineFeedback}
-                  onChange={(e) => setDeclineFeedback(e.target.value)}
-                  placeholder="Tell the buyer why this order can't proceed (e.g. out of inventory)..."
-                  rows={3}
-                  className="border border-line bg-white px-3 py-2 text-sm outline-none focus:border-coral"
-                />
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => void doAction("decline", { decline_feedback: declineFeedback })}
-                    disabled={busy || !declineFeedback.trim()}
-                    className="h-9 bg-coral px-4 text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60"
-                  >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decline order"}
-                  </button>
-                  <button
-                    onClick={() => { setShowDecline(false); setDeclineFeedback(""); }}
-                    disabled={busy}
-                    className="h-9 border border-line px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                </div>
+              <div className="flex items-start gap-2 bg-panel p-3 text-sm">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
+                <p className="text-muted">The buyer is choosing where to receive their crypto. You can approve the trade as soon as it&apos;s ready.</p>
               </div>
+            )}
+            {trade.is_initiator ? (
+              <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+            ) : (
+              <DeclineOrderControl busy={busy} onDecline={(reason) => doAction("decline", { decline_feedback: reason })} />
             )}
           </>
         )}
@@ -497,7 +473,13 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         {/* Buyer: created → awaiting vendor approval (or declined banner + proceed) */}
         {isBuyer && trade.status === "created" && (
           <>
-            {trade.decline_feedback ? (
+            <ReceiveWalletSetup
+              trade={trade}
+              busy={busy}
+              onSave={(destination) => doAction("set_receive_wallet", { dest_address: destination })}
+              onError={setError}
+            />
+            {trade.decline_feedback && trade.is_initiator ? (
               <div className="flex flex-col gap-2.5 border border-coral/40 bg-coral/5 p-3">
                 <div className="flex items-start gap-2">
                   <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
@@ -518,13 +500,26 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                   <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
                 </div>
               </div>
-            ) : (
+            ) : trade.is_initiator ? (
               <>
                 <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
                   <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
                   <p className="text-muted">Your order was sent to {counterparty}. You&apos;ll be notified once they approve it.</p>
                 </div>
                 <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+              </>
+            ) : trade.decline_feedback ? (
+              <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm text-muted">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-moss" />
+                You declined this order. The initiator can review your reason and decide whether to continue.
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
+                  <p className="text-muted">{counterparty} sent you this order request.</p>
+                </div>
+                <DeclineOrderControl busy={busy} onDecline={(reason) => doAction("decline", { decline_feedback: reason })} />
               </>
             )}
           </>
@@ -537,7 +532,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
               <p className="text-muted">Escrow funded. Waiting for {counterparty} to send {fn(trade.fiat_amount)} {trade.fiat_currency} and upload their receipt.</p>
             </div>
-            <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+            {trade.is_initiator && <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />}
           </>
         )}
 
@@ -573,14 +568,13 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                   />
                 </label>
               )}
-              <button
-                onClick={() => { if (receiptPreview) void doAction("mark_paid", { receipt_image: receiptPreview }); }}
-                disabled={busy || !receiptPreview}
-                className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
-              >
-                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                Submit payment receipt
-              </button>
+              {receiptPreview && (
+                <MarkPaymentSentButton
+                  trade={trade}
+                  onCompleted={(txHash) => void doAction("mark_paid", { receipt_image: receiptPreview, tx_hash: txHash })}
+                  onError={setError}
+                />
+              )}
             </div>
           ) : (
             <button
@@ -665,7 +659,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         )}
 
         {/* Cancel on escrow_locked — buyer hasn't paid yet (seller cancel lives in their funding block) */}
-        {isBuyer && trade.status === "escrow_locked" && (
+        {isBuyer && trade.is_initiator && trade.status === "escrow_locked" && (
           <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
         )}
 
@@ -705,10 +699,11 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         )}
 
         {/* Escrow on-chain reference when available */}
-        {(trade.escrow_debit_tx || trade.escrow_release_tx || trade.escrow_claim_tx) && (
+        {(trade.escrow_debit_tx || trade.escrow_payment_tx || trade.escrow_release_tx || trade.escrow_claim_tx) && (
           <div className="space-y-1 border border-line bg-panel p-3 text-xs text-muted">
             <p className="font-semibold uppercase tracking-wide text-muted">On-chain record</p>
             {trade.escrow_debit_tx && <p>Escrow funded: <span className="font-mono text-ink">{shortAddr(trade.escrow_debit_tx)}</span></p>}
+            {trade.escrow_payment_tx && <p>Payment recorded: <span className="font-mono text-ink">{shortAddr(trade.escrow_payment_tx)}</span></p>}
             {trade.escrow_release_tx && <p>Release confirmed: <span className="font-mono text-ink">{shortAddr(trade.escrow_release_tx)}</span></p>}
             {trade.escrow_claim_tx && <p>Received: <span className="font-mono text-ink">{shortAddr(trade.escrow_claim_tx)}</span></p>}
           </div>
@@ -742,6 +737,59 @@ function Row({ label, value, note }: { label: string; value: React.ReactNode; no
         <span className="font-semibold text-ink">{value}</span>
         {note && <span className="text-xs text-muted">{note}</span>}
       </span>
+    </div>
+  );
+}
+
+function DeclineOrderControl({
+  busy,
+  onDecline
+}: {
+  busy: boolean;
+  onDecline: (reason: string) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        disabled={busy}
+        className="flex h-10 w-full items-center justify-center gap-2 border border-coral/40 text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white disabled:opacity-60"
+      >
+        Decline order
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 border border-coral/40 bg-coral/5 p-3">
+      <p className="text-sm font-semibold text-coral">Why are you declining?</p>
+      <textarea
+        value={reason}
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="Explain why you cannot proceed with this order."
+        rows={3}
+        className="border border-line bg-white px-3 py-2 text-sm outline-none focus:border-coral"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => void onDecline(reason.trim())}
+          disabled={busy || !reason.trim()}
+          className="flex h-9 items-center gap-2 bg-coral px-4 text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60"
+        >
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          Decline order
+        </button>
+        <button
+          onClick={() => { setOpen(false); setReason(""); }}
+          disabled={busy}
+          className="h-9 border border-line px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60"
+        >
+          Keep order
+        </button>
+      </div>
     </div>
   );
 }

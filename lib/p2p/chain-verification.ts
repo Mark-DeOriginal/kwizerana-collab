@@ -1,11 +1,10 @@
-import { avalanche } from "viem/chains";
+import { avalanche, avalancheFuji } from "viem/chains";
 import {
   createPublicClient,
   getAddress,
   http,
   parseEventLogs,
   parseUnits,
-  type Address,
   type Hash
 } from "viem";
 import { getEscrowAddress, getTokenAddress, tradeRefToBytes32 } from "@/lib/web3/escrow";
@@ -13,13 +12,22 @@ import { getEscrowAddress, getTokenAddress, tradeRefToBytes32 } from "@/lib/web3
 const ESCROW_EVENTS = [
   {
     type: "event",
+    name: "PaymentMarked",
+    inputs: [
+      { indexed: true, name: "tradeId", type: "bytes32" },
+      { indexed: true, name: "buyer", type: "address" }
+    ]
+  },
+  {
+    type: "event",
     name: "Locked",
     inputs: [
       { indexed: true, name: "tradeId", type: "bytes32" },
-      { indexed: false, name: "seller", type: "address" },
-      { indexed: false, name: "buyer", type: "address" },
+      { indexed: true, name: "seller", type: "address" },
+      { indexed: true, name: "buyer", type: "address" },
       { indexed: false, name: "token", type: "address" },
-      { indexed: false, name: "amount", type: "uint256" }
+      { indexed: false, name: "amount", type: "uint256" },
+      { indexed: false, name: "feeAmount", type: "uint256" }
     ]
   },
   {
@@ -27,7 +35,7 @@ const ESCROW_EVENTS = [
     name: "Released",
     inputs: [
       { indexed: true, name: "tradeId", type: "bytes32" },
-      { indexed: false, name: "seller", type: "address" }
+      { indexed: true, name: "seller", type: "address" }
     ]
   },
   {
@@ -35,8 +43,10 @@ const ESCROW_EVENTS = [
     name: "Claimed",
     inputs: [
       { indexed: true, name: "tradeId", type: "bytes32" },
-      { indexed: false, name: "to", type: "address" },
-      { indexed: false, name: "amount", type: "uint256" }
+      { indexed: true, name: "buyer", type: "address" },
+      { indexed: true, name: "token", type: "address" },
+      { indexed: false, name: "amount", type: "uint256" },
+      { indexed: false, name: "feeAmount", type: "uint256" }
     ]
   },
   {
@@ -44,18 +54,23 @@ const ESCROW_EVENTS = [
     name: "Refunded",
     inputs: [
       { indexed: true, name: "tradeId", type: "bytes32" },
-      { indexed: false, name: "to", type: "address" },
-      { indexed: false, name: "amount", type: "uint256" }
+      { indexed: true, name: "seller", type: "address" },
+      { indexed: true, name: "token", type: "address" },
+      { indexed: false, name: "amount", type: "uint256" },
+      { indexed: false, name: "feeAmount", type: "uint256" }
     ]
   }
 ] as const;
 
+const configuredChainId = Number(process.env.NEXT_PUBLIC_ESCROW_CHAIN_ID ?? avalanche.id);
+const escrowChain = configuredChainId === avalancheFuji.id ? avalancheFuji : avalanche;
+
 const client = createPublicClient({
-  chain: avalanche,
+  chain: escrowChain,
   transport: http(process.env.NEXT_PUBLIC_AVALANCHE_RPC_URL || undefined)
 });
 
-export type EscrowVerificationAction = "accept" | "release" | "claim" | "refund";
+export type EscrowVerificationAction = "accept" | "mark_paid" | "release" | "claim" | "refund" | "resolve_buyer" | "resolve_seller";
 
 type VerificationInput = {
   action: EscrowVerificationAction;
@@ -82,10 +97,14 @@ function sameAddress(a: string | null | undefined, b: string | null | undefined)
  * transaction into application state. A valid hash alone is never enough.
  */
 export async function verifyEscrowTransaction(input: VerificationInput): Promise<{ blockNumber: bigint; logIndex: number }> {
-  const receipt = await client.getTransactionReceipt({ hash: input.txHash as Hash });
+  const requiredConfirmations = Math.max(1, Number(process.env.ESCROW_CONFIRMATIONS ?? 3));
+  const receipt = await client.waitForTransactionReceipt({
+    hash: input.txHash as Hash,
+    confirmations: requiredConfirmations,
+    timeout: 180_000
+  });
   if (receipt.status !== "success") throw new Error("The escrow transaction reverted.");
   const latestBlock = await client.getBlockNumber();
-  const requiredConfirmations = Math.max(1, Number(process.env.ESCROW_CONFIRMATIONS ?? 3));
   const confirmations = latestBlock >= receipt.blockNumber
     ? latestBlock - receipt.blockNumber + BigInt(1)
     : BigInt(0);
@@ -98,8 +117,10 @@ export async function verifyEscrowTransaction(input: VerificationInput): Promise
   const arbitrator = process.env.ESCROW_ARBITRATOR_ADDRESS;
   const senderAllowed = input.action === "accept"
     ? sameAddress(receipt.from, input.sellerWalletAddress)
-    : input.action === "claim"
+    : input.action === "mark_paid"
       ? sameAddress(receipt.from, input.buyerWalletAddress)
+    : input.action === "claim"
+      ? true // claim is permissionless but always pays the buyer fixed at lock
       : sameAddress(receipt.from, input.sellerWalletAddress) || sameAddress(receipt.from, arbitrator);
   if (!senderAllowed) throw new Error("The escrow transaction was submitted by an unauthorized wallet.");
 
@@ -119,23 +140,31 @@ export async function verifyEscrowTransaction(input: VerificationInput): Promise
       log.args.amount === amount
     );
     matchedLogIndex = matching?.logIndex;
+  } else if (input.action === "mark_paid") {
+    const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "PaymentMarked" }).find((log) =>
+      log.args.tradeId === tradeId && sameAddress(log.args.buyer, input.buyerWalletAddress)
+    );
+    matchedLogIndex = matching?.logIndex;
   } else if (input.action === "release") {
     const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "Released" }).find((log) =>
       log.args.tradeId === tradeId && sameAddress(log.args.seller, input.sellerWalletAddress)
     );
     matchedLogIndex = matching?.logIndex;
-  } else if (input.action === "claim") {
+  } else if (input.action === "claim" || input.action === "resolve_buyer") {
     const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "Claimed" }).find((log) =>
       log.args.tradeId === tradeId &&
+      sameAddress(log.args.token, token) &&
       log.args.amount === amount &&
-      (!input.destinationAddress || sameAddress(log.args.to, input.destinationAddress))
+      sameAddress(log.args.buyer, input.buyerWalletAddress) &&
+      (!input.destinationAddress || sameAddress(log.args.buyer, input.destinationAddress))
     );
     matchedLogIndex = matching?.logIndex;
   } else {
     const matching = parseEventLogs({ abi: ESCROW_EVENTS, logs: receipt.logs, eventName: "Refunded" }).find((log) =>
       log.args.tradeId === tradeId &&
+      sameAddress(log.args.token, token) &&
       log.args.amount === amount &&
-      sameAddress(log.args.to, input.sellerWalletAddress)
+      sameAddress(log.args.seller, input.sellerWalletAddress)
     );
     matchedLogIndex = matching?.logIndex;
   }

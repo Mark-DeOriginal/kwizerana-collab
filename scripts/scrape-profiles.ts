@@ -339,7 +339,6 @@ async function scrapeAll(limit: number, singleHandle?: string) {
 
   let successCount = 0;
   let failCount = 0;
-  let skipCount = 0;
 
   for (let i = 0; i < influencers.length; i++) {
     const inf = influencers[i];

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
-import { addWallet, listWallets } from "@/lib/p2p/wallets";
+import { addWallet, listWallets, setPrimaryWallet } from "@/lib/p2p/wallets";
 import { validateWalletAddress } from "@/lib/p2p/wallets-shared";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
 
   const chain = String(body.chain ?? "");
   const address = String(body.address ?? "").trim();
+  const makePrimary = body.make_primary === true;
 
   const validationError = validateWalletAddress(chain, address);
   if (validationError) {
@@ -39,6 +40,11 @@ export async function POST(request: Request) {
   const wallet = await addWallet(userId, chain, address);
   if (!wallet) {
     return NextResponse.json({ error: "Unable to add wallet." }, { status: 500 });
+  }
+
+  if (makePrimary && !wallet.is_primary) {
+    await setPrimaryWallet(userId, wallet.id);
+    wallet.is_primary = true;
   }
 
   return NextResponse.json({ wallet }, { status: 201 });

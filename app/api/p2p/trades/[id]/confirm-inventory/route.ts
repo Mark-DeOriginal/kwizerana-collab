@@ -4,7 +4,7 @@ import { confirmInventory } from "@/lib/p2p/trades";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -24,7 +24,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   try {
-    const trade = await confirmInventory(userId, params.id, declaredBalance);
+    const trade = await confirmInventory(userId, (await params).id, declaredBalance);
     return NextResponse.json({ trade });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to confirm inventory." }, { status: 400 });

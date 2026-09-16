@@ -5,14 +5,22 @@ import { isAddress, stringToHex } from "viem";
 // NEXT_PUBLIC_ESCROW_CONTRACT_ADDRESS in .env.local.
 //
 // Flow (matches KwizeranaEscrow.sol):
-//   1. Seller wallet: approve(escrow, amount) → lock(tradeId, buyer, token, amount)
-//   2. Seller wallet: release(tradeId)                     — confirms fiat received
-//   3. Buyer wallet:   claim(tradeId, to)                   — receives crypto at `to`
-//   4. Seller wallet:  refund(tradeId)                      — cancel/expiry/dispute
+//   1. Seller wallet: approve(escrow, amount + fee) → lock(..., feeBps)
+//   2. Buyer wallet:  markPaymentSent(tradeId)              — protects a paid order
+//   3. Seller wallet: release(tradeId)                      — confirms fiat received
+//   4. Anyone:        claim(tradeId)                        — sends crypto to fixed buyer
+// Cancellation is explicit: seller requests it, then buyer approves immediately
+// or anyone finalizes it after the buyer-protection grace period.
 
 export const ESCROW_ABI = [
   {
-    inputs: [{ internalType: "address", name: "_arbitrator", type: "address" }],
+    inputs: [
+      { internalType: "address", name: "initialOwner", type: "address" },
+      { internalType: "address", name: "initialArbitrator", type: "address" },
+      { internalType: "address", name: "initialFeeRecipient", type: "address" },
+      { internalType: "uint16", name: "initialFeeBps", type: "uint16" },
+      { internalType: "address[]", name: "initialAllowedTokens", type: "address[]" }
+    ],
     stateMutability: "nonpayable",
     type: "constructor"
   },
@@ -21,9 +29,31 @@ export const ESCROW_ABI = [
       { internalType: "bytes32", name: "tradeId", type: "bytes32" },
       { internalType: "address", name: "buyer", type: "address" },
       { internalType: "address", name: "token", type: "address" },
-      { internalType: "uint256", name: "amount", type: "uint256" }
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "uint16", name: "expectedFeeBps", type: "uint16" }
     ],
     name: "lock",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "bytes32", name: "tradeId", type: "bytes32" }],
+    name: "requestCancellation",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "bytes32", name: "tradeId", type: "bytes32" }],
+    name: "approveCancellation",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "bytes32", name: "tradeId", type: "bytes32" }],
+    name: "markPaymentSent",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
@@ -36,18 +66,98 @@ export const ESCROW_ABI = [
     type: "function"
   },
   {
-    inputs: [
-      { internalType: "bytes32", name: "tradeId", type: "bytes32" },
-      { internalType: "address", name: "to", type: "address" }
-    ],
+    inputs: [{ internalType: "bytes32", name: "tradeId", type: "bytes32" }],
     name: "claim",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
   },
   {
+    inputs: [{ internalType: "address", name: "token", type: "address" }],
+    name: "accruedFees",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "address", name: "token", type: "address" }],
+    name: "liabilities",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "address", name: "token", type: "address" }],
+    name: "totalFeesAccrued",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "address", name: "token", type: "address" }],
+    name: "totalFeesWithdrawn",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [],
+    name: "owner",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [],
+    name: "feeRecipient",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" }
+    ],
+    name: "withdrawFees",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [],
+    name: "feeBps",
+    outputs: [{ internalType: "uint16", name: "", type: "uint16" }],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "quoteFee",
+    outputs: [
+      { internalType: "uint256", name: "feeAmount", type: "uint256" },
+      { internalType: "uint256", name: "totalDeposit", type: "uint256" }
+    ],
+    stateMutability: "view",
+    type: "function"
+  },
+  {
     inputs: [{ internalType: "bytes32", name: "tradeId", type: "bytes32" }],
     name: "refund",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "bytes32", name: "tradeId", type: "bytes32" }],
+    name: "resolveToBuyer",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [{ internalType: "bytes32", name: "tradeId", type: "bytes32" }],
+    name: "resolveToSeller",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function"
@@ -67,9 +177,9 @@ export const ESCROW_ABI = [
       { internalType: "address", name: "buyer", type: "address" },
       { internalType: "address", name: "token", type: "address" },
       { internalType: "uint256", name: "amount", type: "uint256" },
-      { internalType: "bool", name: "released", type: "bool" },
-      { internalType: "bool", name: "claimed", type: "bool" },
-      { internalType: "bool", name: "refunded", type: "bool" }
+      { internalType: "uint256", name: "feeAmount", type: "uint256" },
+      { internalType: "uint64", name: "cancellationAvailableAt", type: "uint64" },
+      { internalType: "uint8", name: "status", type: "uint8" }
     ],
     stateMutability: "view",
     type: "function"
@@ -107,9 +217,10 @@ export const ERC20_ABI = [
 ] as const;
 
 // Well-known token contracts on Avalanche C-Chain.
-export const AVALANCHE_TOKENS: Record<string, string> = {
-  USDT: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
-  USDC: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+const escrowChainId = Number(process.env.NEXT_PUBLIC_ESCROW_CHAIN_ID ?? 43114);
+export const AVALANCHE_TOKENS: Record<string, string | undefined> = {
+  USDT: process.env.NEXT_PUBLIC_ESCROW_USDT_ADDRESS || (escrowChainId === 43114 ? "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7" : undefined),
+  USDC: process.env.NEXT_PUBLIC_ESCROW_USDC_ADDRESS || (escrowChainId === 43114 ? "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E" : undefined)
 };
 
 export function getEscrowAddress(): `0x${string}` {
@@ -136,7 +247,7 @@ export function tradeRefToBytes32(tradeRef: string): `0x${string}` {
   return stringToHex(tradeRef, { size: 32 });
 }
 
-const AVALANCHE_EXPLORER = "https://snowtrace.io";
+const AVALANCHE_EXPLORER = escrowChainId === 43113 ? "https://testnet.snowtrace.io" : "https://snowtrace.io";
 
 export function explorerTxUrl(hash: string): string {
   return `${AVALANCHE_EXPLORER}/tx/${hash}`;

@@ -4,7 +4,7 @@ import { removeWallet, setPrimaryWallet } from "@/lib/p2p/wallets";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -18,7 +18,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   if (body.action === "set_primary") {
-    const ok = await setPrimaryWallet(userId, params.id);
+    const ok = await setPrimaryWallet(userId, (await params).id);
     if (!ok) {
       return NextResponse.json({ error: "Wallet not found." }, { status: 404 });
     }
@@ -28,13 +28,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   return NextResponse.json({ error: "Invalid action." }, { status: 400 });
 }
 
-export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  const ok = await removeWallet(userId, params.id);
+  const ok = await removeWallet(userId, (await params).id);
   if (!ok) {
     return NextResponse.json({ error: "Wallet not found." }, { status: 404 });
   }

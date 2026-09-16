@@ -1,5 +1,7 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import { createNotification, updateTradeNotification, notifyByEmail } from "@/lib/p2p/notifications";
+import { verifyEscrowTransaction } from "@/lib/p2p/chain-verification";
+import { isEscrowDeployed } from "@/lib/web3/escrow";
 
 export type Dispute = {
   id: string;
@@ -136,13 +138,15 @@ export async function listAllDisputes(): Promise<AdminDispute[]> {
   );
 }
 
-export type DisputeResolution = "release_buyer" | "refund_seller" | "split";
+export type DisputeResolution = "release_buyer" | "refund_seller";
 
-export async function resolveDispute(adminUserId: string, disputeId: string, resolution: DisputeResolution): Promise<void> {
+export async function resolveDispute(adminUserId: string, disputeId: string, resolution: DisputeResolution, txHash?: string): Promise<void> {
   await ensureDatabase();
 
-  const rows = await dbQuery<{ trade_id: string; buyer_id: string; seller_id: string; status: string }>(
-    `SELECT d.trade_id::TEXT AS trade_id, t.buyer_id, t.seller_id, d.status
+  const rows = await dbQuery<{ trade_id: string; trade_ref: string; buyer_id: string; seller_id: string; buyer_wallet_address: string | null; seller_wallet_address: string | null; crypto_currency: string; crypto_amount: string; status: string }>(
+    `SELECT d.trade_id::TEXT AS trade_id, t.trade_ref, t.buyer_id, t.seller_id,
+            t.buyer_wallet_address, t.seller_wallet_address, t.crypto_currency,
+            t.crypto_amount::TEXT AS crypto_amount, d.status
      FROM p2p_disputes d JOIN p2p_trades t ON t.id = d.trade_id
      WHERE d.id = $1`,
     [disputeId]
@@ -151,23 +155,69 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
   if (!d) throw new Error("Dispute not found.");
   if (d.status !== "open") throw new Error("Dispute has already been resolved.");
 
+  let proof: { blockNumber: bigint; logIndex: number } | null = null;
+  if (isEscrowDeployed()) {
+    if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) throw new Error("A valid arbitration transaction is required.");
+    proof = await verifyEscrowTransaction({
+      action: resolution === "release_buyer" ? "resolve_buyer" : "resolve_seller",
+      txHash,
+      tradeRef: d.trade_ref,
+      cryptoCurrency: d.crypto_currency,
+      cryptoAmount: Number(d.crypto_amount),
+      buyerWalletAddress: d.buyer_wallet_address,
+      sellerWalletAddress: d.seller_wallet_address,
+      destinationAddress: resolution === "release_buyer" ? d.buyer_wallet_address ?? undefined : undefined
+    });
+  }
+
   const tradeStatus = resolution === "refund_seller" ? "cancelled" : "completed";
 
-  await dbQuery(
-    `UPDATE p2p_disputes SET status = 'resolved', resolution = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW()
-     WHERE id = $1`,
-    [disputeId, resolution, adminUserId]
+  const persisted = await dbQuery<{ applied: boolean }>(
+    `WITH resolved_dispute AS (
+       UPDATE p2p_disputes
+       SET status = 'resolved', resolution = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND status = 'open'
+       RETURNING trade_id
+     ), updated_trade AS (
+       UPDATE p2p_trades
+       SET status = $4,
+           claimed_at = CASE WHEN $4 = 'completed' THEN NOW() ELSE claimed_at END,
+           cancelled_at = CASE WHEN $4 = 'cancelled' THEN NOW() ELSE cancelled_at END,
+           updated_at = NOW()
+       WHERE id IN (SELECT trade_id FROM resolved_dispute)
+       RETURNING id
+     ), updated_escrow AS (
+       UPDATE p2p_escrow
+       SET status = $5,
+           claim_tx_hash = CASE WHEN $5 = 'claimed' THEN COALESCE($6, claim_tx_hash) ELSE claim_tx_hash END,
+           refund_tx_hash = CASE WHEN $5 = 'refunded' THEN COALESCE($6, refund_tx_hash) ELSE refund_tx_hash END,
+           release_to = CASE WHEN $5 = 'claimed' THEN $7 ELSE release_to END,
+           released_at = NOW(),
+           chain_block_number = $8::NUMERIC,
+           chain_log_index = $9::INTEGER,
+           chain_verified_at = CASE WHEN $8::NUMERIC IS NOT NULL THEN NOW() ELSE NULL END,
+           chain_verifier_version = CASE WHEN $8::NUMERIC IS NOT NULL THEN 'escrow-events-v2' ELSE NULL END
+       WHERE trade_id IN (SELECT trade_id FROM resolved_dispute)
+       RETURNING trade_id
+     )
+     SELECT EXISTS (SELECT 1 FROM resolved_dispute) AS applied`,
+    [
+      disputeId,
+      resolution,
+      adminUserId,
+      tradeStatus,
+      resolution === "release_buyer" ? "claimed" : "refunded",
+      txHash ?? null,
+      d.buyer_wallet_address,
+      proof?.blockNumber.toString() ?? null,
+      proof?.logIndex ?? null
+    ]
   );
-
-  await dbQuery(
-    `UPDATE p2p_trades SET status = $2, updated_at = NOW() WHERE id = $1`,
-    [d.trade_id, tradeStatus]
-  );
+  if (!persisted[0]?.applied) throw new Error("Dispute has already been resolved.");
 
   const copy: Record<DisputeResolution, string> = {
     release_buyer: "Resolved: crypto released to the buyer.",
-    refund_seller: "Resolved: escrow refunded to the seller.",
-    split: "Resolved: funds split between both parties."
+    refund_seller: "Resolved: escrow refunded to the seller."
   };
 
   for (const uid of [d.buyer_id, d.seller_id]) {

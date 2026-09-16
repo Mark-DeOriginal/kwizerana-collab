@@ -11,14 +11,14 @@ function canEdit(session: Session | null) {
     hasPermission(session?.user?.role ?? "member", session?.user?.permissions ?? [], "view_dashboard");
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
 
   if (!canEdit(session)) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
-  const board = await getBoard(params.id);
+  const board = await getBoard((await params).id);
   if (!board) {
     return NextResponse.json({ error: "Board not found." }, { status: 404 });
   }
@@ -26,7 +26,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   return NextResponse.json({ board });
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
 
   if (!canEdit(session)) {
@@ -46,19 +46,19 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       influencerId: Math.floor(e.influencerId)
     }));
 
-  await saveBoardEntries(params.id, normalized);
-  const board = await getBoard(params.id);
+  await saveBoardEntries((await params).id, normalized);
+  const board = await getBoard((await params).id);
 
   return NextResponse.json({ board });
 }
 
-export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
 
   if (!canEdit(session)) {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
 
-  await deleteBoard(params.id);
+  await deleteBoard((await params).id);
   return NextResponse.json({ ok: true });
 }

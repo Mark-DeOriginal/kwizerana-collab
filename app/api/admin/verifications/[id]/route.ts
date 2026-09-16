@@ -6,7 +6,7 @@ import { reviewVerification } from "@/lib/p2p/verification-tier";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const isAllowed = allowDevAdmin || isAdminEmail(session?.user?.email) ||
@@ -33,7 +33,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   try {
-    await reviewVerification(adminId, params.id, action === "approve");
+    await reviewVerification(adminId, (await params).id, action === "approve");
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unable to review." }, { status: 400 });

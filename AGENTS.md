@@ -88,7 +88,16 @@ Do not change a milestone to complete merely because matching files exist.
 - The root metadata still emphasizes the influencer archive while P2P is now a major product area.
 - Database schema changes are currently run from `lib/db.ts` at runtime; a migration system is required before production.
 - The in-memory rate limiter is not sufficient for a multi-instance deployment.
-- The current P2P server accepts client-provided transaction hashes without chain-event verification.
-- The current Solidity contract is not the documented 2-of-3 multisig and has no on-chain timeout.
+- The P2P server verifies submitted escrow receipts/events when a contract is configured, but still collapses submitted and confirmed states and needs fully transactional event-derived projections.
+- The Solidity escrow candidate is deployed and configuration-verified on Avalanche Fuji, with its addresses recorded in `docs/p2p-marketplace/DEPLOY-ESCROW.md`; it remains unaudited and its current test governance uses one EOA for owner, arbitrator, and treasury rather than production multisigs.
 - The milestone documentation historically lagged behind implementation; keep it synchronized from now on.
 
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

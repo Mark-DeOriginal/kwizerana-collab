@@ -127,10 +127,13 @@ export type Trade = {
   buyer_wallet_address: string | null;
   escrow_status: string | null;
   escrow_debit_tx: string | null;
+  escrow_payment_tx: string | null;
   escrow_release_tx: string | null;
   escrow_claim_tx: string | null;
   escrow_refund_tx: string | null;
   escrow_release_to: string | null;
+  initiator_id: string;
+  is_initiator: boolean;
   my_role: "buyer" | "seller";
   can_act_as_buyer: boolean;
   can_act_as_seller: boolean;
@@ -161,7 +164,7 @@ export const TRADE_STATUS_LABELS: Record<string, string> = {
   reconciliation_required: "Needs reconciliation"
 };
 
-type TradeRow = Omit<Trade, "crypto_amount" | "fiat_amount" | "price_at_trade" | "fee_rate" | "release_hold_minutes" | "my_role" | "payment_details"> & {
+type TradeRow = Omit<Trade, "crypto_amount" | "fiat_amount" | "price_at_trade" | "fee_rate" | "release_hold_minutes" | "my_role" | "is_initiator" | "payment_details"> & {
   crypto_amount: string;
   fiat_amount: string;
   price_at_trade: string;
@@ -208,6 +211,7 @@ const TRADE_SELECT = `
            t.fee_rate::TEXT AS fee_rate,
            t.release_hold_minutes::TEXT AS release_hold_minutes,
            t.status, t.buyer_id, t.seller_id,
+           CASE WHEN t.buyer_id = ad.user_id THEN t.seller_id ELSE t.buyer_id END AS initiator_id,
            t.buyer_paid_at, t.released_at, t.expires_at, t.created_at,
            t.escrow_locked_at, t.claimed_at, t.decline_feedback, t.declined_at, t.inventory_confirmed_at,
            t.seller_wallet_address, t.buyer_wallet_address,
@@ -215,14 +219,16 @@ const TRADE_SELECT = `
            pm.method_name AS payment_method_name, pm.method_type AS payment_method_type,
            pm.account_holder_name AS payment_account_holder, pm.details::TEXT AS payment_details,
            esc.status AS escrow_status, esc.debit_tx_hash AS escrow_debit_tx,
+           esc.payment_tx_hash AS escrow_payment_tx,
            esc.release_tx_hash AS escrow_release_tx, esc.claim_tx_hash AS escrow_claim_tx,
            esc.refund_tx_hash AS escrow_refund_tx, esc.release_to AS escrow_release_to
     FROM p2p_trades t
+    JOIN p2p_ads ad ON ad.id = t.ad_id
     JOIN users buyer ON buyer.id = t.buyer_id
     JOIN users seller ON seller.id = t.seller_id
     LEFT JOIN p2p_payment_methods pm ON pm.id = t.payment_method_id
     LEFT JOIN LATERAL (
-      SELECT e.status, e.debit_tx_hash, e.release_tx_hash, e.claim_tx_hash,
+      SELECT e.status, e.debit_tx_hash, e.payment_tx_hash, e.release_tx_hash, e.claim_tx_hash,
              e.refund_tx_hash, e.release_to
       FROM p2p_escrow e WHERE e.trade_id = t.id ORDER BY e.id DESC LIMIT 1
     ) esc ON TRUE`;
@@ -233,6 +239,7 @@ function mapTrade(row: TradeRow, userId: string, ownedVendorIds?: Set<string>, i
     row.buyer_id === userId || isOwnedVendor(row.buyer_id) ? "buyer" : "seller";
   const canActAsBuyer = isUserOrOwned(userId, row.buyer_id, ownedVendorIds) || isSuperAdmin;
   const canActAsSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds) || isSuperAdmin;
+  const isInitiator = isUserOrOwned(userId, row.initiator_id, ownedVendorIds);
   const { payment_details, ...rest } = row;
   return {
     ...rest,
@@ -242,6 +249,7 @@ function mapTrade(row: TradeRow, userId: string, ownedVendorIds?: Set<string>, i
     fee_rate: toNumber(row.fee_rate),
     release_hold_minutes: toNumber(row.release_hold_minutes),
     payment_details: parseDetails(payment_details),
+    is_initiator: isInitiator,
     my_role: myRole,
     can_act_as_buyer: canActAsBuyer,
     can_act_as_seller: canActAsSeller
@@ -250,6 +258,27 @@ function mapTrade(row: TradeRow, userId: string, ownedVendorIds?: Set<string>, i
 
 function isUserOrOwned(userId: string, targetId: string, ownedVendorIds?: Set<string>): boolean {
   return targetId === userId || (ownedVendorIds?.has(targetId) ?? false);
+}
+
+async function applySavedBuyerWallets(tradeId?: string): Promise<void> {
+  await dbQuery(
+    `UPDATE p2p_trades t
+     SET buyer_wallet_address = (
+       SELECT w.wallet_address
+       FROM p2p_user_wallets w
+       WHERE w.user_id = t.buyer_id AND w.chain = 'avalanche'
+       ORDER BY w.is_primary DESC, w.created_at DESC
+       LIMIT 1
+     ), updated_at = NOW()
+     WHERE t.status = 'created'
+       AND t.buyer_wallet_address IS NULL
+       AND ($1::TEXT IS NULL OR t.id::TEXT = $1::TEXT)
+       AND EXISTS (
+         SELECT 1 FROM p2p_user_wallets w
+         WHERE w.user_id = t.buyer_id AND w.chain = 'avalanche'
+       )`,
+    [tradeId ?? null]
+  );
 }
 
 export async function createTrade(
@@ -319,7 +348,19 @@ export async function createTrade(
   const sellerId = ad.ad_type === "sell" ? ad.user_id : userId;
   // On-chain escrow recipient (claims own'r wallet). For buy trades this is the
   // trader; for sell trades it's the vendor's saved wallet.
-  const buyerWalletAddress = input.buyerWalletAddress?.trim() || null;
+  let buyerWalletAddress = input.buyerWalletAddress?.trim() || null;
+  if (!buyerWalletAddress) {
+    const savedWallets = await dbQuery<{ wallet_address: string }>(
+      `SELECT wallet_address FROM p2p_user_wallets
+       WHERE user_id = $1 AND chain = 'avalanche'
+       ORDER BY is_primary DESC, created_at DESC LIMIT 1`,
+      [buyerId]
+    );
+    buyerWalletAddress = savedWallets[0]?.wallet_address ?? null;
+  }
+  if (buyerWalletAddress && !isAddress(buyerWalletAddress)) {
+    throw new Error("The receive wallet address is invalid.");
+  }
 
   const tradeRef = generateRef("TR");
   const paymentReference = generateRef("KW");
@@ -365,7 +406,7 @@ export async function createTrade(
 
 export async function getTrade(userId: string, tradeId: string, ownedVendorIds?: Set<string>, isSuperAdmin = false): Promise<Trade> {
   await ensureDatabase();
-  await expireStaleTrade(tradeId);
+  await applySavedBuyerWallets(tradeId);
   if (isEscrowDeployed()) {
     await reconcileEscrowTrade(tradeId).catch((error) => {
       console.error("On-demand escrow reconciliation failed", { tradeId, error: error instanceof Error ? error.message : "unknown" });
@@ -382,30 +423,9 @@ export async function getTrade(userId: string, tradeId: string, ownedVendorIds?:
   return mapTrade(row, userId, ownedVendorIds, isSuperAdmin);
 }
 
-async function expireStaleTrade(tradeId: string): Promise<boolean> {
-  const expired = await dbQuery<{ id: string }>(
-    `UPDATE p2p_trades SET status = 'expired', updated_at = NOW()
-     WHERE id = $1 AND status IN ('created', 'escrow_locked') AND expires_at < NOW()
-     RETURNING id`,
-    [tradeId]
-  );
-  if (expired[0]) await syncTradeNotification(expired[0].id);
-  return Boolean(expired[0]);
-}
-
-export async function expireStaleTrades(): Promise<number> {
-  await ensureDatabase();
-  const expired = await dbQuery<{ id: string }>(
-    `UPDATE p2p_trades SET status = 'expired', updated_at = NOW()
-     WHERE status IN ('created', 'escrow_locked') AND expires_at < NOW()
-     RETURNING id`
-  );
-  for (const row of expired) await syncTradeNotification(row.id);
-  return expired.length;
-}
-
 export async function listTrades(userId: string, isSuperAdmin = false): Promise<Trade[]> {
-  await expireStaleTrades();
+  await ensureDatabase();
+  await applySavedBuyerWallets();
   const ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];
   const rows = await dbQuery<TradeRow>(
@@ -415,7 +435,7 @@ export async function listTrades(userId: string, isSuperAdmin = false): Promise<
   return rows.map((row) => mapTrade(row, userId, ownedVendorIds, isSuperAdmin));
 }
 
-export type TradeAction = "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "decline" | "proceed";
+export type TradeAction = "set_receive_wallet" | "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "decline" | "proceed";
 
 export type TradeActionInput = {
   actionRequestId?: string;
@@ -427,7 +447,7 @@ export type TradeActionInput = {
   declineFeedback?: string;
 };
 
-const ESCROW_ACTIONS = new Set<TradeAction>(["accept", "release", "claim", "refund"]);
+const ESCROW_ACTIONS = new Set<TradeAction>(["accept", "mark_paid", "release", "claim", "refund"]);
 
 function assertEscrowMutationInput(action: TradeAction, input: TradeActionInput) {
   if (!ESCROW_ACTIONS.has(action)) return;
@@ -451,6 +471,10 @@ function assertEscrowMutationInput(action: TradeAction, input: TradeActionInput)
 }
 
 const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) => string }> = {
+  set_receive_wallet: {
+    title: "Order ready for approval",
+    body: (ref) => `The buyer selected a receiving wallet for ${ref}. You can now review and approve the trade.`
+  },
   accept: {
     title: "Order approved — escrow locked",
     body: (ref) => `Your order ${ref} was approved. The crypto is held in escrow — send your payment now.`
@@ -493,7 +517,7 @@ export async function applyTradeAction(
   isSuperAdmin = false
 ): Promise<Trade> {
   await ensureDatabase();
-  await expireStaleTrade(tradeId);
+  await applySavedBuyerWallets(tradeId);
   if (isEscrowDeployed()) await reconcileEscrowTrade(tradeId);
   assertEscrowMutationInput(action, input);
   const ownedVendorIds = await getOwnedVendorIds(userId);
@@ -507,6 +531,7 @@ export async function applyTradeAction(
 
   const isBuyer = isUserOrOwned(userId, row.buyer_id, ownedVendorIds) || isSuperAdmin;
   const isSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds) || isSuperAdmin;
+  const isInitiator = isUserOrOwned(userId, row.initiator_id, ownedVendorIds);
   const status = row.status;
   const escrowFunded = row.escrow_status === "funded";
 
@@ -531,6 +556,14 @@ export async function applyTradeAction(
   let escrowStatus: string | null = null;
 
   switch (action) {
+    case "set_receive_wallet": {
+      if (!isBuyer) throw new Error("Only the buyer can choose the receiving wallet.");
+      if (status !== "created") throw new Error("The receiving wallet can no longer be changed for this order.");
+      if (!input.destAddress?.trim() || !isAddress(input.destAddress.trim())) {
+        throw new Error("The receive wallet address is invalid.");
+      }
+      break;
+    }
     case "accept": {
       if (!isSeller) throw new Error("Only the seller can approve this order.");
       if (status !== "created") throw new Error("This order is no longer awaiting approval.");
@@ -561,14 +594,17 @@ export async function applyTradeAction(
     case "claim": {
       if (!isBuyer) throw new Error("Only the buyer can receive the crypto.");
       if (status !== "released") throw new Error("The crypto is not ready to receive yet.");
-      if (!input.destAddress) throw new Error("Choose where to receive the crypto.");
       newStatus = "completed";
       escrowStatus = "claimed";
       break;
     }
     case "cancel": {
-      if (status !== "created" && status !== "escrow_locked" && status !== "payment_sent") {
-        throw new Error("This order can no longer be cancelled. The escrow must be refunded instead.");
+      if (!isInitiator) throw new Error("Only the person who started this trade can cancel it.");
+      if (status === "payment_sent") {
+        throw new Error("The buyer has marked this trade paid. Confirm receipt or open a dispute; it cannot be cancelled.");
+      }
+      if (status !== "created" && status !== "escrow_locked") {
+        throw new Error("This order can no longer be cancelled.");
       }
       newStatus = "cancelled";
       escrowStatus = escrowFunded ? null : "cancelled";
@@ -584,14 +620,15 @@ export async function applyTradeAction(
       break;
     }
     case "decline": {
-      if (!isSeller) throw new Error("Only the vendor can decline this order.");
+      if (isInitiator) throw new Error("The person who started this trade can cancel it, but cannot decline it.");
+      if (!isBuyer && !isSeller) throw new Error("Only the receiving party can decline this order.");
       if (status !== "created") throw new Error("This order is no longer awaiting approval.");
       if (!input.declineFeedback?.trim()) throw new Error("Please provide a reason for declining the order.");
       // Order stays in "created"; feedback is recorded for the buyer to review.
       break;
     }
     case "proceed": {
-      if (!isBuyer) throw new Error("Only the buyer can choose to proceed.");
+      if (!isInitiator) throw new Error("Only the person who started this trade can choose to proceed.");
       if (status !== "created" || !row.decline_feedback) {
         throw new Error("There is no declined order to proceed with.");
       }
@@ -625,6 +662,7 @@ export async function applyTradeAction(
         claimed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE claimed_at END,
         cancelled_at = CASE WHEN $2 = 'cancelled' THEN NOW() ELSE cancelled_at END,
         seller_wallet_address = COALESCE($3, seller_wallet_address),
+        buyer_wallet_address = CASE WHEN $7 = 'set_receive_wallet' THEN $8 ELSE buyer_wallet_address END,
         receipt = COALESCE($4, receipt),
         receipt_image = COALESCE($5, receipt_image),
         declined_at = CASE WHEN $7 = 'decline' THEN NOW() ELSE declined_at END,
@@ -632,15 +670,27 @@ export async function applyTradeAction(
                                 WHEN $7 = 'decline' THEN $6
                                 ELSE decline_feedback END,
         updated_at = NOW()
-      WHERE id = $1 AND status = $8
+      WHERE id = $1 AND status = $9
       RETURNING id`,
-    [tradeId, newStatus, input.walletAddress ?? null, input.receipt ?? null, input.receiptImage ?? null, input.declineFeedback ?? null, action, status]
+    [tradeId, newStatus, input.walletAddress ?? null, input.receipt ?? null, input.receiptImage ?? null, input.declineFeedback ?? null, action, input.destAddress?.trim() ?? null, status]
   );
   if (updatedTradeRows.length === 0) {
     throw new Error("This trade changed while you were acting. Refresh and try again.");
   }
 
   const escrowTx = input.txHash ?? null;
+  if (action === "mark_paid") {
+    await dbQuery(
+      `UPDATE p2p_escrow SET
+          payment_tx_hash = COALESCE($2, payment_tx_hash),
+          chain_block_number = $3::NUMERIC,
+          chain_log_index = $4::INTEGER,
+          chain_verified_at = CASE WHEN $3::NUMERIC IS NOT NULL THEN NOW() ELSE NULL END,
+          chain_verifier_version = CASE WHEN $3::NUMERIC IS NOT NULL THEN 'escrow-events-v2' ELSE NULL END
+       WHERE trade_id = $1`,
+      [tradeId, escrowTx, chainVerification?.blockNumber.toString() ?? null, chainVerification?.logIndex ?? null]
+    );
+  }
   if (escrowStatus) {
     await dbQuery(
       `UPDATE p2p_escrow SET
@@ -655,7 +705,7 @@ export async function applyTradeAction(
           chain_block_number = $5::NUMERIC,
           chain_log_index = $6::INTEGER,
           chain_verified_at = CASE WHEN $5::NUMERIC IS NOT NULL THEN NOW() ELSE NULL END,
-          chain_verifier_version = CASE WHEN $5::NUMERIC IS NOT NULL THEN 'escrow-events-v1' ELSE NULL END
+          chain_verifier_version = CASE WHEN $5::NUMERIC IS NOT NULL THEN 'escrow-events-v2' ELSE NULL END
         WHERE trade_id = $1`,
       [tradeId, escrowStatus, escrowTx, input.destAddress ?? null, chainVerification?.blockNumber.toString() ?? null, chainVerification?.logIndex ?? null]
     );

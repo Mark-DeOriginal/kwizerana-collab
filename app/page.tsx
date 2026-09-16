@@ -155,6 +155,22 @@ export default function Home() {
   const selectedInfluencer =
     paginatedInfluencers.find((item) => item.id === selectedId) ?? paginatedInfluencers[0] ?? null;
 
+  async function loadRankings() {
+    try {
+      const response = await fetch("/api/rankings", { cache: "no-store" });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load topic leaders.");
+      }
+
+      setRankingBoards(payload.boards ?? []);
+      setRankingsError("");
+    } catch {
+      setRankingsError("Unable to load topic leaders.");
+    }
+  }
+
   useEffect(() => {
     void loadRankings();
   }, []);
@@ -173,22 +189,6 @@ export default function Home() {
   const toggleNiche = (niche: Niche) => {
     setCurrentPage(1);
     setSelectedNiches((current) => (current.includes(niche) ? current.filter((item) => item !== niche) : [...current, niche]));
-  };
-
-  const loadRankings = async () => {
-    try {
-      const response = await fetch("/api/rankings", { cache: "no-store" });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load topic leaders.");
-      }
-
-      setRankingBoards(payload.boards ?? []);
-      setRankingsError("");
-    } catch {
-      setRankingsError("Unable to load topic leaders.");
-    }
   };
 
   const exportCsv = async () => {

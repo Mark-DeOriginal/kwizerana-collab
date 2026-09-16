@@ -35,11 +35,11 @@ Exit: database state cannot be advanced by a fabricated hash or invalid actor, a
 
 ## Phase 2: Escrow v2
 
-Status: **planned; current contract is prototype only**
+Status: **implementation candidate; testnet validation and audit pending**
 
 - Confirm trust and decentralization model.
-- Implement deadlines, refunds, token controls, safe transfers, governance, and emergency policy.
-- Add unit, integration, fuzz, and invariant tests.
+- Implemented replacement candidate: explicit cancellation with a 30-minute buyer-protection window, permissionless recovery after that window, fixed settlement recipients, token controls, safe transfers, 0.20% successful-trade fee, multisig-ready roles, and new-lock pause without blocking exits. Automatic expiry no longer prevents a buyer from recording payment.
+- Nine local scenarios pass, and the replacement is deployed on Avalanche Fuji; complete the recorded on-chain configuration check and end-to-end application drill, then add integration, fuzz, invariant, stablecoin-fork, and static-analysis coverage.
 - Integrate verified contract events with the server.
 - Deploy and exercise on Avalanche testnet.
 - Obtain independent audit before mainnet.
@@ -63,6 +63,11 @@ Status: **planned on top of partially implemented features**
 
 - Refine market discovery and price transparency.
 - Rebuild order entry and trade detail around authoritative state.
+- Capture the buyer's Avalanche receiving wallet before vendor approval, allow it to be changed only while the order is still awaiting approval, and keep the funded escrow recipient immutable.
+- Persist the Avalanche wallet connected from the dashboard as the user's primary default and hydrate awaiting-approval trades from that saved address.
+- Keep requested trades visible until participant cancellation; never translate an escrow recovery deadline into an unverified off-chain terminal state.
+- Distinguish the request initiator from buyer/seller asset roles: initiators cancel their request, while receiving counterparties decline it.
+- Apply initiator permissions after funding as well, and keep receipt submission consistent across buy and sell trades while enforcing the escrow actor on-chain and server-side.
 - Complete receipts, chat, notification, cancellation, refund, review, and dispute journeys.
 - Preserve a single clear completion activity entry for both participants when a trade settles.
 - Add member dashboard routes for orders, wallets, payment methods, security, and reputation.

@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect, NumInput } from "@/components/p2p/custom-ui";
-import { ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
+import { ConnectedWalletSync, ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
 import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
 import type { UserWallet } from "@/lib/p2p/wallets";
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
@@ -228,6 +228,7 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
 
   return (
     <div className="px-4 py-8 text-ink sm:px-6 lg:px-8">
+      <ConnectedWalletSync />
       <div className="mx-auto max-w-[1400px]">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -413,7 +414,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: isConnected && Boolean(address), refetchInterval: 30000 }
+    query: { enabled: isConnected && Boolean(address && AVALANCHE_TOKENS.USDC), refetchInterval: 30000 }
   });
 
   const { data: usdtBalance, refetch: refetchUsdt, isFetching: usdtFetching, isError: usdtError } = useReadContract({
@@ -421,7 +422,7 @@ function WalletPanel({ loading }: { loading?: boolean }) {
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
-    query: { enabled: isConnected && Boolean(address), refetchInterval: 30000 }
+    query: { enabled: isConnected && Boolean(address && AVALANCHE_TOKENS.USDT), refetchInterval: 30000 }
   });
 
   async function refresh() {
@@ -1168,7 +1169,9 @@ function VendorApplicationForm({ busy, error, applying, setApplying, bio, setBio
 function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; loading?: boolean; onChanged: () => void }) {
   const active = trades.filter((t) => (ACTIVE_TRADE_STATUSES as string[]).includes(t.status));
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = active.find((t) => t.id === selectedId) ?? null;
+  // Keep the selected trade available when an action moves it from active to
+  // completed. The modal needs to remain open so the buyer can rate the vendor.
+  const selected = trades.find((t) => t.id === selectedId) ?? null;
 
   if (loading) {
     return (
@@ -1179,7 +1182,7 @@ function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; lo
     );
   }
 
-  if (active.length === 0) {
+  if (active.length === 0 && !selected) {
     return (
       <EmptyState
         icon={<Clock className="h-5 w-5" />}
@@ -1212,7 +1215,7 @@ function LiveTradeModal({ trade, onChanged }: { trade: Trade; onChanged: () => v
   const [live, setLive] = useState<Trade>(trade);
 
   useEffect(() => {
-    setLive((prev) => (prev.id === trade.id ? prev : trade));
+    setLive(trade);
   }, [trade]);
 
   useTradeSubscription(trade.id, (t) => setLive(t), { enabled: !isTerminalTrade(live.status) });
@@ -1292,9 +1295,9 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
             </button>
           ))}
         </div>
-        <a href="/api/p2p/trades/export" className="flex h-8 items-center gap-1.5 border border-line bg-white px-3 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">
+        <Link href="/api/p2p/trades/export" className="flex h-8 items-center gap-1.5 border border-line bg-white px-3 text-xs font-semibold text-muted transition-colors hover:border-ocean hover:text-ink">
           Download CSV
-        </a>
+        </Link>
       </div>
 
       <div className="overflow-x-auto">

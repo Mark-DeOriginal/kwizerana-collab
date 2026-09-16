@@ -6,7 +6,7 @@ import {
   validatePaymentMethodInput
 } from "@/lib/p2p/payment-methods";
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -31,7 +31,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return NextResponse.json({ error }, { status: 400 });
   }
 
-  const method = await updatePaymentMethod(userId, params.id, input);
+  const method = await updatePaymentMethod(userId, (await params).id, input);
   if (!method) {
     return NextResponse.json({ error: "Payment method not found." }, { status: 404 });
   }
@@ -39,13 +39,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   return NextResponse.json({ method });
 }
 
-export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
 
-  const deleted = await deletePaymentMethod(userId, params.id);
+  const deleted = await deletePaymentMethod(userId, (await params).id);
   if (!deleted) {
     return NextResponse.json({ error: "Payment method not found." }, { status: 404 });
   }

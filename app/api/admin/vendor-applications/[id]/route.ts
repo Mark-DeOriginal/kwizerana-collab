@@ -8,7 +8,7 @@ import { ensureVendorListings } from "@/lib/p2p/vendor";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
   const allowDevAdmin = process.env.NODE_ENV !== "production" && !process.env.GOOGLE_CLIENT_ID;
   const isAllowed = allowDevAdmin || isAdminEmail(session?.user?.email) ||
@@ -40,7 +40,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }>(
     `SELECT id::TEXT AS id, user_id::TEXT AS user_id, status, details::TEXT AS details
      FROM p2p_advertiser_applications WHERE id = $1`,
-    [params.id]
+    [(await params).id]
   );
 
   const appRow = rows[0];
@@ -55,7 +55,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
   await dbQuery(
     `UPDATE p2p_advertiser_applications SET status = $2, reviewed_by = $3, reviewed_at = NOW() WHERE id = $1`,
-    [params.id, action === "approve" ? "approved" : "rejected", adminId]
+    [(await params).id, action === "approve" ? "approved" : "rejected", adminId]
   );
 
   if (action === "approve") {

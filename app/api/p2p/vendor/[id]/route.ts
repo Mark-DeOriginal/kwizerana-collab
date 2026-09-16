@@ -5,7 +5,7 @@ import { listReviewsForUser, getRatingSummary, getVendorAverageStars } from "@/l
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   await ensureDatabase();
 
   const rows = await dbQuery<{
@@ -21,7 +21,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
             p2p_advertiser_level AS advertiser_level, p2p_verified_tier AS verified_tier,
             p2p_is_online AS is_online, created_at
      FROM users WHERE id = $1 AND p2p_advertiser_status <> 'none'`,
-    [params.id]
+    [(await params).id]
   );
   const vendor = rows[0];
   if (!vendor) {
@@ -30,14 +30,14 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
   const adRows = await dbQuery<{ count: string }>(
     `SELECT COUNT(*)::TEXT AS count FROM p2p_ads WHERE user_id = $1 AND status = 'active' AND is_paused = FALSE`,
-    [params.id]
+    [(await params).id]
   );
 
   const [stats, reviews, ratingSummary, starRating] = await Promise.all([
-    getP2PStats(params.id),
-    listReviewsForUser(params.id),
-    getRatingSummary(params.id),
-    getVendorAverageStars(params.id)
+    getP2PStats((await params).id),
+    listReviewsForUser((await params).id),
+    getRatingSummary((await params).id),
+    getVendorAverageStars((await params).id)
   ]);
 
   return NextResponse.json({

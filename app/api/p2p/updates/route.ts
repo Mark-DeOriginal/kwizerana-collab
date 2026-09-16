@@ -20,14 +20,6 @@ export async function GET() {
   const ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];
 
-  // Mirror the dashboard's expiry sweep so overdue orders move the fingerprint.
-  await dbQuery(
-    `UPDATE p2p_trades SET status = 'expired', updated_at = NOW()
-     WHERE status IN ('created', 'escrow_locked') AND expires_at < NOW()
-       AND (buyer_id = ANY($1) OR seller_id = ANY($1))`,
-    [allIds]
-  );
-
   const rows = await dbQuery<{ changed_at: string }>(
     `SELECT GREATEST(
        COALESCE((SELECT MAX(COALESCE(updated_at, created_at)) FROM p2p_trades WHERE buyer_id = ANY($1) OR seller_id = ANY($1)), '-infinity'::timestamptz),
