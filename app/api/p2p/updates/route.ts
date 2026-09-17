@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
-import { getOwnedVendorIds } from "@/lib/p2p/trades";
 import { dbQuery, ensureDatabase } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -17,17 +16,20 @@ export async function GET() {
   }
 
   await ensureDatabase();
-  const ownedVendorIds = await getOwnedVendorIds(userId);
-  const allIds = [userId, ...Array.from(ownedVendorIds)];
-
   const rows = await dbQuery<{ changed_at: string }>(
-    `SELECT GREATEST(
-       COALESCE((SELECT MAX(COALESCE(updated_at, created_at)) FROM p2p_trades WHERE buyer_id = ANY($1) OR seller_id = ANY($1)), '-infinity'::timestamptz),
-       COALESCE((SELECT MAX(COALESCE(updated_at, created_at)) FROM p2p_notifications WHERE user_id = $2), '-infinity'::timestamptz),
-       COALESCE((SELECT MAX(COALESCE(reviewed_at, created_at)) FROM p2p_advertiser_applications WHERE user_id = $2), '-infinity'::timestamptz),
-       COALESCE((SELECT MAX(updated_at) FROM users WHERE id = $2), '-infinity'::timestamptz)
+    `WITH identities AS (
+       SELECT $1::TEXT AS id
+       UNION ALL
+       SELECT id FROM users WHERE owner_user_id = $1
+     )
+     SELECT GREATEST(
+       COALESCE((SELECT MAX(COALESCE(updated_at, created_at)) FROM p2p_trades
+                 WHERE buyer_id IN (SELECT id FROM identities) OR seller_id IN (SELECT id FROM identities)), '-infinity'::timestamptz),
+       COALESCE((SELECT MAX(COALESCE(updated_at, created_at)) FROM p2p_notifications WHERE user_id = $1), '-infinity'::timestamptz),
+       COALESCE((SELECT MAX(COALESCE(reviewed_at, created_at)) FROM p2p_advertiser_applications WHERE user_id = $1), '-infinity'::timestamptz),
+       COALESCE((SELECT MAX(updated_at) FROM users WHERE id = $1), '-infinity'::timestamptz)
      )::TEXT AS changed_at`,
-    [allIds, userId]
+    [userId]
   );
 
   return NextResponse.json({ changedAt: rows[0]?.changed_at ?? "" });

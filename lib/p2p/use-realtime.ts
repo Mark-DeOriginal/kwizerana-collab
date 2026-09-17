@@ -15,8 +15,11 @@ export function isTerminalTrade(status: string): boolean {
  * Skipped while the tab is hidden, never overlaps an in-flight run, stops on unmount,
  * and never surfaces errors to the UI.
  */
-export function usePoll(fn: () => void | Promise<void>, opts: { intervalMs: number; enabled?: boolean }): void {
-  const { intervalMs, enabled = true } = opts;
+export function usePoll(
+  fn: () => void | Promise<void>,
+  opts: { intervalMs: number; enabled?: boolean; immediate?: boolean }
+): void {
+  const { intervalMs, enabled = true, immediate = false } = opts;
   const fnRef = useRef(fn);
   fnRef.current = fn;
 
@@ -38,12 +41,13 @@ export function usePoll(fn: () => void | Promise<void>, opts: { intervalMs: numb
       timer = setTimeout(() => void loop(), intervalMs);
     };
 
-    void loop();
+    if (immediate) void loop();
+    else timer = setTimeout(() => void loop(), intervalMs);
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [enabled, intervalMs]);
+  }, [enabled, immediate, intervalMs]);
 }
 
 function tradeStamp(t: Trade): string {
@@ -85,35 +89,4 @@ export function useTradeSubscription(
     },
     { intervalMs: opts.intervalMs ?? 8000, enabled: Boolean(tradeId) && (opts.enabled ?? true) }
   );
-}
-
-/**
- * Subscribes to the server-sent events feed for general app updates (trades,
- * notifications, disputes). Calls `onUpdate` whenever anything changes. Safe to
- * use everywhere — it degrades silently if SSE is unsupported.
- */
-export function useRealtimeFeed(onUpdate: () => void): void {
-  const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
-
-  useEffect(() => {
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource("/api/p2p/stream");
-      es.addEventListener("update", () => onUpdateRef.current());
-      es.onerror = () => {
-        // Let polling take over; close the connection on persistent failure.
-        es?.close();
-      };
-    } catch {
-      // EventSource unavailable — rely on polling.
-    }
-    return () => {
-      try {
-        es?.close();
-      } catch {
-        // ignore
-      }
-    };
-  }, []);
 }

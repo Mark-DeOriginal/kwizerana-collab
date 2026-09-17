@@ -19,6 +19,7 @@ An administrator is not automatically the buyer or seller. Administrative databa
 | State | Meaning | Required next actor |
 |---|---|---|
 | `requested` | Order terms are snapshotted; no funds locked | Seller accepts/funds or declines |
+| `accepted` | A Sell-order vendor confirmed fiat liquidity; the initiating crypto seller has not funded yet | Seller funds or initiator cancels |
 | `funding_submitted` | Seller transaction is known but unconfirmed | Chain verifier |
 | `escrow_funded` | Valid `Locked` event has sufficient confirmations | Buyer pays fiat |
 | `payment_marked_sent` | Buyer asserts fiat sent and provides reference/evidence | Seller verifies fiat |
@@ -41,7 +42,8 @@ Names may be adjusted in a migration, but submitted, confirmed, and reconciled s
 
 ```text
 requested
-  -> funding_submitted -> escrow_funded
+  -> funding_submitted -> escrow_funded (Buy order: advertising crypto seller funds)
+  -> accepted -> funding_submitted -> escrow_funded (Sell order: fiat-paying vendor accepts first)
   -> cancelled_unfunded
   -> expired_unfunded
 
@@ -90,7 +92,8 @@ Terminal states are `completed`, `refunded`, `cancelled_unfunded`, and `expired_
 | Transition | Authorized initiator |
 |---|---|
 | Request | Authenticated eligible taker |
-| Accept/fund | Snapshotted seller wallet/account |
+| Accept Sell request | Fiat-paying advertisement owner, after choosing a receiving wallet |
+| Fund | Snapshotted crypto seller wallet/account; a Sell initiator may fund only after vendor acceptance |
 | Mark fiat sent | Snapshotted buyer account |
 | Release | Seller wallet or permitted arbitrator path |
 | Claim | Snapshotted buyer wallet, subject to destination policy |
@@ -143,4 +146,4 @@ The current `split` concept is unsupported by the prototype contract and must no
 
 ## Current implementation mapping
 
-The current code uses `created`, `escrow_locked`, `payment_sent`, `released`, `completed`, `cancelled`, `expired`, and `disputed`. It often moves directly to those states after a browser action and client-provided hash. Migration to the target model must preserve historical records and label unverifiable/demo hashes explicitly.
+The current code uses `created`, `approved`, `escrow_locked`, `payment_sent`, `released`, `completed`, `cancelled`, `expired`, and `disputed`. `approved` is used only for Sell orders: the fiat-paying vendor has accepted, and the initiating crypto seller may then fund escrow. Buy orders continue directly from `created` to `escrow_locked` when the advertising crypto seller funds. Browser-submitted and chain-confirmed states are still collapsed in places; migration to the full target model must preserve historical records and label unverifiable/demo hashes explicitly.

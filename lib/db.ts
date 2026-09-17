@@ -88,6 +88,8 @@ const schemaStatements = [
   `CREATE INDEX IF NOT EXISTS influencers_status_idx ON influencers (status)`,
   `CREATE INDEX IF NOT EXISTS submissions_status_idx ON submissions (status)`,
   `CREATE INDEX IF NOT EXISTS submissions_created_at_idx ON submissions (created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS submissions_handle_search_idx ON submissions (LOWER(profile_handle) text_pattern_ops)`,
+  `CREATE INDEX IF NOT EXISTS submissions_name_search_idx ON submissions (LOWER(profile_name) text_pattern_ops)`,
   `ALTER TABLE influencers ADD COLUMN IF NOT EXISTS commentary TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]`,
   `ALTER TABLE influencers ADD COLUMN IF NOT EXISTS last_scraped_at TIMESTAMPTZ`,
@@ -428,6 +430,10 @@ const schemaStatements = [
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_claim_tx_unique ON p2p_escrow(claim_tx_hash) WHERE claim_tx_hash IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_payment_tx_unique ON p2p_escrow(payment_tx_hash) WHERE payment_tx_hash IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_refund_tx_unique ON p2p_escrow(refund_tx_hash) WHERE refund_tx_hash IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS p2p_trades_buyer_updated_idx ON p2p_trades(buyer_id, updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS p2p_trades_seller_updated_idx ON p2p_trades(seller_id, updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS p2p_notifications_user_created_idx ON p2p_notifications(user_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS p2p_advertiser_applications_user_reviewed_idx ON p2p_advertiser_applications(user_id, reviewed_at DESC, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS p2p_trade_action_requests (
     id BIGSERIAL PRIMARY KEY,
     trade_id BIGINT NOT NULL REFERENCES p2p_trades(id) ON DELETE CASCADE,
@@ -436,7 +442,12 @@ const schemaStatements = [
     request_id TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(trade_id, user_id, action, request_id)
-  )`
+  )`,
+  `CREATE TABLE IF NOT EXISTS app_schema_versions (
+    version INTEGER PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `INSERT INTO app_schema_versions (version) VALUES (2) ON CONFLICT (version) DO NOTHING`
 ];
 
 export function getDatabaseUrl() {
@@ -463,11 +474,20 @@ export async function dbQuery<T>(query: string, params: unknown[] = []) {
 }
 
 const SCHEMA_ADVISORY_LOCK_KEY = 7480001;
+const CURRENT_SCHEMA_VERSION = 2;
 
 export async function ensureDatabase() {
   if (!global.__kwizeranaDbInit) {
-    global.__kwizeranaDbInit = (async () => {
+    const initialization = (async () => {
       const sql = getSql();
+      // Serverless instances still need a readiness check, but a healthy,
+      // migrated database should cost only these small reads—not hundreds of
+      // CREATE/ALTER statements on the first request handled by every instance.
+      const registry = await sql.query("SELECT to_regclass('public.app_schema_versions')::TEXT AS name");
+      if (registry[0]?.name) {
+        const versions = await sql.query("SELECT COALESCE(MAX(version), 0)::INTEGER AS version FROM app_schema_versions");
+        if (Number(versions[0]?.version ?? 0) >= CURRENT_SCHEMA_VERSION) return;
+      }
       // Run the whole schema in a single transaction under a Postgres
       // advisory lock so concurrent cold starts / prerenders never race
       // on `CREATE ... IF NOT EXISTS`.
@@ -476,6 +496,12 @@ export async function ensureDatabase() {
         ...schemaStatements.map((statement) => sql.query(statement))
       ]);
     })();
+    global.__kwizeranaDbInit = initialization.catch((error) => {
+      // A temporary Neon/network failure must not leave this process holding a
+      // permanently rejected promise. The next request gets a clean retry.
+      global.__kwizeranaDbInit = undefined;
+      throw error;
+    });
   }
 
   await global.__kwizeranaDbInit;

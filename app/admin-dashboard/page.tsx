@@ -31,6 +31,7 @@ import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
 import { EscrowAdminOverview } from "@/components/EscrowAdminOverview";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
 import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
+import { usePoll } from "@/lib/p2p/use-realtime";
 
 const ALL_PERMISSIONS: { key: Permission; label: string; description: string }[] = [
   { key: "manage_admins", label: "Can manage admins", description: "Promote and demote other users" },
@@ -168,26 +169,15 @@ export default function AdminDashboardPage() {
     setUsersPage(1);
   }, [searchQuery]);
 
-  useEffect(() => {
-    if (status !== "authenticated") return;
+  usePoll(
+    () => fetch("/api/user/heartbeat", { method: "POST" }).then(() => undefined).catch(() => undefined),
+    { intervalMs: 60000, enabled: status === "authenticated", immediate: true }
+  );
 
-    const sendHeartbeat = () => fetch("/api/user/heartbeat", { method: "POST" }).catch(() => {});
-
-    sendHeartbeat();
-    const interval = setInterval(sendHeartbeat, 60000);
-
-    return () => clearInterval(interval);
-  }, [status]);
-
-  useEffect(() => {
-    if (status !== "authenticated") return;
-
-    const interval = setInterval(() => {
-      loadUsers(false, true);
-    }, 120000);
-
-    return () => clearInterval(interval);
-  }, [status, loadUsers]);
+  usePoll(
+    () => loadUsers(false, true),
+    { intervalMs: 120000, enabled: status === "authenticated" }
+  );
 
   if (status === "loading") {
     return (

@@ -90,7 +90,11 @@ export function ReceiveWalletSetup({
     <div className="space-y-3 bg-panel p-4">
       <div>
         <p className="text-sm font-semibold text-ink">Where should we send your {trade.crypto_currency}?</p>
-        <p className="mt-1 text-xs leading-5 text-muted">Choose this before the vendor approves the trade. The address is secured when escrow is funded.</p>
+        <p className="mt-1 text-xs leading-5 text-muted">
+          {trade.is_initiator
+            ? "Choose where to receive your crypto before the seller funds escrow. The address is secured when escrow is funded."
+            : "Choose where to receive the crypto before accepting this sell order. The address is secured when escrow is funded."}
+        </p>
       </div>
 
       {!isConnected ? (
@@ -192,7 +196,7 @@ function EscrowButtonShell({
   );
 }
 
-// ── Seller: approve + lock (fund escrow) ──────────────────────────────────
+// ── Crypto seller: fund escrow ────────────────────────────────────────────
 export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonProps) {
   const { address, isConnected } = useAccount();
   const real = useEscrowReal();
@@ -274,9 +278,10 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
     }
   }
 
-  if (!isConnected && real) return <ConnectPrompt label="approve this order" />;
+  const isSellInitiator = trade.is_initiator;
+  if (!isConnected && real) return <ConnectPrompt label={isSellInitiator ? "fund escrow" : "approve and fund escrow"} />;
 
-  const label = "Approve trade";
+  const label = isSellInitiator ? "Fund escrow" : "Approve order and fund escrow";
   const disabled = Boolean(!buyAddrOk || (real && (insufficient || feeBps === undefined)) || phase !== "idle");
 
   return (
@@ -289,7 +294,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
       )}
       <EscrowButtonShell
         busy={phase === "tx"}
-        busyLabel="Approving trade …"
+        busyLabel="Funding escrow …"
         onClick={() => void run()}
         disabled={disabled}
         label={label}

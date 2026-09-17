@@ -115,7 +115,10 @@ export default function AdminReviewPage() {
   }, [debouncedSearch, reviewPage, sortBy]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+    const timer = setTimeout(() => {
+      setReviewPage(1);
+      setDebouncedSearch(searchQuery);
+    }, 400);
     return () => clearTimeout(timer);
   }, [searchQuery]);
 

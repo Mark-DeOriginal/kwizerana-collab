@@ -104,14 +104,28 @@ export async function listSubmissions(filters: SubmissionListFilters = {}): Prom
 
   const conditions: string[] = [];
   const params: unknown[] = [];
+  const relevanceParams: unknown[] = [];
 
-  const q = search?.trim().toLowerCase();
+  const q = search?.trim().replace(/^@/, "").toLowerCase();
+  let relevanceSql = "";
   if (q) {
-    const likeParam = `$${params.length + 1}`;
+    const containsParam = `$${params.length + 1}`;
     conditions.push(
-      `(LOWER(s.profile_handle) LIKE ${likeParam} OR LOWER(s.profile_name) LIKE ${likeParam} OR LOWER(s.profile_bio) LIKE ${likeParam} OR LOWER(s.submitter_email) LIKE ${likeParam} OR LOWER(s.note) LIKE ${likeParam} OR LOWER(COALESCE(i.commentary, '')) LIKE ${likeParam})`
+      `(LOWER(s.profile_handle) LIKE ${containsParam} OR LOWER(s.profile_name) LIKE ${containsParam} OR LOWER(s.profile_bio) LIKE ${containsParam} OR LOWER(s.submitter_email) LIKE ${containsParam} OR LOWER(s.note) LIKE ${containsParam} OR LOWER(COALESCE(i.commentary, '')) LIKE ${containsParam})`
     );
     params.push(`%${q}%`);
+    const exactParam = `$${params.length + 1}`;
+    const prefixParam = `$${params.length + 2}`;
+    relevanceParams.push(q, `${q}%`);
+    relevanceSql = `CASE
+      WHEN LOWER(s.profile_handle) = ${exactParam} THEN 0
+      WHEN LOWER(s.profile_name) = ${exactParam} THEN 1
+      WHEN LOWER(s.profile_handle) LIKE ${prefixParam} THEN 2
+      WHEN LOWER(s.profile_name) LIKE ${prefixParam} THEN 3
+      WHEN LOWER(s.profile_handle) LIKE ${containsParam} THEN 4
+      WHEN LOWER(s.profile_name) LIKE ${containsParam} THEN 5
+      ELSE 6
+    END, `;
   }
 
   const whereSql = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -143,9 +157,10 @@ export async function listSubmissions(filters: SubmissionListFilters = {}): Prom
   );
   const total = Number(countRow?.count ?? "0");
 
+  const rowParams = [...params, ...relevanceParams];
   const rows = await dbQuery<SubmissionRow>(
-    `SELECT s.*, i.location, i.commentary ${joinSql} ${whereSql} ORDER BY ${orderSql} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-    [...params, safeLimit, offset]
+    `SELECT s.*, i.location, i.commentary ${joinSql} ${whereSql} ORDER BY ${relevanceSql}${orderSql} LIMIT $${rowParams.length + 1} OFFSET $${rowParams.length + 2}`,
+    [...rowParams, safeLimit, offset]
   );
 
   return {

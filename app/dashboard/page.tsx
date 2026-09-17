@@ -43,7 +43,7 @@ import type { DisputeDetail } from "@/lib/p2p/disputes";
 import { ACTIVE_TRADE_STATUSES, type Trade } from "@/lib/p2p/trades";
 import { OrderDetailView, TradeOrderCard } from "@/components/p2p/order-detail-view";
 import { Modal } from "@/components/p2p/modal";
-import { useTradeSubscription, isTerminalTrade, useRealtimeFeed } from "@/lib/p2p/use-realtime";
+import { usePoll, useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
 import { useAccount, useDisconnect, useReadContract } from "wagmi";
 import { formatUnits } from "viem";
 import { AVALANCHE_TOKENS, ERC20_ABI, explorerAddressUrl } from "@/lib/web3/escrow";
@@ -168,43 +168,20 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
   const lastDigestRef = useRef<string | null>(null);
   const digestSeededRef = useRef(false);
 
-  useEffect(() => {
-    if (status !== "authenticated") return;
-
-    const poll = async () => {
-      try {
-        const res = await fetch("/api/p2p/updates", { cache: "no-store" });
-        const data = await readJson<{ changedAt?: string }>(res);
-        if (!res.ok || !data?.changedAt) return;
-        if (!digestSeededRef.current) {
-          digestSeededRef.current = true;
-          lastDigestRef.current = data.changedAt;
-          return;
-        }
-        if (data.changedAt !== lastDigestRef.current) {
-          lastDigestRef.current = data.changedAt;
-          void load({ silent: true });
-        }
-      } catch {
-        // Silent — polling must never surface errors to the UI.
-      }
-    };
-
-    const id = setInterval(() => void poll(), 12000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void poll();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    void poll();
-    return () => {
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [status, load]);
-
-  // Near-real-time: server-sent events trigger a silent reload; polling remains
-  // as a fallback when SSE isn't available.
-  useRealtimeFeed(() => void load({ silent: true }));
+  usePoll(async () => {
+    const res = await fetch("/api/p2p/updates", { cache: "no-store" });
+    const digest = await readJson<{ changedAt?: string }>(res);
+    if (!res.ok || !digest?.changedAt) return;
+    if (!digestSeededRef.current) {
+      digestSeededRef.current = true;
+      lastDigestRef.current = digest.changedAt;
+      return;
+    }
+    if (digest.changedAt !== lastDigestRef.current) {
+      lastDigestRef.current = digest.changedAt;
+      await load({ silent: true });
+    }
+  }, { intervalMs: 15000, enabled: status === "authenticated" });
 
   if (status === "unauthenticated") {
     return (

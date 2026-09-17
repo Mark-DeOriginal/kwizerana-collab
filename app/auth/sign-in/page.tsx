@@ -8,7 +8,7 @@ import { ArrowLeft, Loader2, LogIn, ShieldCheck } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { authHref, safeReturnPath } from "@/lib/auth/redirects";
 
-type Config = { google?: boolean; database?: boolean };
+type Config = { google: boolean; database: boolean };
 type LoginStep = "credentials" | "twoFactor";
 
 function SignInContent() {
@@ -17,7 +17,7 @@ function SignInContent() {
   const searchParams = useSearchParams();
   const returnTo = safeReturnPath(searchParams.get("next"));
 
-  const [config, setConfig] = useState<Config>({});
+  const [config, setConfig] = useState<Config | null>(null);
   const [checkedConfig, setCheckedConfig] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -32,14 +32,20 @@ function SignInContent() {
   const [resent, setResent] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/status")
-      .then((response) => readJson<Config>(response))
-      .then((payload) => {
-        if (payload) {
-          setConfig(payload);
-        }
+    const controller = new AbortController();
+    fetch("/api/auth/status", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return readJson<Config>(response);
       })
-      .finally(() => setCheckedConfig(true));
+      .then((payload) => {
+        if (payload) setConfig(payload);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setCheckedConfig(true);
+      });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -296,7 +302,7 @@ function SignInContent() {
             </div>
 
             <button
-              disabled={!config.google || status === "loading" || googleLoading}
+              disabled={config?.google === false || status === "loading" || googleLoading}
               onClick={handleGoogleSignIn}
               className="flex min-h-[52px] w-full items-center justify-center gap-2 border border-line bg-white px-5 text-base font-semibold text-ink transition-colors hover:border-ocean hover:bg-panel disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -313,7 +319,7 @@ function SignInContent() {
               Continue with Google
             </button>
 
-            {checkedConfig && !config.google && (
+            {checkedConfig && config?.google === false && (
               <div className="mt-4 border border-line bg-panel p-4 text-sm leading-6 text-muted">
                 Google sign-in is not configured. You can still sign in with email and password.
               </div>

@@ -40,7 +40,7 @@ Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
 | Trade creation and snapshot | Partial | Connected buyer wallets are captured during order creation; awaiting-approval orders have a server-validated receiving-wallet step; initiator/counterparty identity now controls cancel-versus-decline permissions independently of buyer/seller roles. Atomicity, precise math, and eligibility still need hardening. |
-| Seller accept/fund | Partial/testnet | Vendor action is exposed as `Approve trade` only after the buyer destination exists; the confirmed lock event is checked by the server. Submitted/confirmed projection separation remains. |
+| Seller accept/fund | Partial/testnet | Buy orders let the advertising crypto seller review and fund escrow after the destination exists. Sell orders now require the fiat-paying vendor to accept and confirm liquidity before the initiating crypto seller can fund. The server enforces both sequences and checks the lock event; submitted/confirmed projection separation remains. |
 | Buyer payment submission | Implemented | Buy and sell flows share the same enabled receipt action; authorization is enforced by the escrow transaction and verified server-side instead of a brittle client-side address gate. Secure upload controls remain required. |
 | Seller release and buyer claim | Partial/unsafe | Hardened contract ABI and immediate receipt/event checks exist; submitted/confirmed states and testnet reconciliation still need completion |
 | Cancel/expiry/refund | Partial/testnet | Replacement escrow requires an explicit seller cancellation request, preserves a 30-minute window for the buyer to mark payment, supports buyer-approved immediate cancellation, and permits refund only after the protection window. Application event persistence and full end-to-end testing remain. |
@@ -86,6 +86,7 @@ Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`
 |---|---|---|
 | Shared visual identity | Partial | Existing palette; incomplete system and inconsistent pages |
 | Responsive/accessibility | Partial | Core flows need keyboard, focus, screen-reader, zoom validation |
+| Request performance | Partial | Trade-page duplicate startup requests and redundant dashboard SSE/poll loops are removed; polling pauses in hidden tabs, background offer refreshes do not replace visible content with loading UI, and schema readiness has a versioned fast path. Production request tracing and load testing remain. |
 | Automated tests and CI | Planned | None found during audit |
 | Versioned migrations | Planned | Runtime schema initialization currently used |
 | Observability/runbooks | Planned | Required before production |

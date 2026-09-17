@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { Loader2, Send } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import type { ChatMessage } from "@/lib/p2p/chat";
+import { usePoll } from "@/lib/p2p/use-realtime";
 
 function chatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -31,10 +32,7 @@ export function TradeChat({ tradeId }: { tradeId: string }) {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    const id = setInterval(() => void load(), 8000);
-    return () => clearInterval(id);
-  }, [load]);
+  usePoll(load, { intervalMs: 8000 });
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

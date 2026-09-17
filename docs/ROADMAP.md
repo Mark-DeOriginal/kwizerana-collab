@@ -30,6 +30,7 @@ Status: **planned; highest priority**
 - Harden authorization, validation, uploads, rate limiting, secrets, and audit logs.
   - Partial evidence: protected application pages are centrally session-gated in `middleware.ts`, with safe post-auth return paths through `/redirect`; API authorization remains route-local.
   - Rate integrity fix: runtime P2P seeding now inserts only missing currency pairs and preserves persisted admin/provider rates and their timestamps.
+  - Performance baseline: trade/dashboard polling is visibility-aware, delayed until after initial content, and non-overlapping; duplicate mount fetches and the nested serverless SSE polling loop were removed. Database initialization now uses a persisted schema-version fast path after the first migration check.
 
 Exit: database state cannot be advanced by a fabricated hash or invalid actor, and divergence is detected and recoverable.
 
@@ -68,6 +69,7 @@ Status: **planned on top of partially implemented features**
 - Keep requested trades visible until participant cancellation; never translate an escrow recovery deadline into an unverified off-chain terminal state.
 - Distinguish the request initiator from buyer/seller asset roles: initiators cancel their request, while receiving counterparties decline it.
 - Apply initiator permissions after funding as well, and keep receipt submission consistent across buy and sell trades while enforcing the escrow actor on-chain and server-side.
+- Keep Buy and Sell acceptance semantics distinct: Buy vendors review and fund escrow, while Sell vendors first confirm fiat liquidity and only then may the initiating crypto seller fund escrow.
 - Complete receipts, chat, notification, cancellation, refund, review, and dispute journeys.
 - Preserve a single clear completion activity entry for both participants when a trade settles.
 - Add member dashboard routes for orders, wallets, payment methods, security, and reputation.

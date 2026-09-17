@@ -14,7 +14,8 @@ import {
   Wallet,
   X
 } from "lucide-react";
-import { useAccount } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
+import { formatUnits, parseUnits } from "viem";
 import { readJson } from "@/lib/client-request";
 import { compressImage } from "@/lib/p2p/compress-image";
 import { TRADE_STATUS_LABELS, type Trade } from "@/lib/p2p/trades";
@@ -29,6 +30,7 @@ import {
 } from "@/components/p2p/escrow-wallet";
 import { TradeChat } from "@/components/p2p/trade-chat";
 import { NumInput } from "@/components/p2p/custom-ui";
+import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
 
 function fn(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) value = 0;
@@ -54,9 +56,11 @@ function timeAgo(iso: string): string {
 export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => void }) {
   const isBuyer = trade.my_role === "buyer";
   const counterparty = isBuyer ? trade.seller_name : trade.buyer_name;
-  const active = ["created", "escrow_locked", "payment_sent", "released"].includes(trade.status);
+  const active = ["created", "approved", "escrow_locked", "payment_sent", "released"].includes(trade.status);
   const needsAction =
-    trade.status === "created" && !isBuyer && Boolean(trade.buyer_wallet_address) ? true :
+    trade.status === "created" && !trade.is_initiator ? (isBuyer || Boolean(trade.buyer_wallet_address)) :
+    trade.status === "created" && trade.is_initiator && isBuyer && !trade.buyer_wallet_address ? true :
+    trade.status === "approved" && !isBuyer ? true :
     trade.status === "escrow_locked" && isBuyer ? true :
     trade.status === "payment_sent" && !isBuyer ? true :
     trade.status === "released" && isBuyer ? true : false;
@@ -127,7 +131,9 @@ function stepIndex(status: string): number {
 export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; onBack?: () => void; onRefresh: () => void }) {
   const { address } = useAccount();
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+  const [disputeBusy, setDisputeBusy] = useState(false);
+  const [inventoryBusy, setInventoryBusy] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
@@ -152,6 +158,30 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const counterparty = isBuyer ? trade.seller_name : trade.buyer_name;
   const accountIdentifier = (trade.payment_details as { accountIdentifier?: string }).accountIdentifier;
   const escrowFunded = trade.escrow_status === "funded" || trade.escrow_status === "released" || trade.escrow_status === "claimed";
+  const hasEscrowDeposit = Boolean(trade.escrow_debit_tx);
+  const escrowConfigured = isEscrowDeployed();
+  const escrowAddress = getEscrowAddress();
+  const tradeAmountUnits = parseUnits(String(trade.crypto_amount), 6);
+  const { data: currentFeeQuote } = useReadContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: "quoteFee",
+    args: [tradeAmountUnits],
+    query: { enabled: escrowConfigured && !hasEscrowDeposit }
+  });
+  const { data: fundedTrade } = useReadContract({
+    address: escrowAddress,
+    abi: ESCROW_ABI,
+    functionName: "trades",
+    args: [tradeRefToBytes32(trade.trade_ref)],
+    query: { enabled: escrowConfigured && hasEscrowDeposit }
+  });
+  const escrowFeeUnits = hasEscrowDeposit ? fundedTrade?.[4] : currentFeeQuote?.[0];
+  const escrowFee = escrowFeeUnits === undefined ? null : formatUnits(escrowFeeUnits, 6);
+  const totalEscrowDeposit = escrowFeeUnits === undefined ? null : formatUnits(tradeAmountUnits + escrowFeeUnits, 6);
+  const feePercent = escrowFeeUnits === undefined || tradeAmountUnits === BigInt(0)
+    ? null
+    : Number((escrowFeeUnits * BigInt(1_000_000)) / tradeAmountUnits) / 10_000;
 
   // Dispute eligibility: 1 hour after payment_sent
   useEffect(() => {
@@ -172,7 +202,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const disputeReady = trade.status === "payment_sent" && disputeCountdown === 0;
 
   // Pre-fill the vendor's remaining balance for this token after a completed trade.
-  const confirmEligible = trade.status === "completed" && !trade.inventory_confirmed_at && !isBuyer;
+  const confirmEligible = trade.status === "completed" && !trade.inventory_confirmed_at && !isBuyer && !trade.is_initiator;
   const prefillInventory = useCallback(async () => {
     if (!confirmEligible) return;
     const res = await fetch("/api/p2p/vendor/inventory");
@@ -208,7 +238,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
   const doAction = useCallback(
     async (action: string, payload: Record<string, unknown> = {}): Promise<boolean> => {
-      setBusy(true);
+      setActiveAction(action);
       setError("");
       try {
         const res = await fetch(`/api/p2p/trades/${trade.id}`, {
@@ -229,7 +259,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         onRefresh();
         return true;
       } finally {
-        setBusy(false);
+        setActiveAction((current) => current === action ? null : current);
       }
     },
     [trade.id, onRefresh]
@@ -237,7 +267,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
   const doDispute = async () => {
     if (!disputeReason.trim()) return;
-    setBusy(true);
+    setDisputeBusy(true);
     setError("");
     const res = await fetch(`/api/p2p/trades/${trade.id}/dispute`, {
       method: "POST",
@@ -245,7 +275,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
       body: JSON.stringify({ reason: disputeReason.trim() })
     });
     const data = await readJson<{ error?: string }>(res);
-    setBusy(false);
+    setDisputeBusy(false);
     if (!res.ok) {
       setError(data?.error ?? "Unable to submit dispute.");
       return;
@@ -258,7 +288,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const doConfirmInventory = async (declaredBalance: string) => {
     const value = Number(declaredBalance);
     if (!Number.isFinite(value) || value < 0) return;
-    setBusy(true);
+    setInventoryBusy(true);
     setError("");
     try {
       const res = await fetch(`/api/p2p/trades/${trade.id}/confirm-inventory`, {
@@ -273,7 +303,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
       }
       onRefresh();
     } finally {
-      setBusy(false);
+      setInventoryBusy(false);
     }
   };
 
@@ -316,13 +346,13 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               onClick={() => setViewRole("buyer")}
               className={`px-3 py-1.5 text-xs font-semibold transition-colors ${isBuyer ? "bg-ink text-white" : "bg-white text-muted hover:text-ink"}`}
             >
-              Buyer · {trade.buyer_name}
+              Crypto buyer · {trade.buyer_name}
             </button>
             <button
               onClick={() => setViewRole("seller")}
               className={`px-3 py-1.5 text-xs font-semibold transition-colors ${!isBuyer ? "bg-ink text-white" : "bg-white text-muted hover:text-ink"}`}
             >
-              Vendor · {trade.seller_name}
+              Crypto seller · {trade.seller_name}
             </button>
           </div>
         </div>
@@ -401,10 +431,10 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
             />
             <button
               onClick={() => void doConfirmInventory(confirmBalance)}
-              disabled={busy || confirmBalance === ""}
+              disabled={inventoryBusy || confirmBalance === ""}
               className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
             >
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
+              {inventoryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
             </button>
           </div>
         </div>
@@ -416,7 +446,24 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         <Row label="Rate" value={`1 ${trade.crypto_currency} = ${fn(trade.price_at_trade)} ${trade.fiat_currency}`} />
         <Row label="Crypto amount" value={`${fn(trade.crypto_amount, 6)} ${trade.crypto_currency}`} />
         <Row label="Fiat amount" value={`${fn(trade.fiat_amount)} ${trade.fiat_currency}`} />
-        <Row label="Escrow fee" value="Paid by seller on settlement" note="exact amount shown before funding" />
+        <Row
+          label="Escrow fee"
+          value={!escrowConfigured ? "Not charged in demo mode" : escrowFee === null ? "Loading fee…" : `${fn(Number(escrowFee), 6)} ${trade.crypto_currency}`}
+          note={!escrowConfigured
+            ? "A live contract fee will be shown before real escrow funding"
+            : escrowFee === null || feePercent === null
+              ? undefined
+            : isBuyer
+              ? `${fn(feePercent, 4)}% · paid by the crypto seller; your crypto amount is not reduced`
+              : `${fn(feePercent, 4)}% · returned with your principal if the trade is refunded`}
+        />
+        {!isBuyer && totalEscrowDeposit !== null && (
+          <Row
+            label="Total escrow deposit"
+            value={`${fn(Number(totalEscrowDeposit), 6)} ${trade.crypto_currency}`}
+            note="trade amount plus escrow fee"
+          />
+        )}
         {trade.payment_reference && <Row label="Payment reference" value={<span className="font-mono">{trade.payment_reference}</span>} />}
       </div>
 
@@ -438,7 +485,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
       {/* Receipt */}
       {(!isBuyer || trade.status === "payment_sent" || trade.status === "released" || trade.status === "completed") && trade.receipt_image && (
         <div className="border border-line bg-panel p-4 text-sm">
-          <p className="font-semibold">{isBuyer ? "Your payment receipt" : "Buyer's payment receipt"}</p>
+          <p className="font-semibold">{isBuyer ? "Your fiat payment receipt" : "Fiat payment receipt"}</p>
           <img src={trade.receipt_image} alt="Payment receipt" className="mt-2 max-h-80 border border-line object-contain" />
         </div>
       )}
@@ -447,10 +494,15 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
       {/* ── Action panel ─────────────────────────────────────────────── */}
       <div className="space-y-2.5">
-        {/* Seller: created → approve & fund escrow */}
+        {/* Buy order vendor: review and fund. Sell order initiator: wait for vendor acceptance. */}
         {!isBuyer && trade.status === "created" && (
           <>
-            {trade.buyer_wallet_address ? (
+            {trade.is_initiator ? (
+              <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
+                <p className="text-muted">Your sell order was sent to {counterparty}. Wait for them to confirm they can make the fiat payment before funding escrow.</p>
+              </div>
+            ) : trade.buyer_wallet_address ? (
               <FundEscrowButton
                 trade={trade}
                 onCompleted={(txHash) => void doAction("accept", { wallet_address: address, tx_hash: txHash })}
@@ -463,9 +515,9 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               </div>
             )}
             {trade.is_initiator ? (
-              <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+              <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />
             ) : (
-              <DeclineOrderControl busy={busy} onDecline={(reason) => doAction("decline", { decline_feedback: reason })} />
+              <DeclineOrderControl busy={activeAction === "decline"} onDecline={(reason) => doAction("decline", { decline_feedback: reason })} />
             )}
           </>
         )}
@@ -475,7 +527,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           <>
             <ReceiveWalletSetup
               trade={trade}
-              busy={busy}
+              busy={activeAction === "set_receive_wallet"}
               onSave={(destination) => doAction("set_receive_wallet", { dest_address: destination })}
               onError={setError}
             />
@@ -492,12 +544,12 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => void doAction("proceed")}
-                    disabled={busy}
+                    disabled={activeAction === "proceed"}
                     className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
                   >
-                    {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Proceed anyway"}
+                    {activeAction === "proceed" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Proceed anyway"}
                   </button>
-                  <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+                  <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />
                 </div>
               </div>
             ) : trade.is_initiator ? (
@@ -506,23 +558,62 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                   <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
                   <p className="text-muted">Your order was sent to {counterparty}. You&apos;ll be notified once they approve it.</p>
                 </div>
-                <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+                <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />
               </>
             ) : trade.decline_feedback ? (
               <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm text-muted">
                 <Check className="mt-0.5 h-4 w-4 shrink-0 text-moss" />
                 You declined this order. The initiator can review your reason and decide whether to continue.
               </div>
+            ) : trade.buyer_wallet_address ? (
+              <>
+                <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
+                  <p className="text-muted">{counterparty} wants to sell {fn(trade.crypto_amount, 6)} {trade.crypto_currency}. Accept only if you can send {fn(trade.fiat_amount)} {trade.fiat_currency} after escrow is funded.</p>
+                </div>
+                <button
+                  onClick={() => void doAction("approve")}
+                  disabled={activeAction === "approve"}
+                  className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+                >
+                  {activeAction === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Accept sell order
+                </button>
+                <DeclineOrderControl busy={activeAction === "decline"} onDecline={(reason) => doAction("decline", { decline_feedback: reason })} />
+              </>
             ) : (
               <>
                 <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
                   <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
-                  <p className="text-muted">{counterparty} sent you this order request.</p>
+                  <p className="text-muted">Save the wallet where you want to receive the crypto, then review and accept this sell order.</p>
                 </div>
-                <DeclineOrderControl busy={busy} onDecline={(reason) => doAction("decline", { decline_feedback: reason })} />
+                <DeclineOrderControl busy={activeAction === "decline"} onDecline={(reason) => doAction("decline", { decline_feedback: reason })} />
               </>
             )}
           </>
+        )}
+
+        {/* Sell order: vendor accepted, so the initiating crypto seller may now fund escrow. */}
+        {!isBuyer && trade.status === "approved" && (
+          <>
+            <div className="flex items-start gap-2 border border-mint bg-mint/30 p-3 text-sm">
+              <Check className="mt-0.5 h-4 w-4 shrink-0 text-moss" />
+              <p className="text-muted">{counterparty} accepted your sell order and confirmed they can make the fiat payment. Fund escrow to continue.</p>
+            </div>
+            <FundEscrowButton
+              trade={trade}
+              onCompleted={(txHash) => void doAction("accept", { wallet_address: address, tx_hash: txHash })}
+              onError={setError}
+            />
+            {trade.is_initiator && <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />}
+          </>
+        )}
+
+        {isBuyer && trade.status === "approved" && (
+          <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
+            <p className="text-muted">You accepted this sell order. Waiting for {counterparty} to fund escrow before you send the fiat payment.</p>
+          </div>
         )}
 
         {/* Seller: escrow_locked → awaiting buyer payment */}
@@ -532,7 +623,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
               <p className="text-muted">Escrow funded. Waiting for {counterparty} to send {fn(trade.fiat_amount)} {trade.fiat_currency} and upload their receipt.</p>
             </div>
-            {trade.is_initiator && <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />}
+            {trade.is_initiator && <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />}
           </>
         )}
 
@@ -660,7 +751,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
         {/* Cancel on escrow_locked — buyer hasn't paid yet (seller cancel lives in their funding block) */}
         {isBuyer && trade.is_initiator && trade.status === "escrow_locked" && (
-          <CancelTradeButton busy={busy} onClick={() => void doAction("cancel")} />
+          <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />
         )}
 
         {/* Dispute — payment_sent, buyer only (the seller reviews the receipt instead) */}
@@ -688,10 +779,10 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               className="border border-line bg-white px-3 py-2 text-sm outline-none focus:border-coral"
             />
             <div className="flex items-center gap-2">
-              <button onClick={() => void doDispute()} disabled={busy || !disputeReason.trim()} className="h-9 bg-coral px-4 text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit dispute"}
+              <button onClick={() => void doDispute()} disabled={disputeBusy || !disputeReason.trim()} className="h-9 bg-coral px-4 text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60">
+                {disputeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Submit dispute"}
               </button>
-              <button onClick={() => { setShowDispute(false); setDisputeReason(""); }} disabled={busy} className="h-9 border border-line px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60">
+              <button onClick={() => { setShowDispute(false); setDisputeReason(""); }} disabled={disputeBusy} className="h-9 border border-line px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60">
                 Cancel
               </button>
             </div>
@@ -709,11 +800,11 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           </div>
         )}
 
-        {/* Buyer: completed → rate vendor */}
-        {isBuyer && trade.status === "completed" && (
+        {/* The customer who opened the order can rate the vendor they traded with. */}
+        {trade.is_initiator && trade.status === "completed" && (
           <RatingPanel
             tradeId={trade.id}
-            vendorName={trade.seller_name}
+            vendorName={isBuyer ? trade.seller_name : trade.buyer_name}
             rated={rated}
             starRating={starRating}
             hoveredStar={hoveredStar}

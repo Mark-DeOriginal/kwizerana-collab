@@ -14,6 +14,11 @@ function fmtCryptoAmount(n: number): string {
   return Number(n.toFixed(6)).toLocaleString("en-US", { maximumFractionDigits: 6 });
 }
 
+function fmtFiatAmount(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
 type TradeNoticeRow = {
   status: string;
   trade_ref: string;
@@ -25,9 +30,11 @@ type TradeNoticeRow = {
 
 function tradeNoticeCopy(t: TradeNoticeRow): { title: string; body: string } {
   const amt = fmtCryptoAmount(Number(t.crypto_amount));
-  const fiat = fmtCryptoAmount(Number(t.fiat_amount));
+  const fiat = fmtFiatAmount(Number(t.fiat_amount));
   const ref = t.trade_ref;
   switch (t.status) {
+    case "approved":
+      return { title: "Sell order accepted — fund escrow", body: `The fiat-paying vendor accepted order ${ref}. The seller can now fund ${amt} ${t.crypto_currency} in escrow.` };
     case "escrow_locked":
       return { title: "Escrow locked — awaiting payment", body: `The escrow for order ${ref} (${amt} ${t.crypto_currency}) is funded. Waiting for the buyer to send ${fiat} ${t.fiat_currency}.` };
     case "payment_sent":
@@ -141,6 +148,7 @@ export type Trade = {
 
 export type TradeStatus =
   | "created" // submitted, awaiting vendor approval
+  | "approved" // sell order accepted by fiat-paying vendor; crypto seller must fund
   | "escrow_locked" // crypto funded on-chain; buyer to pay fiat
   | "payment_sent" // buyer uploaded receipt
   | "released" // seller confirmed fiat received; buyer can claim
@@ -150,10 +158,11 @@ export type TradeStatus =
   | "disputed"
   | "reconciliation_required";
 
-export const ACTIVE_TRADE_STATUSES: TradeStatus[] = ["created", "escrow_locked", "payment_sent", "released", "disputed", "reconciliation_required"];
+export const ACTIVE_TRADE_STATUSES: TradeStatus[] = ["created", "approved", "escrow_locked", "payment_sent", "released", "disputed", "reconciliation_required"];
 
 export const TRADE_STATUS_LABELS: Record<string, string> = {
   created: "Awaiting approval",
+  approved: "Accepted — fund escrow",
   escrow_locked: "Escrow funded — pay now",
   payment_sent: "Payment sent",
   released: "Ready to receive",
@@ -395,8 +404,10 @@ export async function createTrade(
 
   await createNotification(notifyUserId, {
     type: "trade_created",
-    title: "New order request",
-    body: `${initiatorName} wants to ${counterpartySells ? "buy" : "sell"} ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} with you. Approve the order to lock escrow.`,
+    title: counterpartySells ? "New buy order" : "New sell order",
+    body: counterpartySells
+      ? `${initiatorName} wants to buy ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} from you. Review the order and fund escrow if you can fulfill it.`
+      : `${initiatorName} wants to sell ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} to you. Confirm that you can send ${fmtCryptoAmount(fiatAmount)} ${ad.fiat_currency}, then accept the order. The seller funds escrow only after you accept.`,
     data: { tradeId }
   });
 
@@ -435,7 +446,7 @@ export async function listTrades(userId: string, isSuperAdmin = false): Promise<
   return rows.map((row) => mapTrade(row, userId, ownedVendorIds, isSuperAdmin));
 }
 
-export type TradeAction = "set_receive_wallet" | "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "decline" | "proceed";
+export type TradeAction = "set_receive_wallet" | "approve" | "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "decline" | "proceed";
 
 export type TradeActionInput = {
   actionRequestId?: string;
@@ -475,9 +486,13 @@ const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) =>
     title: "Order ready for approval",
     body: (ref) => `The buyer selected a receiving wallet for ${ref}. You can now review and approve the trade.`
   },
+  approve: {
+    title: "Sell order accepted",
+    body: (ref) => `The fiat-paying vendor accepted ${ref}. You can now fund escrow to continue.`
+  },
   accept: {
-    title: "Order approved — escrow locked",
-    body: (ref) => `Your order ${ref} was approved. The crypto is held in escrow — send your payment now.`
+    title: "Escrow funded",
+    body: (ref) => `The crypto for ${ref} is now secured in escrow. The fiat-paying buyer can send payment.`
   },
   mark_paid: {
     title: "Payment receipt submitted",
@@ -505,7 +520,7 @@ const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) =>
   },
   proceed: {
     title: "Order approved to proceed",
-    body: (ref) => `The buyer chose to proceed with order ${ref}.`
+    body: (ref) => `The order initiator chose to proceed with order ${ref}.`
   }
 };
 
@@ -564,10 +579,23 @@ export async function applyTradeAction(
       }
       break;
     }
+    case "approve": {
+      if (!isBuyer || isInitiator) throw new Error("Only the fiat-paying vendor can accept this sell order.");
+      if (status !== "created") throw new Error("This order is no longer awaiting acceptance.");
+      if (!row.buyer_wallet_address) throw new Error("Choose a receiving wallet before accepting this sell order.");
+      newStatus = "approved";
+      break;
+    }
     case "accept": {
-      if (!isSeller) throw new Error("Only the seller can approve this order.");
-      if (status !== "created") throw new Error("This order is no longer awaiting approval.");
-      if (!input.walletAddress) throw new Error("Connect your wallet to approve and fund the escrow.");
+      if (!isSeller) throw new Error("Only the crypto seller can fund escrow.");
+      const canFundBuyOrder = !isInitiator && status === "created";
+      const canFundSellOrder = isInitiator && status === "approved";
+      if (!canFundBuyOrder && !canFundSellOrder) {
+        throw new Error(isInitiator
+          ? "Wait for the fiat-paying vendor to accept this sell order before funding escrow."
+          : "This order is no longer awaiting escrow funding.");
+      }
+      if (!input.walletAddress) throw new Error("Connect your wallet to fund escrow.");
       newStatus = "escrow_locked";
       escrowStatus = "funded";
       break;
@@ -603,7 +631,7 @@ export async function applyTradeAction(
       if (status === "payment_sent") {
         throw new Error("The buyer has marked this trade paid. Confirm receipt or open a dispute; it cannot be cancelled.");
       }
-      if (status !== "created" && status !== "escrow_locked") {
+      if (status !== "created" && status !== "approved" && status !== "escrow_locked") {
         throw new Error("This order can no longer be cancelled.");
       }
       newStatus = "cancelled";
@@ -725,7 +753,7 @@ export async function applyTradeAction(
   }
 
   // Auto-decrement the seller's declared inventory when a trade completes.
-  if (newStatus === "completed") {
+  if (newStatus === "completed" && row.seller_id !== row.initiator_id) {
     await dbQuery(
       `UPDATE p2p_vendor_inventory
        SET declared_balance = GREATEST(declared_balance - $3::numeric, 0),
@@ -819,6 +847,7 @@ export async function confirmInventory(userId: string, tradeId: string, declared
 
   const isSeller = isUserOrOwned(userId, row.seller_id, ownedVendorIds);
   if (!isSeller) throw new Error("Only the vendor can confirm inventory.");
+  if (row.seller_id === row.initiator_id) throw new Error("Customer sell orders do not use vendor inventory confirmation.");
   if (row.status !== "completed") throw new Error("Inventory can only be confirmed after the trade completes.");
 
   await dbQuery(

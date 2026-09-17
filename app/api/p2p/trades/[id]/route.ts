@@ -14,6 +14,8 @@ const PUBLIC_TRADE_ACTION_ERRORS = [
   /^The receive wallet address is invalid\.$/,
   /^A confirmed escrow transaction is required\.$/,
   /^The buyer must set a receive wallet/,
+  /^Choose a receiving wallet/,
+  /^Wait for the fiat-paying vendor/,
   /^Only the /,
   /^The person who /,
   /^This order /,
@@ -73,7 +75,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const action = String(body.action ?? "");
-  const validActions: TradeAction[] = ["set_receive_wallet", "accept", "mark_paid", "release", "claim", "cancel", "refund", "decline", "proceed"];
+  const validActions: TradeAction[] = ["set_receive_wallet", "approve", "accept", "mark_paid", "release", "claim", "cancel", "refund", "decline", "proceed"];
   if (!validActions.includes(action as TradeAction)) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }

@@ -21,7 +21,9 @@ import { OrderDetailView } from "@/components/p2p/order-detail-view";
 type Side = "buy" | "sell";
 
 const TRADE_STATUS_LABELS: Record<string, string> = {
-  created: "Awaiting payment",
+  created: "Awaiting acceptance",
+  approved: "Accepted — fund escrow",
+  escrow_locked: "Escrow funded",
   pending_payment: "Awaiting payment",
   payment_sent: "Payment sent",
   completed: "Completed",
@@ -659,6 +661,11 @@ function OrderForm({
       </div>
 
       {error && <p className="text-sm font-semibold text-coral">{error}</p>}
+      <p className="text-xs leading-5 text-muted">
+        {isBuy
+          ? "The seller will review your order and secure the crypto in escrow before you are asked to make the fiat payment."
+          : "The vendor must accept your order and confirm they can make the fiat payment before you are asked to fund escrow."}
+      </p>
       <button
         disabled={!canConfirm || creating}
         onClick={() => void submitTrade()}
@@ -704,6 +711,7 @@ function TradeClient() {
   const [pinned, setPinned] = useState<string[]>([]);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const offersStampRef = useRef("");
+  const offersAbortRef = useRef<AbortController | null>(null);
 
   const loadTrades = useCallback(async () => {
     const res = await fetch("/api/p2p/trades", { cache: "no-store" });
@@ -719,7 +727,9 @@ function TradeClient() {
   const tradesStampRef = useRef("");
 
   useEffect(() => {
-    if (status === "authenticated") void loadTrades();
+    if (status !== "authenticated") return;
+    const timer = window.setTimeout(() => void loadTrades(), 250);
+    return () => window.clearTimeout(timer);
   }, [status, loadTrades]);
 
   // Silent list refresh while visible — new/dropped trades appear without interaction.
@@ -728,7 +738,7 @@ function TradeClient() {
   const activeTradesByAd = useMemo(() => {
     const map = new Map<string, Trade>();
     for (const t of activeTrades) {
-      if (["created", "pending_payment", "payment_sent"].includes(t.status) && !map.has(t.ad_id)) {
+      if (["created", "approved", "pending_payment", "escrow_locked", "payment_sent", "released"].includes(t.status) && !map.has(t.ad_id)) {
         map.set(t.ad_id, t);
       }
     }
@@ -762,15 +772,26 @@ function TradeClient() {
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    Promise.all([fetch("/api/p2p/currencies", { cache: "no-store" }), fetch("/api/p2p/payment-methods", { cache: "no-store" })])
-      .then(([cRes, pRes]) =>
-        Promise.all([readJson<{ currencies: Currency[] }>(cRes), readJson<{ methods: UserPaymentMethod[] }>(pRes)])
-      )
-      .then(([cData, pData]) => {
-        setCurrencies(cData?.currencies ?? []);
-        setSavedMethods(pData?.methods ?? []);
-      })
-      .catch(() => {});
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      Promise.all([
+        fetch("/api/p2p/currencies", { cache: "no-store", signal: controller.signal }),
+        fetch("/api/p2p/payment-methods", { cache: "no-store", signal: controller.signal })
+      ])
+        .then(([cRes, pRes]) => Promise.all([
+          readJson<{ currencies: Currency[] }>(cRes),
+          readJson<{ methods: UserPaymentMethod[] }>(pRes)
+        ]))
+        .then(([cData, pData]) => {
+          setCurrencies(cData?.currencies ?? []);
+          setSavedMethods(pData?.methods ?? []);
+        })
+        .catch(() => {});
+    }, 400);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [status]);
 
   const loadSocial = useCallback(async () => {
@@ -783,7 +804,9 @@ function TradeClient() {
   }, []);
 
   useEffect(() => {
-    if (status === "authenticated") void loadSocial();
+    if (status !== "authenticated") return;
+    const timer = window.setTimeout(() => void loadSocial(), 600);
+    return () => window.clearTimeout(timer);
   }, [status, loadSocial]);
 
   async function toggleFavorite(vendorId: string) {
@@ -804,11 +827,18 @@ function TradeClient() {
     }).catch(() => {});
   }
 
-  const loadOffers = useCallback(async () => {
-    setOffersLoading(true);
+  const loadOffers = useCallback(async (background = false) => {
+    offersAbortRef.current?.abort();
+    const controller = new AbortController();
+    offersAbortRef.current = controller;
+    if (!background) setOffersLoading(true);
     try {
-      const res = await fetch(`/api/p2p/offers?side=${side}&asset=${asset}&fiat=${fiat}`, { cache: "no-store" });
+      const res = await fetch(`/api/p2p/offers?side=${side}&asset=${asset}&fiat=${fiat}`, {
+        cache: "no-store",
+        signal: controller.signal
+      });
       const data = await readJson<{ offers: Offer[] }>(res);
+      if (!res.ok || controller.signal.aborted) return;
       const list = data?.offers ?? [];
       const stamp = list
         .map((o) => `${o.id}:${o.price_value}:${o.price_margin ?? ""}:${o.min_amount}:${o.max_amount}:${o.ad_type}:${o.vendor.id}:${o.vendor.advertiserStatus}:${o.vendor.completionRate}:${o.vendor.totalTrades}:${o.vendor.avgReleaseSeconds}:${o.vendor.balance}`)
@@ -817,19 +847,27 @@ function TradeClient() {
         offersStampRef.current = stamp;
         setOffers(list);
       }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        // Keep the already-rendered shell/list available; the next poll retries.
+      }
     } finally {
-      setOffersLoading(false);
+      if (offersAbortRef.current === controller) {
+        offersAbortRef.current = null;
+        setOffersLoading(false);
+      }
     }
   }, [side, asset, fiat]);
 
   useEffect(() => {
     if (status === "authenticated") void loadOffers();
+    return () => offersAbortRef.current?.abort();
   }, [status, loadOffers]);
 
   // Vendors auto-refresh silently — new/updated offer lists appear without a refresh button.
   usePoll(() => {
-    if (status === "authenticated") void loadOffers();
-  }, { intervalMs: 15000, enabled: status === "authenticated" });
+    if (status === "authenticated") void loadOffers(true);
+  }, { intervalMs: 30000, enabled: status === "authenticated" });
 
   const fiatOptions = useMemo(() => currencies.filter((c) => c.is_fiat).map((c) => ({ code: c.code })), [currencies]);
 
@@ -947,8 +985,27 @@ function TradeClient() {
 
 export default function TradePage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<TradePageSkeleton />}>
       <TradeClient />
     </Suspense>
+  );
+}
+
+function TradePageSkeleton() {
+  return (
+    <div className="px-4 py-8 text-ink sm:px-6 lg:px-8" aria-busy="true" aria-label="Loading P2P marketplace">
+      <div className="mx-auto max-w-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">P2P Marketplace</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">Buy or sell crypto</h1>
+        <div className="mt-5 border border-line bg-white">
+          <div className="flex h-12 border-b border-line bg-panel" />
+          <div className="space-y-3 p-4 sm:p-5">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="h-28 animate-pulse border border-line bg-panel" />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
