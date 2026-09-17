@@ -6,6 +6,8 @@ import { formatUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { friendlyError, readJson } from "@/lib/client-request";
 import { AVALANCHE_TOKENS, ESCROW_ABI, explorerAddressUrl, getEscrowAddress, isEscrowDeployed } from "@/lib/web3/escrow";
+import { escrowChain } from "@/lib/web3/config";
+import { escrowWalletError, useEscrowChainGuard } from "@/lib/web3/use-escrow-chain";
 
 type Metrics = {
   summary: { totalTrades: number; completedTrades: number; verifiedTrades: number; activeTrades: number; openDisputes: number };
@@ -24,14 +26,15 @@ function shortAddress(value: string | undefined) {
 function TokenTreasuryCard({ symbol, token, owner }: { symbol: string; token: `0x${string}`; owner?: string }) {
   const escrow = getEscrowAddress();
   const { address } = useAccount();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId: escrowChain.id });
   const { writeContractAsync } = useWriteContract();
+  const ensureEscrowChain = useEscrowChainGuard();
   const [withdrawing, setWithdrawing] = useState(false);
   const [message, setMessage] = useState("");
-  const { data: accrued = BigInt(0), refetch: refetchAccrued } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "accruedFees", args: [token] });
-  const { data: liability = BigInt(0), refetch: refetchLiability } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "liabilities", args: [token] });
-  const { data: totalAccrued = BigInt(0), refetch: refetchTotalAccrued } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "totalFeesAccrued", args: [token] });
-  const { data: totalWithdrawn = BigInt(0), refetch: refetchTotalWithdrawn } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "totalFeesWithdrawn", args: [token] });
+  const { data: accrued = BigInt(0), refetch: refetchAccrued } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "accruedFees", args: [token], chainId: escrowChain.id });
+  const { data: liability = BigInt(0), refetch: refetchLiability } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "liabilities", args: [token], chainId: escrowChain.id });
+  const { data: totalAccrued = BigInt(0), refetch: refetchTotalAccrued } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "totalFeesAccrued", args: [token], chainId: escrowChain.id });
+  const { data: totalWithdrawn = BigInt(0), refetch: refetchTotalWithdrawn } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "totalFeesWithdrawn", args: [token], chainId: escrowChain.id });
   const canWithdraw = Boolean(address && owner && address.toLowerCase() === owner.toLowerCase() && accrued > BigInt(0));
 
   async function withdraw() {
@@ -39,12 +42,13 @@ function TokenTreasuryCard({ symbol, token, owner }: { symbol: string; token: `0
     setWithdrawing(true);
     setMessage("");
     try {
+      await ensureEscrowChain();
       const hash = await writeContractAsync({ address: escrow, abi: ESCROW_ABI, functionName: "withdrawFees", args: [token, accrued] });
       await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
       await Promise.all([refetchAccrued(), refetchLiability(), refetchTotalAccrued(), refetchTotalWithdrawn()]);
       setMessage("Fees withdrawn to the configured treasury.");
     } catch (error) {
-      setMessage(error instanceof Error && error.message.includes("User rejected") ? "Withdrawal cancelled in wallet." : "Withdrawal failed. Confirm that the connected wallet is the escrow owner.");
+      setMessage(escrowWalletError(error, "Withdrawal failed. Confirm that the connected wallet is the escrow owner."));
     } finally {
       setWithdrawing(false);
     }
@@ -88,9 +92,9 @@ export function EscrowAdminOverview() {
   const escrow = getEscrowAddress();
   const deployed = isEscrowDeployed();
   const chainId = Number(process.env.NEXT_PUBLIC_ESCROW_CHAIN_ID ?? 43114);
-  const { data: owner } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "owner", query: { enabled: deployed } });
-  const { data: treasury } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "feeRecipient", query: { enabled: deployed } });
-  const { data: feeBps } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "feeBps", query: { enabled: deployed } });
+  const { data: owner } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "owner", chainId: escrowChain.id, query: { enabled: deployed } });
+  const { data: treasury } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "feeRecipient", chainId: escrowChain.id, query: { enabled: deployed } });
+  const { data: feeBps } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "feeBps", chainId: escrowChain.id, query: { enabled: deployed } });
 
   const load = useCallback(async () => {
     setLoading(true);

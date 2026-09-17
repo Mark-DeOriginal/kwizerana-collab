@@ -341,6 +341,7 @@ const statements = [
 
   // P2P Marketplace: indexes
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt TEXT`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS buyer_closed_at TIMESTAMPTZ`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_crypto_idx ON p2p_ads(crypto_currency)`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_fiat_idx ON p2p_ads(fiat_currency)`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_status_idx ON p2p_ads(status)`,

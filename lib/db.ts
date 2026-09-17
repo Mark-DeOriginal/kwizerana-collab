@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 
 declare global {
   var __kwizeranaDbInit: Promise<void> | undefined;
+  var __kwizeranaDbInitVersion: number | undefined;
 }
 
 const schemaStatements = [
@@ -378,6 +379,7 @@ const schemaStatements = [
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS decline_feedback TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS declined_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS inventory_confirmed_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS buyer_closed_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS fee_rate NUMERIC NOT NULL DEFAULT 0`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS release_hold_minutes INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS funded_at TIMESTAMPTZ`,
@@ -447,7 +449,7 @@ const schemaStatements = [
     version INTEGER PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  `INSERT INTO app_schema_versions (version) VALUES (2) ON CONFLICT (version) DO NOTHING`
+  `INSERT INTO app_schema_versions (version) VALUES (3) ON CONFLICT (version) DO NOTHING`
 ];
 
 export function getDatabaseUrl() {
@@ -474,10 +476,11 @@ export async function dbQuery<T>(query: string, params: unknown[] = []) {
 }
 
 const SCHEMA_ADVISORY_LOCK_KEY = 7480001;
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 export async function ensureDatabase() {
-  if (!global.__kwizeranaDbInit) {
+  if (!global.__kwizeranaDbInit || global.__kwizeranaDbInitVersion !== CURRENT_SCHEMA_VERSION) {
+    global.__kwizeranaDbInitVersion = CURRENT_SCHEMA_VERSION;
     const initialization = (async () => {
       const sql = getSql();
       // Serverless instances still need a readiness check, but a healthy,
@@ -500,6 +503,7 @@ export async function ensureDatabase() {
       // A temporary Neon/network failure must not leave this process holding a
       // permanently rejected promise. The next request gets a clean retry.
       global.__kwizeranaDbInit = undefined;
+      global.__kwizeranaDbInitVersion = undefined;
       throw error;
     });
   }

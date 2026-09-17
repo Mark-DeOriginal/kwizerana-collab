@@ -67,6 +67,7 @@ Status: **planned on top of partially implemented features**
 - Capture the buyer's Avalanche receiving wallet before vendor approval, allow it to be changed only while the order is still awaiting approval, and keep the funded escrow recipient immutable.
 - Persist the Avalanche wallet connected from the dashboard as the user's primary default and hydrate awaiting-approval trades from that saved address.
 - Keep requested trades visible until participant cancellation; never translate an escrow recovery deadline into an unverified off-chain terminal state.
+- Keep cancelled or expired funded trades in Active Trades until the escrow refund is confirmed; clearly distinguish refund required from refund pending.
 - Distinguish the request initiator from buyer/seller asset roles: initiators cancel their request, while receiving counterparties decline it.
 - Apply initiator permissions after funding as well, and keep receipt submission consistent across buy and sell trades while enforcing the escrow actor on-chain and server-side.
 - Keep Buy and Sell acceptance semantics distinct: Buy vendors review and fund escrow, while Sell vendors first confirm fiat liquidity and only then may the initiating crypto seller fund escrow.

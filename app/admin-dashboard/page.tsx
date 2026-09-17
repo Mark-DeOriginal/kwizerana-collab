@@ -31,6 +31,8 @@ import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
 import { EscrowAdminOverview } from "@/components/EscrowAdminOverview";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
 import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
+import { escrowChain } from "@/lib/web3/config";
+import { useEscrowChainGuard } from "@/lib/web3/use-escrow-chain";
 import { usePoll } from "@/lib/p2p/use-realtime";
 
 const ALL_PERMISSIONS: { key: Permission; label: string; description: string }[] = [
@@ -819,6 +821,7 @@ type AdminDispute = {
   seller_name: string;
   created_at: string;
   resolved_at: string | null;
+  receipt_image: string | null;
 };
 
 function DisputesTab() {
@@ -829,9 +832,10 @@ function DisputesTab() {
   const [pendingHashes, setPendingHashes] = useState<Record<string, string>>({});
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const ensureEscrowChain = useEscrowChainGuard();
   const escrow = getEscrowAddress();
   const realEscrow = isEscrowDeployed();
-  const { data: arbitrator } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "arbitrator", query: { enabled: realEscrow } });
+  const { data: arbitrator } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "arbitrator", chainId: escrowChain.id, query: { enabled: realEscrow } });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -862,6 +866,7 @@ function DisputesTab() {
         if (!address || !arbitrator || address.toLowerCase() !== arbitrator.toLowerCase()) {
           throw new Error("Connect the escrow arbitrator wallet or Safe before resolving this dispute.");
         }
+        await ensureEscrowChain();
         txHash = await writeContractAsync({
           address: escrow,
           abi: ESCROW_ABI,
@@ -913,6 +918,12 @@ function DisputesTab() {
                   </div>
                   <p className="mt-1 text-sm font-semibold">Buyer: {d.buyer_name} · Seller: {d.seller_name}</p>
                   <p className="mt-1 text-sm text-muted">{d.reason}</p>
+                  {d.receipt_image && (
+                    <a href={d.receipt_image} target="_blank" rel="noreferrer" className="mt-3 inline-block border border-line bg-panel p-2 transition-colors hover:border-ocean">
+                      <img src={d.receipt_image} alt={`Payment receipt for ${d.trade_ref}`} className="max-h-40 max-w-64 object-contain" />
+                      <span className="mt-1 block text-xs font-semibold text-ocean">Open payment receipt</span>
+                    </a>
+                  )}
                   <p className="mt-1 text-xs text-muted">Raised {relativeTime(d.created_at)}</p>
                 </div>
                 {d.status === "open" ? (

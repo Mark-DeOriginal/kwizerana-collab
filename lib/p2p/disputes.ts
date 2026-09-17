@@ -18,15 +18,27 @@ export async function createDispute(
 ): Promise<Dispute> {
   await ensureDatabase();
 
-  const trades = await dbQuery<{ buyer_id: string; seller_id: string; status: string }>(
-    `SELECT buyer_id, seller_id, status FROM p2p_trades WHERE id = $1`,
+  const trades = await dbQuery<{
+    buyer_id: string;
+    seller_id: string;
+    buyer_owner_id: string | null;
+    seller_owner_id: string | null;
+    status: string;
+  }>(
+    `SELECT t.buyer_id, t.seller_id, t.status,
+            buyer.owner_user_id AS buyer_owner_id,
+            seller.owner_user_id AS seller_owner_id
+     FROM p2p_trades t
+     JOIN users buyer ON buyer.id = t.buyer_id
+     JOIN users seller ON seller.id = t.seller_id
+     WHERE t.id = $1`,
     [input.tradeId]
   );
   const trade = trades[0];
   if (!trade) throw new Error("Trade not found.");
 
-  const isBuyer = trade.buyer_id === userId;
-  const isSeller = trade.seller_id === userId;
+  const isBuyer = trade.buyer_id === userId || trade.buyer_owner_id === userId;
+  const isSeller = trade.seller_id === userId || trade.seller_owner_id === userId;
   if (!isBuyer && !isSeller) throw new Error("Not your trade.");
   if (trade.status === "completed" || trade.status === "cancelled" || trade.status === "disputed" || trade.status === "expired") {
     throw new Error("This trade can no longer be disputed.");
@@ -44,7 +56,9 @@ export async function createDispute(
     [input.tradeId, inserted[0].id]
   );
 
-  const counterpartyId = isBuyer ? trade.seller_id : trade.buyer_id;
+  const counterpartyId = isBuyer
+    ? trade.seller_owner_id || trade.seller_id
+    : trade.buyer_owner_id || trade.buyer_id;
   await createNotification(counterpartyId, {
     type: "trade_disputed",
     title: "Trade disputed",
@@ -121,13 +135,14 @@ export type AdminDispute = {
   seller_name: string;
   created_at: string;
   resolved_at: string | null;
+  receipt_image: string | null;
 };
 
 export async function listAllDisputes(): Promise<AdminDispute[]> {
   await ensureDatabase();
   return dbQuery<AdminDispute>(
     `SELECT d.id::TEXT AS id, d.trade_id::TEXT AS trade_id, t.trade_ref,
-            d.reason, d.status, d.resolution, d.raised_by,
+            d.reason, d.status, d.resolution, d.raised_by, t.receipt_image,
             b.name AS buyer_name, s.name AS seller_name,
             d.created_at, d.resolved_at
      FROM p2p_disputes d

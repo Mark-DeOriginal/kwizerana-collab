@@ -130,6 +130,7 @@ export type Trade = {
   decline_feedback: string | null;
   declined_at: string | null;
   inventory_confirmed_at: string | null;
+  buyer_closed_at: string | null;
   seller_wallet_address: string | null;
   buyer_wallet_address: string | null;
   escrow_status: string | null;
@@ -159,6 +160,13 @@ export type TradeStatus =
   | "reconciliation_required";
 
 export const ACTIVE_TRADE_STATUSES: TradeStatus[] = ["created", "approved", "escrow_locked", "payment_sent", "released", "disputed", "reconciliation_required"];
+
+/** A cancelled/expired trade remains financially active until funded escrow is refunded. */
+export function isActiveTrade(trade: Pick<Trade, "status" | "escrow_status" | "my_role" | "buyer_closed_at">): boolean {
+  if (trade.status === "pending_payment" || ACTIVE_TRADE_STATUSES.includes(trade.status as TradeStatus)) return true;
+  const awaitingRefund = (trade.status === "cancelled" || trade.status === "expired") && trade.escrow_status === "funded";
+  return awaitingRefund && !(trade.my_role === "buyer" && trade.buyer_closed_at);
+}
 
 export const TRADE_STATUS_LABELS: Record<string, string> = {
   created: "Awaiting approval",
@@ -222,7 +230,7 @@ const TRADE_SELECT = `
            t.status, t.buyer_id, t.seller_id,
            CASE WHEN t.buyer_id = ad.user_id THEN t.seller_id ELSE t.buyer_id END AS initiator_id,
            t.buyer_paid_at, t.released_at, t.expires_at, t.created_at,
-           t.escrow_locked_at, t.claimed_at, t.decline_feedback, t.declined_at, t.inventory_confirmed_at,
+           t.escrow_locked_at, t.claimed_at, t.decline_feedback, t.declined_at, t.inventory_confirmed_at, t.buyer_closed_at,
            t.seller_wallet_address, t.buyer_wallet_address,
            buyer.name AS buyer_name, seller.name AS seller_name,
            pm.method_name AS payment_method_name, pm.method_type AS payment_method_type,
@@ -446,7 +454,7 @@ export async function listTrades(userId: string, isSuperAdmin = false): Promise<
   return rows.map((row) => mapTrade(row, userId, ownedVendorIds, isSuperAdmin));
 }
 
-export type TradeAction = "set_receive_wallet" | "approve" | "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "decline" | "proceed";
+export type TradeAction = "set_receive_wallet" | "approve" | "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "close_trade" | "decline" | "proceed";
 
 export type TradeActionInput = {
   actionRequestId?: string;
@@ -513,6 +521,10 @@ const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) =>
   refund: {
     title: "Escrow refunded",
     body: (ref) => `The escrow for ${ref} was refunded to the seller.`
+  },
+  close_trade: {
+    title: "Trade closed",
+    body: (ref) => `The fiat-paying buyer confirmed no payment was sent for ${ref}. The seller can complete the escrow refund after the protection period.`
   },
   decline: {
     title: "Order declined by vendor",
@@ -602,7 +614,10 @@ export async function applyTradeAction(
     }
     case "mark_paid": {
       if (!isBuyer) throw new Error("Only the buyer can submit payment.");
-      if (status !== "escrow_locked") throw new Error("Payment can only be submitted after the vendor funds the escrow.");
+      const protectingCancelledPayment = (status === "cancelled" || status === "expired") && escrowFunded;
+      if (status !== "escrow_locked" && !protectingCancelledPayment) {
+        throw new Error("Payment can only be submitted while the crypto remains funded in escrow.");
+      }
       newStatus = "payment_sent";
       break;
     }
@@ -645,6 +660,14 @@ export async function applyTradeAction(
       }
       if (!escrowFunded) throw new Error("The escrow has no funds to refund.");
       escrowStatus = "refunded";
+      break;
+    }
+    case "close_trade": {
+      if (!isBuyer) throw new Error("Only the fiat-paying buyer can close this cancelled trade.");
+      if (status !== "cancelled" && status !== "expired") {
+        throw new Error("Only a cancelled trade can be closed this way.");
+      }
+      if (!escrowFunded) throw new Error("This trade is already closed.");
       break;
     }
     case "decline": {
@@ -697,6 +720,7 @@ export async function applyTradeAction(
         decline_feedback = CASE WHEN $7 = 'proceed' THEN NULL
                                 WHEN $7 = 'decline' THEN $6
                                 ELSE decline_feedback END,
+        buyer_closed_at = CASE WHEN $7 = 'close_trade' THEN NOW() ELSE buyer_closed_at END,
         updated_at = NOW()
       WHERE id = $1 AND status = $9
       RETURNING id`,

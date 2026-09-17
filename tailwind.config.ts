@@ -14,6 +14,9 @@ const config: Config = {
         coral: "#d76b55",
         ocean: "#2f6f91"
       },
+      fontFamily: {
+        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"]
+      },
       boxShadow: {
         tight: "0 1px 2px rgba(24, 32, 38, 0.06), 0 10px 22px rgba(24, 32, 38, 0.08)"
       }

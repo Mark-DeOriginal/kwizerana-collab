@@ -40,7 +40,7 @@ import type { P2PNotification } from "@/lib/p2p/notifications";
 import type { VendorStatus } from "@/lib/p2p/vendor";
 import type { Review } from "@/lib/p2p/reviews";
 import type { DisputeDetail } from "@/lib/p2p/disputes";
-import { ACTIVE_TRADE_STATUSES, type Trade } from "@/lib/p2p/trades";
+import { isActiveTrade, type Trade } from "@/lib/p2p/trades";
 import { OrderDetailView, TradeOrderCard } from "@/components/p2p/order-detail-view";
 import { Modal } from "@/components/p2p/modal";
 import { usePoll, useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
@@ -263,7 +263,7 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
 
         {/* Active trades + activity */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <Card id="active-trades" title="Active trades" subtitle="Trades in progress" icon={<Clock className="h-4 w-4" />} action={<Link href="/p2p-marketplace/trade" className="text-xs font-semibold text-ocean hover:underline">Start trading</Link>} className="scroll-mt-24" >
+          <Card id="active-trades" title="Active trades" subtitle="Trades in progress" icon={<Clock className="h-4 w-4" />} className="scroll-mt-24" >
             <ActiveTradesPanel trades={data?.trades ?? []} loading={loading && !data} onChanged={load} />
           </Card>
           <ActivityPanel notifications={data?.notifications ?? []} loading={loading && !data} />
@@ -311,7 +311,10 @@ function DashboardAttention({ data, loading }: { data: DashboardData | null; loa
     );
   }
 
-  const activeTrades = (data?.trades ?? []).filter((trade) => ACTIVE_TRADE_STATUSES.includes(trade.status as (typeof ACTIVE_TRADE_STATUSES)[number]));
+  const activeTrades = (data?.trades ?? []).filter(isActiveTrade);
+  const refundTrades = activeTrades.filter((trade) =>
+    (trade.status === "cancelled" || trade.status === "expired") && trade.escrow_status === "funded" && trade.my_role === "seller"
+  );
   const reconciliationTrades = activeTrades.filter((trade) => trade.status === "reconciliation_required");
   const openDisputes = (data?.disputes ?? []).filter((dispute) => dispute.status === "open");
   const securityNeedsAttention = Boolean(data?.security && (!data.security.emailVerified || !data.security.twoFactorEnabled));
@@ -321,7 +324,12 @@ function DashboardAttention({ data, loading }: { data: DashboardData | null; loa
   let href = "/p2p-marketplace";
   let action = "Explore market";
 
-  if (reconciliationTrades.length > 0) {
+  if (refundTrades.length > 0) {
+    title = `${refundTrades.length} escrow refund${refundTrades.length === 1 ? "" : "s"} required`;
+    message = "A cancelled trade still has crypto in escrow. Open the trade to return the funds to your wallet.";
+    href = "/dashboard#active-trades";
+    action = "Complete refund";
+  } else if (reconciliationTrades.length > 0) {
     title = `${reconciliationTrades.length} trade${reconciliationTrades.length === 1 ? "" : "s"} need reconciliation`;
     message = "A chain and database state do not match. Do not send more funds; review the trade status with support.";
     href = "/dashboard#active-trades";
@@ -1144,11 +1152,15 @@ function VendorApplicationForm({ busy, error, applying, setApplying, bio, setBio
 }
 
 function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; loading?: boolean; onChanged: () => void }) {
-  const active = trades.filter((t) => (ACTIVE_TRADE_STATUSES as string[]).includes(t.status));
+  const active = trades.filter(isActiveTrade);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Keep the selected trade available when an action moves it from active to
   // completed. The modal needs to remain open so the buyer can rate the vendor.
   const selected = trades.find((t) => t.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (selectedId && selected && !isActiveTrade(selected)) setSelectedId(null);
+  }, [selected, selectedId]);
 
   if (loading) {
     return (
@@ -1195,7 +1207,7 @@ function LiveTradeModal({ trade, onChanged }: { trade: Trade; onChanged: () => v
     setLive(trade);
   }, [trade]);
 
-  useTradeSubscription(trade.id, (t) => setLive(t), { enabled: !isTerminalTrade(live.status) });
+  useTradeSubscription(trade.id, (t) => setLive(t), { enabled: !isTerminalTrade(live.status) || isActiveTrade(live) });
 
   return <OrderDetailView trade={live} onRefresh={onChanged} />;
 }
@@ -1215,7 +1227,7 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
   const [stars, setStars] = useState(0);
   const [comment, setComment] = useState("");
 
-  const history = trades.filter((t) => t.status === "completed" || t.status === "cancelled" || t.status === "expired");
+  const history = trades.filter((t) => !isActiveTrade(t) && (t.status === "completed" || t.status === "cancelled" || t.status === "expired"));
   const filtered = filter === "all" ? history : history.filter((t) => t.status === filter);
   const shown = filtered.slice(0, visible);
   const reviewedById = useMemo(() => new Map(submittedReviews.map((r) => [r.trade_id, r])), [submittedReviews]);

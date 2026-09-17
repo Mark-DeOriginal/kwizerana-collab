@@ -31,6 +31,7 @@ import {
 import { TradeChat } from "@/components/p2p/trade-chat";
 import { NumInput } from "@/components/p2p/custom-ui";
 import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
+import { escrowChain } from "@/lib/web3/config";
 
 function fn(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) value = 0;
@@ -56,8 +57,9 @@ function timeAgo(iso: string): string {
 export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => void }) {
   const isBuyer = trade.my_role === "buyer";
   const counterparty = isBuyer ? trade.seller_name : trade.buyer_name;
-  const active = ["created", "approved", "escrow_locked", "payment_sent", "released"].includes(trade.status);
+  const refundPending = (trade.status === "cancelled" || trade.status === "expired") && trade.escrow_status === "funded";
   const needsAction =
+    refundPending ? true :
     trade.status === "created" && !trade.is_initiator ? (isBuyer || Boolean(trade.buyer_wallet_address)) :
     trade.status === "created" && trade.is_initiator && isBuyer && !trade.buyer_wallet_address ? true :
     trade.status === "approved" && !isBuyer ? true :
@@ -70,7 +72,7 @@ export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => 
       ? "bg-mint text-moss"
       : trade.status === "disputed"
         ? "bg-coral/10 text-coral"
-        : trade.status === "cancelled" || trade.status === "expired"
+        : (trade.status === "cancelled" || trade.status === "expired") && !refundPending
           ? "bg-panel text-muted"
           : needsAction
             ? "bg-ocean/10 text-ocean"
@@ -87,7 +89,7 @@ export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => 
             <div className="flex items-center gap-2 text-sm">
               <span className="font-mono text-xs text-muted">{trade.trade_ref}</span>
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${tone}`}>
-                {TRADE_STATUS_LABELS[trade.status] ?? trade.status}
+                {refundPending ? (isBuyer ? "Cancelled" : "Request refund") : (TRADE_STATUS_LABELS[trade.status] ?? trade.status)}
               </span>
               {needsAction && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-ocean px-2 py-0.5 text-[11px] font-bold text-white">
@@ -167,6 +169,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
     abi: ESCROW_ABI,
     functionName: "quoteFee",
     args: [tradeAmountUnits],
+    chainId: escrowChain.id,
     query: { enabled: escrowConfigured && !hasEscrowDeposit }
   });
   const { data: fundedTrade } = useReadContract({
@@ -174,6 +177,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
     abi: ESCROW_ABI,
     functionName: "trades",
     args: [tradeRefToBytes32(trade.trade_ref)],
+    chainId: escrowChain.id,
     query: { enabled: escrowConfigured && hasEscrowDeposit }
   });
   const escrowFeeUnits = hasEscrowDeposit ? fundedTrade?.[4] : currentFeeQuote?.[0];
@@ -285,6 +289,39 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
     onRefresh();
   };
 
+  const protectCancelledPaymentAndDispute = async (txHash?: string) => {
+    if (!receiptPreview || !disputeReason.trim() || disputeBusy) return;
+    setDisputeBusy(true);
+    setError("");
+    try {
+      const paymentResponse = await fetch(`/api/p2p/trades/${trade.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "mark_paid",
+          action_request_id: `${trade.id}-protect-payment-${crypto.randomUUID()}`,
+          receipt_image: receiptPreview,
+          tx_hash: txHash
+        })
+      });
+      const paymentData = await readJson<{ error?: string }>(paymentResponse);
+      if (!paymentResponse.ok) throw new Error(paymentData?.error ?? "Unable to protect this payment.");
+
+      const disputeResponse = await fetch(`/api/p2p/trades/${trade.id}/dispute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: disputeReason.trim() })
+      });
+      const disputeData = await readJson<{ error?: string }>(disputeResponse);
+      if (!disputeResponse.ok) throw new Error(disputeData?.error ?? "Unable to submit the dispute.");
+      onRefresh();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Unable to submit the dispute.");
+    } finally {
+      setDisputeBusy(false);
+    }
+  };
+
   const doConfirmInventory = async (declaredBalance: string) => {
     const value = Number(declaredBalance);
     if (!Number.isFinite(value) || value < 0) return;
@@ -319,7 +356,18 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         </span>
       </div>
     ) : trade.status === "cancelled" ? (
-      <div className="border border-line bg-panel p-3 text-sm text-muted">This order was cancelled.</div>
+      escrowFunded ? (
+        <div className="border border-coral/30 bg-coral/5 p-3 text-sm">
+          <p className="font-semibold text-coral">{isBuyer ? "Trade cancelled" : "Request refund from escrow"}</p>
+          <p className="mt-1 text-muted">
+            {isBuyer
+              ? "If you sent the fiat payment before this trade was cancelled, submit a dispute below with your payment receipt."
+              : "Your trade was cancelled while the crypto was held in escrow. Request a refund below to return it to your wallet."}
+          </p>
+        </div>
+      ) : (
+        <div className="border border-line bg-panel p-3 text-sm text-muted">This order was cancelled.</div>
+      )
     ) : trade.status === "expired" ? (
       <div className="border border-line bg-panel p-3 text-sm">
         <p className="font-semibold text-muted">Order expired</p>
@@ -453,15 +501,12 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
             ? "A live contract fee will be shown before real escrow funding"
             : escrowFee === null || feePercent === null
               ? undefined
-            : isBuyer
-              ? `${fn(feePercent, 4)}% · paid by the crypto seller; your crypto amount is not reduced`
-              : `${fn(feePercent, 4)}% · returned with your principal if the trade is refunded`}
+              : `${fn(feePercent, 4)}%`}
         />
         {!isBuyer && totalEscrowDeposit !== null && (
           <Row
             label="Total escrow deposit"
             value={`${fn(Number(totalEscrowDeposit), 6)} ${trade.crypto_currency}`}
-            note="trade amount plus escrow fee"
           />
         )}
         {trade.payment_reference && <Row label="Payment reference" value={<span className="font-mono">{trade.payment_reference}</span>} />}
@@ -660,11 +705,16 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                 </label>
               )}
               {receiptPreview && (
-                <MarkPaymentSentButton
-                  trade={trade}
-                  onCompleted={(txHash) => void doAction("mark_paid", { receipt_image: receiptPreview, tx_hash: txHash })}
-                  onError={setError}
-                />
+                <>
+                  <div className="border border-line bg-panel p-3 text-xs leading-5 text-muted">
+                    Your wallet confirmation records that you have marked the fiat payment as sent. It does not release the escrowed crypto—the seller must verify that the money arrived before releasing it.
+                  </div>
+                  <MarkPaymentSentButton
+                    trade={trade}
+                    onCompleted={(txHash) => void doAction("mark_paid", { receipt_image: receiptPreview, tx_hash: txHash })}
+                    onError={setError}
+                  />
+                </>
               )}
             </div>
           ) : (
@@ -694,7 +744,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
               onCompleted={(txHash) => void doAction("release", { tx_hash: txHash })}
               onError={setError}
             />
-            <p className="text-xs text-muted">Only release after you&apos;ve confirmed the {fn(trade.fiat_amount)} {trade.fiat_currency} arrived in your account.</p>
+            <p className="text-xs text-muted">A receipt alone is not proof of payment. Release only after the full {fn(trade.fiat_amount)} {trade.fiat_currency} is visible in your account.</p>
           </>
         )}
 
@@ -732,10 +782,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         {/* Seller: cancelled/expired with funded escrow → refund */}
         {!isBuyer && (trade.status === "cancelled" || trade.status === "expired") && escrowFunded && (
           <>
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-coral">
-              <TriangleAlert className="h-3.5 w-3.5" />
-              {fn(trade.crypto_amount, 6)} {trade.crypto_currency} is still in escrow. Refund it back to your wallet.
-            </p>
             <RefundEscrowButton
               trade={trade}
               onCompleted={(txHash) => void doAction("refund", { tx_hash: txHash })}
@@ -744,9 +790,79 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           </>
         )}
 
-        {/* Buyer: cancellation / expiry info */}
+        {/* Fiat buyer: protect a payment made before cancellation and open a dispute. */}
         {isBuyer && (trade.status === "cancelled" || trade.status === "expired") && escrowFunded && (
-          <p className="text-xs text-muted">The seller holds the escrowed crypto and will refund it to their wallet.</p>
+          !showDispute ? (
+            <>
+              <button
+                onClick={() => setShowDispute(true)}
+                className="flex h-10 w-full items-center justify-center border border-coral text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white"
+              >
+                Submit dispute
+              </button>
+              <CloseCancelledTradeControl
+                busy={activeAction === "close_trade"}
+                onClose={() => doAction("close_trade")}
+              />
+            </>
+          ) : (
+            <div className="space-y-3 border border-coral/40 bg-coral/5 p-3">
+              <div>
+                <p className="text-sm font-semibold text-coral">Submit payment evidence</p>
+                <p className="mt-1 text-xs leading-5 text-muted">Upload the receipt for the fiat payment you sent before the trade was cancelled. Your wallet will record that payment was sent, preventing the escrow refund while an admin reviews the case.</p>
+              </div>
+              {receiptPreview ? (
+                <div className="relative border border-line bg-white p-2">
+                  <img src={receiptPreview} alt="Payment receipt preview" className="max-h-48 object-contain" />
+                  <button onClick={() => { setReceiptPreview(null); setReceiptFile(null); }} className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center bg-ink text-white transition-colors hover:bg-coral" aria-label="Remove receipt">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex h-24 cursor-pointer items-center justify-center gap-2 border border-dashed border-line bg-white text-sm text-muted transition-colors hover:border-ocean hover:text-ink">
+                  <ImagePlus className="h-4 w-4" />
+                  Upload payment receipt
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      setReceiptFile(file);
+                      try {
+                        setReceiptPreview(await compressImage(file));
+                      } catch {
+                        setReceiptFile(null);
+                        setError("Unable to prepare that receipt. Try another image.");
+                      }
+                    }}
+                  />
+                </label>
+              )}
+              <textarea
+                value={disputeReason}
+                onChange={(event) => setDisputeReason(event.target.value)}
+                placeholder="Describe when and how you sent the fiat payment."
+                rows={3}
+                className="w-full border border-line bg-white px-3 py-2 text-sm outline-none focus:border-coral"
+              />
+              {receiptPreview && disputeReason.trim() && (
+                <MarkPaymentSentButton
+                  trade={trade}
+                  onCompleted={(txHash) => void protectCancelledPaymentAndDispute(txHash)}
+                  onError={setError}
+                />
+              )}
+              <button
+                onClick={() => { setShowDispute(false); setDisputeReason(""); setReceiptPreview(null); setReceiptFile(null); }}
+                disabled={disputeBusy}
+                className="h-9 border border-line bg-white px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          )
         )}
 
         {/* Cancel on escrow_locked — buyer hasn't paid yet (seller cancel lives in their funding block) */}
@@ -754,11 +870,11 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />
         )}
 
-        {/* Dispute — payment_sent, buyer only (the seller reviews the receipt instead) */}
-        {trade.status === "payment_sent" && isBuyer && !showDispute && (
-          disputeReady ? (
+        {/* Either participant can dispute a marked payment; buyers wait through the response window. */}
+        {trade.status === "payment_sent" && !showDispute && (
+          !isBuyer || disputeReady ? (
             <button onClick={() => setShowDispute(true)} className="flex h-10 w-full items-center justify-center border border-coral text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white">
-              Submit dispute
+              {isBuyer ? "Submit dispute" : "Report payment issue"}
             </button>
           ) : (
             <button disabled className="flex h-10 w-full items-center justify-center gap-2 border border-line bg-panel text-sm font-semibold text-muted">
@@ -768,7 +884,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           )
         )}
 
-        {showDispute && isBuyer && trade.status === "payment_sent" && (
+        {showDispute && trade.status === "payment_sent" && (
           <div className="flex flex-col gap-2 border border-coral/40 bg-coral/5 p-3">
             <p className="text-sm font-semibold text-coral">Describe the issue</p>
             <textarea
@@ -926,6 +1042,62 @@ function CancelTradeButton({ busy, onClick }: { busy: boolean; onClick: () => vo
     >
       {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Yes, cancel trade"}
     </button>
+  );
+}
+
+function CloseCancelledTradeControl({
+  busy,
+  onClose
+}: {
+  busy: boolean;
+  onClose: () => Promise<boolean>;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [count, setCount] = useState(6);
+
+  useEffect(() => {
+    if (!armed || count <= 0) return;
+    const timer = window.setTimeout(() => setCount((current) => current - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [armed, count]);
+
+  if (!armed) {
+    return (
+      <button
+        onClick={() => { setArmed(true); setCount(6); }}
+        className="flex h-10 w-full items-center justify-center border border-line text-sm font-semibold text-muted transition-colors hover:border-ink hover:text-ink"
+      >
+        Close trade
+      </button>
+    );
+  }
+
+  if (count > 0) {
+    return (
+      <div className="space-y-2 border border-line bg-panel p-3">
+        <p className="text-xs leading-5 text-muted">Close this trade only if you did not send any fiat payment. Closing allows the escrowed crypto to return to the seller.</p>
+        <button disabled className="flex h-10 w-full cursor-not-allowed items-center justify-center border border-line bg-white text-sm font-semibold text-muted">
+          {count} · Confirm no payment was sent
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 border border-line bg-panel p-3">
+      <p className="text-xs leading-5 text-muted">By closing this trade, you confirm that you did not send any fiat payment.</p>
+      <button
+        onClick={() => void onClose()}
+        disabled={busy}
+        className="flex h-10 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+      >
+        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+        Close trade
+      </button>
+      <button disabled={busy} onClick={() => { setArmed(false); setCount(6); }} className="h-9 w-full border border-line bg-white text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60">
+        Keep trade open
+      </button>
+    </div>
   );
 }
 

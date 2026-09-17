@@ -14,7 +14,7 @@ import { CRYPTO_CURRENCIES, type Currency } from "@/lib/p2p/currencies-shared";
 import { COUNTRIES, PAYMENT_METHOD_CATEGORY_LABELS, type Country } from "@/lib/p2p/countries-shared";
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import type { Offer } from "@/lib/p2p/offers";
-import type { Trade } from "@/lib/p2p/trades";
+import { isActiveTrade, type Trade } from "@/lib/p2p/trades";
 import { usePoll, useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
 import { OrderDetailView } from "@/components/p2p/order-detail-view";
 
@@ -276,7 +276,9 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, i
             {activeTrade && (
               <span className="inline-flex items-center gap-1.5 rounded-full border border-ocean/30 bg-ocean/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ocean">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ocean" />
-                Trade in progress
+                {(activeTrade.status === "cancelled" || activeTrade.status === "expired") && activeTrade.escrow_status === "funded"
+                  ? activeTrade.my_role === "seller" ? "Request refund" : "Trade cancelled"
+                  : "Trade in progress"}
               </span>
             )}
             <span className="text-xs text-muted">
@@ -312,7 +314,9 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, i
             className="flex h-11 shrink-0 items-center gap-2 bg-ocean px-6 text-sm font-semibold text-white transition-colors hover:bg-ocean/90"
           >
             <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-            Resume trade
+            {(activeTrade.status === "cancelled" || activeTrade.status === "expired") && activeTrade.escrow_status === "funded"
+              ? activeTrade.my_role === "seller" ? "Complete refund" : "Review cancelled trade"
+              : "Resume trade"}
             <ArrowRight className="h-4 w-4" />
           </button>
         ) : myUserId && myUserId === offer.vendor.id ? (
@@ -738,7 +742,7 @@ function TradeClient() {
   const activeTradesByAd = useMemo(() => {
     const map = new Map<string, Trade>();
     for (const t of activeTrades) {
-      if (["created", "approved", "pending_payment", "escrow_locked", "payment_sent", "released"].includes(t.status) && !map.has(t.ad_id)) {
+      if (isActiveTrade(t) && !map.has(t.ad_id)) {
         map.set(t.ad_id, t);
       }
     }
@@ -746,15 +750,19 @@ function TradeClient() {
   }, [activeTrades]);
 
   useTradeSubscription(activeTrade?.id, (t) => setActiveTrade(t), {
-    enabled: Boolean(activeTrade) && !isTerminalTrade(activeTrade?.status ?? "")
+    enabled: Boolean(activeTrade) && (!isTerminalTrade(activeTrade?.status ?? "") || Boolean(activeTrade && isActiveTrade(activeTrade)))
   });
 
   // Instant refresh after an explicit action in the order modal (polling handles the rest).
   const refetchActiveTrade = useCallback(async (tradeId: string) => {
     const res = await fetch(`/api/p2p/trades/${tradeId}`, { cache: "no-store" });
     const data = await readJson<{ trade?: Trade }>(res);
-    if (res.ok && data?.trade) setActiveTrade(data.trade);
-  }, []);
+    if (res.ok && data?.trade) {
+      if (isActiveTrade(data.trade)) setActiveTrade(data.trade);
+      else setActiveTrade(null);
+      void loadTrades();
+    }
+  }, [loadTrades]);
 
   // Restore an in-progress trade after a refresh (e.g. /trade?trade=123).
   useEffect(() => {
@@ -890,7 +898,7 @@ function TradeClient() {
   return (
     <div className="px-4 py-8 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto max-w-2xl">
-        <div className="flex items-center justify-between gap-4">
+        <div>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">P2P Marketplace</p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight">
@@ -901,9 +909,6 @@ function TradeClient() {
                   : `${side === "buy" ? "Buy" : "Sell"} crypto`}
             </h1>
           </div>
-          <Link href="/p2p-marketplace" className="text-sm font-semibold text-ocean hover:underline">
-            Back
-          </Link>
         </div>
 
         <div className="mt-5 overflow-hidden border border-line bg-white">

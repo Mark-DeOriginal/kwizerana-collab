@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS p2p_trades (
   seller_confirmed_at TIMESTAMPTZ,
   released_at TIMESTAMPTZ,
   cancelled_at TIMESTAMPTZ,
+  buyer_closed_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ NOT NULL,
   appeal_deadline_at TIMESTAMPTZ,
   dispute_id BIGINT,

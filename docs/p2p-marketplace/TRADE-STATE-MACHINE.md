@@ -138,6 +138,10 @@ Off-chain jobs can mark intent or surface work, but cannot recover funds by chan
 
 Product decision (2026-09-16): a requested or funded trade is not automatically removed from Active Trades on a timer. It remains active until a participant explicitly cancels it or a verified on-chain terminal outcome is reconciled. Once the buyer marks payment, cancellation is unavailable and the parties must release or dispute the trade.
 
+If the application trade is cancelled while escrow is still funded, the fiat buyer must not be shown seller refund controls. If the buyer already sent fiat, the buyer can upload a receipt and mark payment on-chain during the contract protection window. That transition blocks the refund, records the receipt, and immediately opens a dispute for administrator review. The seller may receive a refund only when no protected payment claim exists or when arbitration resolves the dispute to the seller.
+
+If the fiat buyer did not send payment, the buyer may explicitly close the cancelled trade after a confirmation countdown. This is an off-chain acknowledgement and requires no wallet action; it removes the trade from that buyer's active queue while the seller's escrow refund remains governed by the contract protection period. A payment dispute remains available only before the buyer closes the trade.
+
 ## Disputes
 
 Opening a dispute freezes normal application actions where the contract permits. Resolution must create an auditable decision and initiate the matching contract action. A dispute is not financially resolved until the resulting event is confirmed and reconciled.

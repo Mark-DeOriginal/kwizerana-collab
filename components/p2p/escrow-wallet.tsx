@@ -14,6 +14,8 @@ import {
   tradeRefToBytes32
 } from "@/lib/web3/escrow";
 import type { Trade } from "@/lib/p2p/trades";
+import { escrowChain } from "@/lib/web3/config";
+import { escrowWalletError, useEscrowChainGuard } from "@/lib/web3/use-escrow-chain";
 
 const TOKEN_DECIMALS = 6;
 
@@ -203,12 +205,14 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   const token = getTokenAddress(trade.crypto_currency);
   const escrow = getEscrowAddress();
   const amount = parseUnits(String(trade.crypto_amount), TOKEN_DECIMALS);
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({ chainId: escrowChain.id });
+  const ensureEscrowChain = useEscrowChainGuard();
 
   const { data: feeBps } = useReadContract({
     address: escrow,
     abi: ESCROW_ABI,
     functionName: "feeBps",
+    chainId: escrowChain.id,
     query: { enabled: real }
   });
   const feeAmount = feeBps === undefined ? undefined : (amount * BigInt(feeBps) + BigInt(9999)) / BigInt(10000);
@@ -219,6 +223,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
     abi: ERC20_ABI,
     functionName: "balanceOf",
     args: address ? [address] : undefined,
+    chainId: escrowChain.id,
     query: { enabled: Boolean(real && address && token) }
   });
   const { data: allowance } = useReadContract({
@@ -226,6 +231,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
     abi: ERC20_ABI,
     functionName: "allowance",
     args: address ? [address, escrow] : undefined,
+    chainId: escrowChain.id,
     query: { enabled: Boolean(real && address && token) }
   });
 
@@ -255,6 +261,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
     }
     setPhase("tx");
     try {
+      await ensureEscrowChain();
       if (needApproval) {
         const tx = await writeContractAsync({
           address: token,
@@ -273,7 +280,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
       });
       onCompleted(lockHash);
     } catch (e) {
-      onError(e instanceof Error && e.message.includes("User rejected") ? "You rejected the wallet request." : "Transaction failed. Check your wallet and try again.");
+      onError(escrowWalletError(e, "Transaction failed. Check your wallet and try again."));
       setPhase("idle");
     }
   }
@@ -320,6 +327,7 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
   const real = useEscrowReal();
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
+  const ensureEscrowChain = useEscrowChainGuard();
   const [phase, setPhase] = useState<"idle" | "tx">("idle");
 
   async function run() {
@@ -333,6 +341,7 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
     }
     setPhase("tx");
     try {
+      await ensureEscrowChain();
       const hash = await writeContractAsync({
         address: escrow,
         abi: ESCROW_ABI,
@@ -342,17 +351,17 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
       setPhase("idle");
       onCompleted(hash);
     } catch (error) {
-      onError(error instanceof Error && error.message.includes("User rejected") ? "You rejected the wallet request." : "Unable to record the payment on-chain. Check your wallet and try again.");
+      onError(escrowWalletError(error, "Unable to record the payment on-chain. Check your wallet and try again."));
       setPhase("idle");
     }
   }
 
-  if (!isConnected && real) return <ConnectPrompt label="submit this payment" />;
+  if (!isConnected && real) return <ConnectPrompt label="confirm payment sent" />;
 
   return (
     <EscrowButtonShell
       busy={phase === "tx"}
-      busyLabel={real ? "Recording payment on-chain …" : "Submitting receipt …"}
+      busyLabel={real ? "Recording payment status …" : "Submitting receipt …"}
       onClick={() => void run()}
       label={real ? "Submit receipt" : "Submit payment receipt"}
       icon={<Check className="h-4 w-4" />}
@@ -366,6 +375,7 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
   const real = useEscrowReal();
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
+  const ensureEscrowChain = useEscrowChainGuard();
   const [phase, setPhase] = useState<"idle" | "tx" | "done">("idle");
 
   async function run() {
@@ -379,6 +389,7 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
     }
     setPhase("tx");
     try {
+      await ensureEscrowChain();
       const hash = await writeContractAsync({
         address: escrow,
         abi: ESCROW_ABI,
@@ -388,7 +399,7 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
       setPhase("done");
       onCompleted(hash);
     } catch (e) {
-      onError(e instanceof Error && e.message.includes("User rejected") ? "You rejected the wallet request." : "Transaction failed. Try again.");
+      onError(escrowWalletError(e, "Transaction failed. Try again."));
       setPhase("idle");
     }
   }
@@ -412,6 +423,7 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
   const real = useEscrowReal();
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
+  const ensureEscrowChain = useEscrowChainGuard();
   const [phase, setPhase] = useState<"idle" | "tx">("idle");
 
   async function run() {
@@ -425,6 +437,7 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
     }
     setPhase("tx");
     try {
+      await ensureEscrowChain();
       const hash = await writeContractAsync({
         address: escrow,
         abi: ESCROW_ABI,
@@ -434,7 +447,7 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
       setPhase("idle");
       onCompleted(hash, { destAddress: trade.buyer_wallet_address ?? address });
     } catch (e) {
-      onError(e instanceof Error && e.message.includes("User rejected") ? "You rejected the wallet request." : "Transaction failed. Try again.");
+      onError(escrowWalletError(e, "Transaction failed. Try again."));
       setPhase("idle");
     }
   }
@@ -466,6 +479,8 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
   const real = useEscrowReal();
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
+  const ensureEscrowChain = useEscrowChainGuard();
+  const publicClient = usePublicClient({ chainId: escrowChain.id });
   const [phase, setPhase] = useState<"idle" | "tx">("idle");
   const [requestRecorded, setRequestRecorded] = useState(false);
   const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
@@ -475,11 +490,16 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
     abi: ESCROW_ABI,
     functionName: "trades",
     args: [tradeId],
+    chainId: escrowChain.id,
     query: { enabled: real }
   });
   const cancellationAvailableAt = chainTrade?.[5] ?? BigInt(0);
   const cancellationRequested = cancellationAvailableAt > BigInt(0);
   const cancellationReady = cancellationRequested && BigInt(nowSeconds) >= cancellationAvailableAt;
+  const refundWaitSeconds = cancellationRequested && !cancellationReady
+    ? Math.max(0, Number(cancellationAvailableAt) - nowSeconds)
+    : 0;
+  const refundWaitLabel = `${Math.floor(refundWaitSeconds / 60)}:${String(refundWaitSeconds % 60).padStart(2, "0")}`;
 
   useEffect(() => {
     if (!cancellationRequested || cancellationReady) return;
@@ -496,15 +516,21 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
       }, 900);
       return;
     }
+    if (!publicClient) {
+      onError("The Avalanche network is unavailable. Try again.");
+      return;
+    }
     setPhase("tx");
     try {
+      await ensureEscrowChain();
       if (!cancellationRequested) {
-        await writeContractAsync({
+        const requestHash = await writeContractAsync({
           address: escrow,
           abi: ESCROW_ABI,
           functionName: "requestCancellation",
           args: [tradeId]
         });
+        await publicClient.waitForTransactionReceipt({ hash: requestHash, confirmations: 1 });
         setRequestRecorded(true);
         await refetch();
         setPhase("idle");
@@ -514,7 +540,7 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
       setPhase("idle");
       onCompleted(hash);
     } catch (e) {
-      onError(e instanceof Error && e.message.includes("User rejected") ? "You rejected the wallet request." : "Transaction failed. Try again.");
+      onError(escrowWalletError(e, "Transaction failed. Try again."));
       setPhase("idle");
     }
   }
@@ -525,18 +551,18 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
     <div className="space-y-2">
       <EscrowButtonShell
         busy={phase === "tx"}
-        busyLabel={cancellationRequested ? "Refunding escrow …" : "Requesting cancellation …"}
+        busyLabel={cancellationRequested ? "Refunding..." : "Requesting refund..."}
         onClick={() => void run()}
         disabled={Boolean(real && cancellationRequested && !cancellationReady)}
         label={real
           ? cancellationRequested
-            ? cancellationReady ? "Refund escrow in wallet" : "Cancellation protection period active"
-            : "Request escrow cancellation"
+            ? cancellationReady ? "Receive refund" : `Refund available in ${refundWaitLabel}`
+            : "Request refund"
           : `Refund escrowed ${trade.crypto_amount} ${trade.crypto_currency} (simulate)`}
         icon={<RefreshCw className="h-4 w-4" />}
       />
       {real && (requestRecorded || cancellationRequested) && !cancellationReady && (
-        <p className="text-xs text-muted">The buyer can still record a payment during the 30-minute protection period. Return afterward to complete the refund.</p>
+        <p className="text-xs text-muted">Refund requested. The funds can be returned when the protection period ends.</p>
       )}
     </div>
   );
