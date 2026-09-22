@@ -89,7 +89,7 @@ export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => 
             <div className="flex items-center gap-2 text-sm">
               <span className="font-mono text-xs text-muted">{trade.trade_ref}</span>
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${tone}`}>
-                {refundPending ? (isBuyer ? "Cancelled" : "Request refund") : (TRADE_STATUS_LABELS[trade.status] ?? trade.status)}
+                {refundPending ? (isBuyer ? "Cancelled" : "Request refund") : statusLabel(trade.status, isBuyer)}
               </span>
               {needsAction && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-ocean px-2 py-0.5 text-[11px] font-bold text-white">
@@ -122,12 +122,25 @@ export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => 
 // ── Full order detail view ────────────────────────────────────────────────
 const STEPS = ["Order placed", "Escrow funded", "Payment sent", "Payment confirmed", "Crypto received"];
 
-function stepIndex(status: string): number {
-  if (status === "completed") return 5;
+// The crypto seller's journey ends at "Payment confirmed"; only the buyer sees
+// the final "Crypto received" step.
+function stepsFor(isBuyer: boolean): string[] {
+  return isBuyer ? STEPS : STEPS.slice(0, -1);
+}
+
+function stepIndex(status: string, isBuyer: boolean): number {
+  if (status === "completed") return isBuyer ? 5 : 4;
   if (status === "released") return 4;
   if (status === "payment_sent") return 3;
   if (status === "escrow_locked") return 2;
   return 1;
+}
+
+// "Released" is the buyer's "ready to receive" state, but for the seller it is
+// the terminal state, shown as "Completed".
+function statusLabel(status: string, isBuyer: boolean): string {
+  if (status === "released" && !isBuyer) return "Completed";
+  return TRADE_STATUS_LABELS[status] ?? status;
 }
 
 export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; onBack?: () => void; onRefresh: () => void }) {
@@ -380,7 +393,8 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
       </div>
     ) : null;
 
-  const showPaymentDetails = trade.status === "escrow_locked" || trade.status === "payment_sent" || trade.status === "released" || trade.status === "completed";
+  const sellerFinal = !isBuyer && (trade.status === "released" || trade.status === "completed");
+  const showPaymentDetails = !sellerFinal && (trade.status === "escrow_locked" || trade.status === "payment_sent" || trade.status === "released" || trade.status === "completed");
 
   return (
     <div className="space-y-4">
@@ -424,7 +438,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                 ? "bg-panel text-muted"
                 : "bg-ocean/10 text-ocean"
         }`}>
-          {TRADE_STATUS_LABELS[trade.status] ?? trade.status}
+          {statusLabel(trade.status, isBuyer)}
         </span>
       </div>
 
@@ -432,10 +446,10 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
       {!["cancelled", "expired", "disputed"].includes(trade.status) && (
         <div className="border border-line bg-white p-4">
           <ol className="flex items-center">
-            {STEPS.map((label, i) => {
-              const done = i < stepIndex(trade.status);
+            {stepsFor(isBuyer).map((label, i) => {
+              const done = i < stepIndex(trade.status, isBuyer);
               return (
-                <li key={label} className={`flex items-center ${i < STEPS.length - 1 ? "flex-1" : ""}`}>
+                <li key={label} className={`flex items-center ${i < stepsFor(isBuyer).length - 1 ? "flex-1" : ""}`}>
                   <div className="flex flex-col items-center gap-1.5">
                     <span
                       className={`grid h-6 w-6 place-items-center rounded-full text-xs font-bold ${
@@ -446,8 +460,8 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                     </span>
                     <span className={`whitespace-nowrap text-[10px] font-semibold ${done ? "text-ink" : "text-muted"}`}>{label}</span>
                   </div>
-                  {i < STEPS.length - 1 && (
-                    <div className={`mx-1 mb-4 h-0.5 flex-1 ${i < stepIndex(trade.status) - 1 ? "bg-ocean" : "bg-line"}`} />
+                  {i < stepsFor(isBuyer).length - 1 && (
+                    <div className={`mx-1 mb-4 h-0.5 flex-1 ${i < stepIndex(trade.status, isBuyer) - 1 ? "bg-ocean" : "bg-line"}`} />
                   )}
                 </li>
               );
@@ -528,7 +542,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
       )}
 
       {/* Receipt */}
-      {(!isBuyer || trade.status === "payment_sent" || trade.status === "released" || trade.status === "completed") && trade.receipt_image && (
+      {!sellerFinal && (!isBuyer || trade.status === "payment_sent" || trade.status === "released" || trade.status === "completed") && trade.receipt_image && (
         <div className="border border-line bg-panel p-4 text-sm">
           <p className="font-semibold">{isBuyer ? "Your fiat payment receipt" : "Fiat payment receipt"}</p>
           <img src={trade.receipt_image} alt="Payment receipt" className="mt-2 max-h-80 border border-line object-contain" />
@@ -771,11 +785,11 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           </>
         )}
 
-        {/* Seller: released → awaiting buyer to receive */}
+        {/* Seller: released → payment confirmed (final stage for the seller) */}
         {!isBuyer && trade.status === "released" && (
-          <div className="flex items-start gap-2 border border-mint bg-mint/40 p-3 text-sm text-moss">
+          <div className="flex items-start gap-2 border border-mint bg-mint/40 p-3 text-sm font-semibold text-moss">
             <Check className="mt-0.5 h-4 w-4 shrink-0" />
-            Payment confirmed. Waiting for {counterparty} to receive their {trade.crypto_currency}.
+            Payment confirmed.
           </div>
         )}
 
@@ -916,11 +930,12 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           </div>
         )}
 
-        {/* The customer who opened the order can rate the vendor they traded with. */}
+        {/* Only the customer (initiator) rates the counterparty, which is always a vendor. */}
         {trade.is_initiator && trade.status === "completed" && (
           <RatingPanel
             tradeId={trade.id}
             vendorName={isBuyer ? trade.seller_name : trade.buyer_name}
+            prompt="Rate the vendor"
             rated={rated}
             starRating={starRating}
             hoveredStar={hoveredStar}
@@ -1104,6 +1119,7 @@ function CloseCancelledTradeControl({
 function RatingPanel({
   tradeId,
   vendorName,
+  prompt = "Rate your counterparty:",
   rated,
   starRating,
   hoveredStar,
@@ -1115,6 +1131,7 @@ function RatingPanel({
 }: {
   tradeId: string;
   vendorName: string;
+  prompt?: string;
   rated: boolean;
   starRating: number;
   hoveredStar: number;
@@ -1150,7 +1167,7 @@ function RatingPanel({
 
   return (
     <div className="border border-line bg-white p-4 text-center">
-      <p className="text-sm font-semibold">Trade completed. Rate the vendor:</p>
+      <p className="text-sm font-semibold">{prompt}</p>
       <div className="mt-3 flex items-center justify-center gap-1.5">
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <button

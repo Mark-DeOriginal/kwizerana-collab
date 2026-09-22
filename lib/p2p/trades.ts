@@ -14,57 +14,39 @@ function fmtCryptoAmount(n: number): string {
   return Number(n.toFixed(6)).toLocaleString("en-US", { maximumFractionDigits: 6 });
 }
 
-function fmtFiatAmount(n: number): string {
-  if (!Number.isFinite(n)) return "0";
-  return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-}
-
 type TradeNoticeRow = {
   status: string;
   trade_ref: string;
   crypto_amount: number | string;
   crypto_currency: string;
-  fiat_amount: number | string;
-  fiat_currency: string;
 };
 
-function tradeNoticeCopy(t: TradeNoticeRow): { title: string; body: string } {
+// Trade activity notices are limited to the three lifecycle states that matter:
+// the order being placed, cancellation, and completion. Intermediate states
+// (approve, fund, pay, release) intentionally produce no notice.
+function tradeNoticeCopy(t: TradeNoticeRow): { title: string; body: string } | null {
   const amt = fmtCryptoAmount(Number(t.crypto_amount));
-  const fiat = fmtFiatAmount(Number(t.fiat_amount));
   const ref = t.trade_ref;
-  switch (t.status) {
-    case "approved":
-      return { title: "Sell order accepted — fund escrow", body: `The fiat-paying vendor accepted order ${ref}. The seller can now fund ${amt} ${t.crypto_currency} in escrow.` };
-    case "escrow_locked":
-      return { title: "Escrow locked — awaiting payment", body: `The escrow for order ${ref} (${amt} ${t.crypto_currency}) is funded. Waiting for the buyer to send ${fiat} ${t.fiat_currency}.` };
-    case "payment_sent":
-      return { title: "Payment submitted", body: `The buyer says the ${fiat} ${t.fiat_currency} for order ${ref} was sent. Review the receipt and confirm the payment.` };
-    case "released":
-      return { title: "Payment confirmed — crypto ready", body: `Payment confirmed for order ${ref}. The ${amt} ${t.crypto_currency} is ready to receive.` };
-    case "completed":
-      return { title: "Transaction completed", body: `Order ${ref} is complete. The buyer received ${amt} ${t.crypto_currency}.` };
-    case "cancelled":
-      return { title: "Order cancelled", body: `Order ${ref} was cancelled, so no funds were released.` };
-    case "expired":
-      return { title: "Order expired", body: `Order ${ref} expired without payment, so the escrow was not released.` };
-    case "disputed":
-      return { title: "Order under dispute", body: `Order ${ref} is under dispute review.` };
-    case "reconciliation_required":
-      return { title: "Trade needs reconciliation", body: `Order ${ref} has a chain/database mismatch and is waiting for operator review.` };
-    default:
-      return { title: "Order update", body: `Order ${ref} moved to ${t.status}.` };
+  if (t.status === "completed") {
+    return { title: "Transaction completed", body: `Order ${ref} is complete. The buyer received ${amt} ${t.crypto_currency}.` };
   }
+  if (t.status === "cancelled") {
+    return { title: "Order cancelled", body: `Order ${ref} was cancelled.` };
+  }
+  return null;
 }
 
 async function syncTradeNotification(tradeId: string): Promise<void> {
   const rows = await dbQuery<TradeNoticeRow>(
-    `SELECT status, trade_ref, crypto_amount, crypto_currency, fiat_amount, fiat_currency
+    `SELECT status, trade_ref, crypto_amount, crypto_currency
      FROM p2p_trades WHERE id = $1`,
     [tradeId]
   );
   const t = rows[0];
   if (!t) return;
-  await updateTradeNotification(tradeId, tradeNoticeCopy(t));
+  const copy = tradeNoticeCopy(t);
+  if (!copy) return;
+  await updateTradeNotification(tradeId, copy);
 }
 
 async function ensureTradeCompletionActivity(
@@ -170,8 +152,8 @@ export function isActiveTrade(trade: Pick<Trade, "status" | "escrow_status" | "m
 
 export const TRADE_STATUS_LABELS: Record<string, string> = {
   created: "Awaiting approval",
-  approved: "Accepted — fund escrow",
-  escrow_locked: "Escrow funded — pay now",
+  approved: "Accepted — deposit crypto",
+  escrow_locked: "Crypto secured — pay now",
   payment_sent: "Payment sent",
   released: "Ready to receive",
   completed: "Completed",
@@ -414,8 +396,8 @@ export async function createTrade(
     type: "trade_created",
     title: counterpartySells ? "New buy order" : "New sell order",
     body: counterpartySells
-      ? `${initiatorName} wants to buy ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} from you. Review the order and fund escrow if you can fulfill it.`
-      : `${initiatorName} wants to sell ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} to you. Confirm that you can send ${fmtCryptoAmount(fiatAmount)} ${ad.fiat_currency}, then accept the order. The seller funds escrow only after you accept.`,
+      ? `${initiatorName} wants to buy ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} from you. Review the order and deposit the crypto if you can fulfill it.`
+      : `${initiatorName} wants to sell ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} to you. Confirm that you can send ${fmtCryptoAmount(fiatAmount)} ${ad.fiat_currency}, then accept the order. The seller deposits the crypto only after you accept.`,
     data: { tradeId }
   });
 
@@ -485,56 +467,9 @@ function assertEscrowMutationInput(action: TradeAction, input: TradeActionInput)
   }
 
   if (realEscrow && !txHash) {
-    throw new Error("A confirmed escrow transaction is required.");
+    throw new Error("A confirmed wallet transaction is required.");
   }
 }
-
-const ACTION_LABELS: Record<TradeAction, { title: string; body: (ref: string) => string }> = {
-  set_receive_wallet: {
-    title: "Order ready for approval",
-    body: (ref) => `The buyer selected a receiving wallet for ${ref}. You can now review and approve the trade.`
-  },
-  approve: {
-    title: "Sell order accepted",
-    body: (ref) => `The fiat-paying vendor accepted ${ref}. You can now fund escrow to continue.`
-  },
-  accept: {
-    title: "Escrow funded",
-    body: (ref) => `The crypto for ${ref} is now secured in escrow. The fiat-paying buyer can send payment.`
-  },
-  mark_paid: {
-    title: "Payment receipt submitted",
-    body: (ref) => `The buyer submitted a payment receipt for ${ref}. Review it and confirm the payment.`
-  },
-  release: {
-    title: "Payment confirmed — crypto ready",
-    body: (ref) => `The vendor confirmed your payment for ${ref}. Click Receive to get your crypto.`
-  },
-  claim: {
-    title: "Trade completed",
-    body: (ref) => `Trade ${ref} is complete. The buyer received the crypto.`
-  },
-  cancel: {
-    title: "Order cancelled",
-    body: (ref) => `Order ${ref} was cancelled.`
-  },
-  refund: {
-    title: "Escrow refunded",
-    body: (ref) => `The escrow for ${ref} was refunded to the seller.`
-  },
-  close_trade: {
-    title: "Trade closed",
-    body: (ref) => `The fiat-paying buyer confirmed no payment was sent for ${ref}. The seller can complete the escrow refund after the protection period.`
-  },
-  decline: {
-    title: "Order declined by vendor",
-    body: (ref) => `The vendor declined your order ${ref}.`
-  },
-  proceed: {
-    title: "Order approved to proceed",
-    body: (ref) => `The order initiator chose to proceed with order ${ref}.`
-  }
-};
 
 export async function applyTradeAction(
   userId: string,
@@ -565,7 +500,7 @@ export async function applyTradeAction(
   let chainVerification: { blockNumber: bigint; logIndex: number } | null = null;
   if (isEscrowDeployed() && ESCROW_ACTIONS.has(action)) {
     if (action === "accept" && !row.buyer_wallet_address) {
-      throw new Error("The buyer must set a receive wallet before escrow can be funded.");
+      throw new Error("The buyer must set a receive wallet before the crypto can be secured.");
     }
     chainVerification = await verifyEscrowTransaction({
       action: action as EscrowVerificationAction,
@@ -599,15 +534,15 @@ export async function applyTradeAction(
       break;
     }
     case "accept": {
-      if (!isSeller) throw new Error("Only the crypto seller can fund escrow.");
+      if (!isSeller) throw new Error("Only the crypto seller can deposit the crypto.");
       const canFundBuyOrder = !isInitiator && status === "created";
       const canFundSellOrder = isInitiator && status === "approved";
       if (!canFundBuyOrder && !canFundSellOrder) {
         throw new Error(isInitiator
-          ? "Wait for the fiat-paying vendor to accept this sell order before funding escrow."
-          : "This order is no longer awaiting escrow funding.");
+          ? "Wait for the fiat-paying vendor to accept this sell order before depositing the crypto."
+          : "This order is no longer awaiting a crypto deposit.");
       }
-      if (!input.walletAddress) throw new Error("Connect your wallet to fund escrow.");
+      if (!input.walletAddress) throw new Error("Connect your wallet to deposit the crypto.");
       newStatus = "escrow_locked";
       escrowStatus = "funded";
       break;
@@ -616,7 +551,7 @@ export async function applyTradeAction(
       if (!isBuyer) throw new Error("Only the buyer can submit payment.");
       const protectingCancelledPayment = (status === "cancelled" || status === "expired") && escrowFunded;
       if (status !== "escrow_locked" && !protectingCancelledPayment) {
-        throw new Error("Payment can only be submitted while the crypto remains funded in escrow.");
+        throw new Error("Payment can only be submitted while the crypto is still secured.");
       }
       newStatus = "payment_sent";
       break;
@@ -654,11 +589,11 @@ export async function applyTradeAction(
       break;
     }
     case "refund": {
-      if (!isSeller) throw new Error("Only the seller can refund the escrow.");
+      if (!isSeller) throw new Error("Only the seller can request a refund.");
       if (status !== "cancelled" && status !== "expired") {
-        throw new Error("The escrow can only be refunded for a cancelled or expired order.");
+        throw new Error("A refund is only available for a cancelled or expired order.");
       }
-      if (!escrowFunded) throw new Error("The escrow has no funds to refund.");
+      if (!escrowFunded) throw new Error("There is nothing to refund.");
       escrowStatus = "refunded";
       break;
     }
@@ -787,33 +722,31 @@ export async function applyTradeAction(
     );
   }
 
-  // Notify the counterparty — route to owner if it's an owned vendor.
-  // Completion is handled separately so both participants receive one clear
-  // activity entry without duplicating an updated order-request notification.
-  const rawCounterpartyId = isBuyer ? row.seller_id : row.buyer_id;
-  const label = ACTION_LABELS[action];
-
-  const counterpartyRows = await dbQuery<{ owner_user_id: string | null }>(
-    `SELECT owner_user_id FROM users WHERE id = $1`,
-    [rawCounterpartyId]
-  );
-  const notifyUserId = counterpartyRows[0]?.owner_user_id || rawCounterpartyId;
-
-  if (action !== "claim") {
-    await createNotification(notifyUserId, {
-      type: `trade_${action}`,
-      title: label.title,
-      body: label.body(row.trade_ref),
-      data: { tradeId }
-    });
-  }
-
+  // Activity notices are limited to the three lifecycle states handled by
+  // syncTradeNotification (placed / cancelled / completed). Intermediate state
+  // changes do not notify.
   if (newStatus !== status) {
     await syncTradeNotification(tradeId);
   }
 
   if (newStatus === "completed") {
     await ensureTradeCompletionActivity(tradeId, row);
+  }
+
+  // A successful refund is a money-moving event worth surfacing in the seller's
+  // activity, routed to the owning account for owned vendor profiles.
+  if (action === "refund") {
+    const sellerRows = await dbQuery<{ owner_user_id: string | null }>(
+      `SELECT owner_user_id FROM users WHERE id = $1`,
+      [row.seller_id]
+    );
+    const sellerNotifyId = sellerRows[0]?.owner_user_id || row.seller_id;
+    await createNotification(sellerNotifyId, {
+      type: "trade_refunded",
+      title: "Refund successful",
+      body: `Your ${fmtCryptoAmount(Number(row.crypto_amount))} ${row.crypto_currency} has been refunded to your wallet.`,
+      data: { tradeId }
+    });
   }
 
   return getTrade(userId, tradeId, ownedVendorIds, isSuperAdmin);

@@ -42,14 +42,14 @@ export function EscrowModeNotice() {
   );
 }
 
-function ConnectPrompt({ label }: { label: string }) {
+function ConnectPrompt({ label, verb = "to" }: { label: string; verb?: string }) {
   const { openConnectModal } = useConnectModal();
   return (
     <button
       onClick={() => openConnectModal?.()}
       className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean"
     >
-      Connect wallet to {label}
+      Connect wallet {verb} {label}
     </button>
   );
 }
@@ -94,8 +94,8 @@ export function ReceiveWalletSetup({
         <p className="text-sm font-semibold text-ink">Where should we send your {trade.crypto_currency}?</p>
         <p className="mt-1 text-xs leading-5 text-muted">
           {trade.is_initiator
-            ? "Choose where to receive your crypto before the seller funds escrow. The address is secured when escrow is funded."
-            : "Choose where to receive the crypto before accepting this sell order. The address is secured when escrow is funded."}
+            ? "Choose where to receive your crypto before the seller deposits it. The address is locked in once the crypto is deposited."
+            : "Choose where to receive the crypto before accepting this sell order. The address is locked in once the crypto is deposited."}
         </p>
       </div>
 
@@ -286,9 +286,9 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   }
 
   const isSellInitiator = trade.is_initiator;
-  if (!isConnected && real) return <ConnectPrompt label={isSellInitiator ? "fund escrow" : "approve and fund escrow"} />;
+  if (!isConnected && real) return <ConnectPrompt label={isSellInitiator ? "deposit crypto" : "approve and deposit crypto"} />;
 
-  const label = isSellInitiator ? "Fund escrow" : "Approve order and fund escrow";
+  const label = isSellInitiator ? "Deposit crypto" : "Approve order and deposit crypto";
   const disabled = Boolean(!buyAddrOk || (real && (insufficient || feeBps === undefined)) || phase !== "idle");
 
   return (
@@ -296,12 +296,12 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
       {real && insufficient && (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-coral">
           <TriangleAlert className="h-3.5 w-3.5" />
-          Insufficient balance — funding requires the trade amount plus the escrow fee.
+          Insufficient balance — you need the trade amount plus the service fee.
         </p>
       )}
       <EscrowButtonShell
         busy={phase === "tx"}
-        busyLabel="Funding escrow …"
+        busyLabel="Depositing crypto …"
         onClick={() => void run()}
         disabled={disabled}
         label={label}
@@ -309,7 +309,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
       />
       {real && feeAmount !== undefined && (
         <p className="text-xs text-muted">
-          Escrow fee: {formatUnits(feeAmount, TOKEN_DECIMALS)} {trade.crypto_currency} ({Number(feeBps) / 100}%). Refunded if the trade does not settle.
+          Service fee: {formatUnits(feeAmount, TOKEN_DECIMALS)} {trade.crypto_currency} ({Number(feeBps) / 100}%). Refunded if the trade does not settle.
         </p>
       )}
       {simDone && (
@@ -323,7 +323,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
 
 // ── Buyer: record fiat payment on-chain before database transition ────────
 export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowButtonProps) {
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const real = useEscrowReal();
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
@@ -337,6 +337,10 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
         setPhase("idle");
         onCompleted(demoHash(trade.trade_ref, "PAYMENT"));
       }, 900);
+      return;
+    }
+    if (address && trade.buyer_wallet_address && !sameWallet(address, trade.buyer_wallet_address)) {
+      onError(`This order's buyer is recorded as ${shortAddr(trade.buyer_wallet_address)}, but you're connected as ${shortAddr(address)}. Connect the recorded wallet to submit the receipt.`);
       return;
     }
     setPhase("tx");
@@ -371,7 +375,7 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
 
 // ── Seller: confirm fiat received (release) ───────────────────────────────
 export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButtonProps) {
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const real = useEscrowReal();
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
@@ -385,6 +389,10 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
         setPhase("done");
         onCompleted(demoHash(trade.trade_ref, "RELEASE"));
       }, 900);
+      return;
+    }
+    if (address && trade.seller_wallet_address && !sameWallet(address, trade.seller_wallet_address)) {
+      onError(`This order's seller is recorded as ${shortAddr(trade.seller_wallet_address)}, but you're connected as ${shortAddr(address)}. Connect the recorded wallet to confirm the payment.`);
       return;
     }
     setPhase("tx");
@@ -411,7 +419,7 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
       busy={phase === "tx"}
       busyLabel={real ? "Confirming on-chain …" : "Confirming …"}
       onClick={() => void run()}
-      label={real ? "Confirm & release in wallet" : "Confirm payment received"}
+      label={real ? "Payment confirmed" : "Confirm payment received"}
       icon={<Check className="h-4 w-4" />}
     />
   );
@@ -545,7 +553,7 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
     }
   }
 
-  if (!isConnected && real) return <ConnectPrompt label="refund the escrow" />;
+  if (!isConnected && real) return <ConnectPrompt label="refund" verb="for" />;
 
   return (
     <div className="space-y-2">
@@ -570,4 +578,8 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
 
 function shortAddr(a: string): string {
   return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+}
+
+function sameWallet(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
 }
