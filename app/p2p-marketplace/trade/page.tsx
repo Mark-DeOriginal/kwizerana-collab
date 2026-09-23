@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useAccount } from "wagmi";
+import { WalletProviders } from "@/app/wallet-providers";
 import { ArrowLeft, ArrowRight, BadgeCheck, Check, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect, OptionsMenu } from "@/components/p2p/custom-ui";
@@ -990,9 +991,11 @@ function TradeClient() {
 
 export default function TradePage() {
   return (
-    <Suspense fallback={<TradePageSkeleton />}>
-      <TradeClient />
-    </Suspense>
+    <WalletProviders>
+      <Suspense fallback={<TradePageSkeleton />}>
+        <TradeClient />
+      </Suspense>
+    </WalletProviders>
   );
 }
 

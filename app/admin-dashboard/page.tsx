@@ -30,6 +30,7 @@ import { RankingsTab } from "@/components/RankingsTab";
 import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
 import { EscrowAdminOverview } from "@/components/EscrowAdminOverview";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { WalletProviders } from "@/app/wallet-providers";
 import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
 import { escrowChain } from "@/lib/web3/config";
 import { useEscrowChainGuard } from "@/lib/web3/use-escrow-chain";
@@ -76,6 +77,14 @@ function relativeTime(dateStr: string) {
 }
 
 export default function AdminDashboardPage() {
+  return (
+    <WalletProviders>
+      <AdminDashboardContent />
+    </WalletProviders>
+  );
+}
+
+function AdminDashboardContent() {
   const { data: session, status, update } = useSession();
   const router = useRouter();
   const [users, setUsers] = useState<DashboardUser[]>([]);

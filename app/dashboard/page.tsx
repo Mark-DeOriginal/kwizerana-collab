@@ -46,6 +46,7 @@ import { Modal } from "@/components/p2p/modal";
 import { usePoll, useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
 import { useAccount, useDisconnect, useReadContract } from "wagmi";
 import { formatUnits } from "viem";
+import { WalletProviders } from "@/app/wallet-providers";
 import { AVALANCHE_TOKENS, ERC20_ABI, explorerAddressUrl } from "@/lib/web3/escrow";
 
 type DashboardData = {
@@ -131,6 +132,14 @@ function EmptyState({ icon, title, subtitle, cta }: { icon: React.ReactNode; tit
 }
 
 export default function DashboardPage() {
+  return (
+    <WalletProviders>
+      <DashboardPageContent />
+    </WalletProviders>
+  );
+}
+
+function DashboardPageContent() {
   const { data: session, status } = useSession();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
