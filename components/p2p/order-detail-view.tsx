@@ -370,14 +370,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
   // Terminal banners
   const terminalBanner =
-    trade.status === "completed" ? (
-      <div className="flex items-start gap-2 border border-mint bg-mint/40 p-3 text-sm leading-6">
-        <Check className="mt-0.5 h-4 w-4 shrink-0 text-moss" />
-        <span>
-          Trade completed. {isBuyer ? `You received ${fn(trade.crypto_amount, 6)} ${trade.crypto_currency}.` : `The buyer received ${fn(trade.crypto_amount, 6)} ${trade.crypto_currency}.`}
-        </span>
-      </div>
-    ) : trade.status === "declined" ? (
+    trade.status === "declined" ? (
       <div className="border border-coral/30 bg-coral/5 p-3 text-sm">
         <p className="font-semibold text-coral">
           {trade.is_initiator ? `${counterparty} declined your order` : "You declined this order"}
@@ -743,14 +736,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         {/* Seller: payment_sent → confirm + release */}
         {!isBuyer && trade.status === "payment_sent" && (
           <>
-            {trade.release_hold_minutes > 0 && (
-              <div className="flex items-start gap-2 border border-coral/30 bg-coral/5 p-3 text-sm">
-                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
-                <p className="text-muted">
-                  This payment method has a {trade.release_hold_minutes}-minute safety hold after payment. You can release once the hold elapses.
-                </p>
-              </div>
-            )}
             <ConfirmReleaseButton
               trade={trade}
               onCompleted={(txHash) => void doAction("release", { tx_hash: txHash })}

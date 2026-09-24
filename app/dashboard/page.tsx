@@ -82,6 +82,11 @@ function formatDate(iso: string | null | undefined): string {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function formatTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const m = Math.floor(diff / 60000);
@@ -148,6 +153,7 @@ function DashboardPageContent() {
   const [error, setError] = useState("");
 
 const load = useCallback(async (opts: { silent?: boolean } = {}) => {
+    let succeeded = false;
     if (!opts.silent) {
       setLoading(true);
       setError("");
@@ -161,10 +167,12 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         return;
       }
       setData(dash as DashboardData);
+      setError("");
+      succeeded = true;
     } catch {
-      if (!opts.silent) setError("Unable to load your dashboard. Please try again.");
+      if (!opts.silent) setError("Some dashboard information didn’t load. Retrying automatically…");
     } finally {
-      if (!opts.silent) setLoading(false);
+      if (!opts.silent) setLoading(!succeeded);
     }
   }, []);
 
@@ -173,6 +181,12 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
       void load();
     }
   }, [status, load]);
+
+  useEffect(() => {
+    if (status !== "authenticated" || data || !error) return;
+    const retry = window.setTimeout(() => void load(), 2000);
+    return () => window.clearTimeout(retry);
+  }, [status, data, error, load]);
 
   // Real-time silent updates: poll a cheap fingerprint and only pay for a full
   // dashboard reload when something actually changed.
@@ -594,12 +608,6 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
         </div>
       </div>
 
-      {stats.volume30d > 0 && (
-        <p className="mt-2 text-xs text-muted">
-          USDT {formatAmount(stats.volume30dByAsset.USDT ?? 0)} · USDC {formatAmount(stats.volume30dByAsset.USDC ?? 0)}
-        </p>
-      )}
-
       <div className="mt-3 grid grid-cols-2 gap-3">
         {tiles.map((tile) => (
           <div key={tile.label} className="rounded-md border border-line bg-panel px-3 py-3">
@@ -666,7 +674,7 @@ function SecurityPanel({ security, loading }: { security?: SecuritySummary; load
   const items = [
     { label: "Two-factor authentication", ok: security.twoFactorEnabled },
     { label: "Anti-phishing code", ok: security.antiPhishingSet },
-    { label: "Password set", ok: security.hasPassword },
+    ...(security.hasPassword ? [{ label: "Password set", ok: true }] : []),
     { label: "Email verified", ok: security.emailVerified }
   ];
 
@@ -1059,8 +1067,10 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
     );
   }
 
-  // Already a vendor
-  if (vendor?.isVendor) {
+  // The site admin manages the platform-owned vendor profiles and must never
+  // enter the ordinary-user vendor application flow, even if vendor status is
+  // temporarily unavailable or no managed profile is returned.
+  if (vendor?.isVendor || isSuperAdmin) {
     const isManaged = Boolean(isSuperAdmin);
     return (
       <Card
@@ -1099,7 +1109,7 @@ function VendorPanel({ vendor, paymentMethods, loading, onChanged, isSuperAdmin,
           <VendorFeeEditor onChanged={onChanged} managed={isManaged} />
         </div>
 
-        {!isManaged && <VerificationPanel vendor={vendor} onChanged={onChanged} />}
+        {!isManaged && vendor && <VerificationPanel vendor={vendor} onChanged={onChanged} />}
 
         {isManaged && (
           <div className="mt-5 rounded-md border border-line bg-panel px-4 py-3">
@@ -1432,7 +1442,7 @@ function ratingToStars(rating: string): number {
 }
 
 function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { trades: Trade[]; submittedReviews: Review[]; loading?: boolean; onChanged: () => void }) {
-  const [filter, setFilter] = useState<"all" | "completed" | "cancelled" | "expired">("all");
+  const [filter, setFilter] = useState<"all" | "completed" | "cancelled">("all");
   const [visible, setVisible] = useState(10);
   const [reviewing, setReviewing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1473,11 +1483,10 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
     return <EmptyState icon={<History className="h-5 w-5" />} title="No trades yet" subtitle="Your completed trades and their details will show here." />;
   }
 
-  const statusFilters: { key: "all" | "completed" | "cancelled" | "expired"; label: string }[] = [
+  const statusFilters: { key: "all" | "completed" | "cancelled"; label: string }[] = [
     { key: "all", label: `All (${history.length})` },
     { key: "completed", label: "Completed" },
-    { key: "cancelled", label: "Cancelled" },
-    { key: "expired", label: "Expired" }
+    { key: "cancelled", label: "Cancelled" }
   ];
 
   return (
@@ -1524,7 +1533,10 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
               return (
                 <Fragment key={t.id}>
                   <tr className="border-b border-line">
-                    <td className="px-3 py-2.5 text-muted">{formatDate(t.created_at)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                      <span className="block">{formatDate(t.created_at)}</span>
+                      <span className="mt-0.5 block text-xs">{formatTime(t.created_at)}</span>
+                    </td>
                     <td className="px-3 py-2.5">
                       <span className={`inline-flex items-center gap-1 text-xs font-bold uppercase ${isBuy ? "text-moss" : "text-coral"}`}>
                         {isBuy ? "Buy" : "Sell"}

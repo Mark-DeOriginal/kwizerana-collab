@@ -382,6 +382,8 @@ const schemaStatements = [
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS buyer_closed_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS fee_rate NUMERIC NOT NULL DEFAULT 0`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS release_hold_minutes INTEGER NOT NULL DEFAULT 0`,
+  `UPDATE p2p_trades SET release_hold_minutes = 0 WHERE release_hold_minutes <> 0`,
+  `UPDATE p2p_supported_methods SET hold_period_minutes = 0 WHERE hold_period_minutes <> 0`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS funded_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS claim_tx_hash TEXT`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS payment_tx_hash TEXT`,

@@ -137,7 +137,7 @@ export const SUPPORTED_METHODS: SupportedMethodSeed[] = [
   { slug: "palmpay", name: "PalmPay", category: "mobile_money", risk_level: "low", hold_period_minutes: 0 },
   { slug: "gcash", name: "GCash", category: "mobile_money", risk_level: "low", hold_period_minutes: 0 },
   { slug: "paytm", name: "Paytm", category: "mobile_money", risk_level: "low", hold_period_minutes: 0 },
-  { slug: "paypal", name: "PayPal", category: "digital_wallet", risk_level: "high", hold_period_minutes: 1440 },
+  { slug: "paypal", name: "PayPal", category: "digital_wallet", risk_level: "high", hold_period_minutes: 0 },
   { slug: "payeer", name: "Payeer", category: "digital_wallet", risk_level: "medium", hold_period_minutes: 0 },
   { slug: "advcash", name: "AdvCash", category: "digital_wallet", risk_level: "medium", hold_period_minutes: 0 },
   { slug: "in_person_cash", name: "In-Person Cash", category: "cash", risk_level: "high", hold_period_minutes: 0 }

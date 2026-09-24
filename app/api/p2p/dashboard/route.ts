@@ -54,37 +54,34 @@ export async function GET() {
     getVendorStatus(userId),
     listTrades(userId, isSuperAdmin),
     listSubmittedReviews(userId),
-    listMyDisputes(userId)
+    listMyDisputes(userId),
+    getUnreadNotificationCount(userId)
   ]);
 
-  const names = ["stats", "security", "wallets", "payment methods", "notifications", "vendor", "trades", "reviews", "disputes"];
+  const names = ["stats", "security", "wallets", "payment methods", "notifications", "vendor", "trades", "reviews", "disputes", "unread count"];
   results.forEach((result, index) => reportDashboardSection(names[index], result));
 
-  const value = <T,>(index: number, fallback: T): T =>
-    results[index].status === "fulfilled" ? results[index].value as T : fallback;
-
-  const stats = value(0, {
-    totalTrades: 0, completedTrades: 0, completionRate30d: 0, eligibleTrades30d: 0, volume30d: 0,
-    volume30dByAsset: { USDT: 0, USDC: 0 }, avgReleaseSeconds: 0, cumulativeCounterparties: 0, trustScore: 0,
-    ratingAverage: null, ratingCount: 0,
-    advertiserStatus: "none", advertiserLevel: "none", verifiedTier: "none",
-    firstTradeAt: null, isOnline: false
-  });
-  const security = value(1, { twoFactorEnabled: false, antiPhishingSet: false, hasPassword: false, emailVerified: false });
-  const wallets = value(2, []);
-  const paymentMethods = value(3, []);
-  const notifications = value(4, []);
-  const vendor = value(5, { isVendor: false, advertiserStatus: "none", advertiserLevel: "none", verifiedTier: "none", availableCrypto: 0, availableFiat: 0 });
-  const trades = value(6, []);
-  const submittedReviews = value(7, []);
-  const disputes = value(8, []);
-
-  let unreadCount = 0;
-  try {
-    unreadCount = await getUnreadNotificationCount(userId);
-  } catch (error) {
-    console.error("Dashboard section failed: unread count", error instanceof Error ? error.message : error);
+  const failedSections = results
+    .map((result, index) => result.status === "rejected" ? names[index] : null)
+    .filter((name): name is string => Boolean(name));
+  if (failedSections.length > 0) {
+    return NextResponse.json(
+      { error: "Some dashboard information could not be loaded. Retrying is safe.", failedSections },
+      { status: 503, headers: { "Retry-After": "2" } }
+    );
   }
+
+  const value = <T,>(index: number): T => (results[index] as PromiseFulfilledResult<T>).value;
+  const stats = value<Awaited<ReturnType<typeof getP2PStats>>>(0);
+  const security = value<Awaited<ReturnType<typeof getSecuritySummary>>>(1);
+  const wallets = value<Awaited<ReturnType<typeof listWallets>>>(2);
+  const paymentMethods = value<Awaited<ReturnType<typeof listUserPaymentMethods>>>(3);
+  const notifications = value<Awaited<ReturnType<typeof listNotifications>>>(4);
+  const vendor = value<Awaited<ReturnType<typeof getVendorStatus>>>(5);
+  const trades = value<Awaited<ReturnType<typeof listTrades>>>(6);
+  const submittedReviews = value<Awaited<ReturnType<typeof listSubmittedReviews>>>(7);
+  const disputes = value<Awaited<ReturnType<typeof listMyDisputes>>>(8);
+  const unreadCount = value<number>(9);
 
   return NextResponse.json({
     stats,

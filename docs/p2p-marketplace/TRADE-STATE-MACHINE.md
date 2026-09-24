@@ -83,6 +83,7 @@ Terminal states are `completed`, `refunded`, `declined_unfunded`, `cancelled_unf
 - `escrow_funded` requires a confirmed `Locked` event matching the snapshot.
 - `payment_marked_sent` requires funded escrow.
 - `released` requires a confirmed release event; a client callback is insufficient.
+- After payment is marked sent, the seller may release as soon as the full fiat payment is verified in their account; the application does not impose a payment-method timer.
 - `completed` requires a confirmed claim/transfer outcome to the authorized buyer destination.
 - `refunded` requires a confirmed refund to the snapshotted seller.
 - Exactly one terminal financial outcome is possible.

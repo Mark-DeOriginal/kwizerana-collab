@@ -3,7 +3,6 @@ import { dbQuery, ensureDatabase } from "@/lib/db";
 import { createNotification } from "@/lib/p2p/notifications";
 import { getFees } from "@/lib/p2p/fees";
 import { getLiveRate } from "@/lib/p2p/price-feed";
-import { SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
 import { isAddress } from "viem";
 import { isEscrowDeployed } from "@/lib/web3/escrow";
 import { verifyEscrowTransaction, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
@@ -368,21 +367,6 @@ export async function createTrade(
   const fees = await getFees(ad.crypto_currency, ad.fiat_currency);
   const feeRate = fees.takerFee;
 
-  // Snapshot the release hold for the chosen payment method (high-risk methods
-  // such as PayPal hold funds after payment to reduce chargeback risk).
-  let releaseHoldMinutes = 0;
-  if (input.paymentMethodId) {
-    const pmRows = await dbQuery<{ method_name: string }>(
-      `SELECT method_name FROM p2p_payment_methods WHERE id = $1`,
-      [input.paymentMethodId]
-    );
-    const name = pmRows[0]?.method_name;
-    if (name) {
-      const match = SUPPORTED_METHODS.find((s) => s.name.toLowerCase() === name.toLowerCase());
-      releaseHoldMinutes = match?.hold_period_minutes ?? 0;
-    }
-  }
-
   // Buy offer (ad_type 'sell') → vendor is the seller, initiator is the buyer.
   const buyerId = ad.ad_type === "sell" ? userId : ad.user_id;
   const sellerId = ad.ad_type === "sell" ? ad.user_id : userId;
@@ -411,7 +395,7 @@ export async function createTrade(
         fee_rate, release_hold_minutes, payment_method_id, buyer_wallet_address, status, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6, 'avalanche', $7, $8, $9, $10, $11, $12, $13, $14, 'created', NOW() + INTERVAL '2 hours')
      RETURNING id::TEXT AS id`,
-    [tradeRef, paymentReference, ad.id, buyerId, sellerId, ad.crypto_currency, input.cryptoAmount, ad.fiat_currency, fiatAmount, price, feeRate, releaseHoldMinutes, input.paymentMethodId ?? null, buyerWalletAddress]
+    [tradeRef, paymentReference, ad.id, buyerId, sellerId, ad.crypto_currency, input.cryptoAmount, ad.fiat_currency, fiatAmount, price, feeRate, 0, input.paymentMethodId ?? null, buyerWalletAddress]
   );
   const tradeId = inserted[0].id;
 
@@ -615,12 +599,6 @@ export async function applyTradeAction(
     case "release": {
       if (!isSeller) throw new Error("Only the seller can confirm the payment.");
       if (status !== "payment_sent") throw new Error("There is no payment to confirm yet.");
-      if (toNumber(row.release_hold_minutes) > 0 && row.buyer_paid_at) {
-        const readyAt = new Date(row.buyer_paid_at).getTime() + toNumber(row.release_hold_minutes) * 60000;
-        if (Date.now() < readyAt) {
-          throw new Error(`This payment method holds funds for ${toNumber(row.release_hold_minutes)} minutes. You can release at ${new Date(readyAt).toLocaleTimeString()}.`);
-        }
-      }
       newStatus = "released";
       escrowStatus = "released";
       break;
