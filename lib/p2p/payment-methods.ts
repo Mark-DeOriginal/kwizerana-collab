@@ -1,6 +1,6 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import type { SupportedMethod, SupportedMethodSeed, UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
-import { SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
+import { getPaymentMethodFields, paymentDetailValue, SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
 
 export type { SupportedMethod, SupportedMethodSeed, UserPaymentMethod };
 export { PAYMENT_METHOD_CATEGORY_LABELS, SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
@@ -48,6 +48,18 @@ export function validatePaymentMethodInput(input: PaymentMethodInput): string | 
   if (!input.method_name || !input.method_name.trim()) return "Payment method name is required.";
   if (input.method_name.length > 100) return "Payment method name is too long.";
   if (input.account_holder_name && input.account_holder_name.length > 120) return "Account holder name is too long.";
+  if (!input.details || typeof input.details !== "object" || Array.isArray(input.details)) return "Payment details are required.";
+  if (JSON.stringify(input.details).length > 4000) return "Payment details are too long.";
+
+  const fields = getPaymentMethodFields(input.method_name, input.method_type);
+  for (const field of fields) {
+    const value = paymentDetailValue(input.details, field, input.account_holder_name).trim();
+    if (field.required && !value) return `${field.label} is required.`;
+    if (value.length > 200) return `${field.label} is too long.`;
+    if (field.type === "email" && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      return `Enter a valid ${field.label.toLowerCase()}.`;
+    }
+  }
   return null;
 }
 

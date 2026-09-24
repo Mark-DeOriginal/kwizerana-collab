@@ -32,10 +32,12 @@ import {
 } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect, NumInput } from "@/components/p2p/custom-ui";
+import { PaymentDetailFields } from "@/components/p2p/payment-detail-fields";
+import { COUNTRIES, PAYMENT_METHOD_CATEGORY_LABELS } from "@/lib/p2p/countries-shared";
 import { ConnectedWalletSync, ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
 import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
 import type { UserWallet } from "@/lib/p2p/wallets";
-import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
+import { getPaymentMethodFields, paymentDetailValue, type UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import type { P2PNotification } from "@/lib/p2p/notifications";
 import type { VendorStatus } from "@/lib/p2p/vendor";
 import type { Review } from "@/lib/p2p/reviews";
@@ -305,6 +307,12 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         <div className="mt-4">
           <ReferralPanel />
         </div>
+
+        {data?.vendor?.isVendor && !data?.isSuperAdmin && (
+          <div className="mt-4">
+            <StopVendorPanel onChanged={load} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -552,10 +560,10 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
   }
 
   const tiles = [
-    { label: "Completion rate", value: `${formatAmount(stats.completionRate30d)}%` },
-    { label: "Total trades", value: formatAmount(stats.totalTrades) },
-    { label: "30-day volume", value: `${formatAmount(stats.volume30d)} USDT` },
-    { label: "Counterparties", value: formatAmount(stats.cumulativeCounterparties) }
+    { label: "30-day completion", value: stats.eligibleTrades30d > 0 ? `${formatAmount(stats.completionRate30d)}%` : "—" },
+    { label: "Completed trades", value: formatAmount(stats.completedTrades) },
+    { label: "30-day volume", value: `${formatAmount(stats.volume30d)} USD` },
+    { label: "Unique customers", value: formatAmount(stats.cumulativeCounterparties) }
   ];
 
   return (
@@ -575,15 +583,22 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
     >
       <div className="flex items-center justify-between rounded-md bg-ocean px-4 py-4 text-white">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-white/80">Trust score</p>
-          <p className="mt-1 text-3xl font-bold tracking-tight">{stats.trustScore}</p>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-white/80">Customer rating</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight">{stats.ratingCount > 0 && stats.ratingAverage != null ? `${stats.ratingAverage}/6` : stats.completedTrades > 0 ? "Unrated" : "New"}</p>
+          <p className="mt-1 text-xs text-white/75">{stats.ratingCount} verified rating{stats.ratingCount === 1 ? "" : "s"}</p>
         </div>
         <div className="flex items-center gap-0.5">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Star key={i} className={`h-4 w-4 ${i <= Math.round((stats.trustScore / 100) * 5) ? "fill-current" : "text-white/30"}`} />
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <Star key={i} className={`h-4 w-4 ${stats.ratingAverage != null && i <= Math.round(stats.ratingAverage) ? "fill-current" : "text-white/30"}`} />
           ))}
         </div>
       </div>
+
+      {stats.volume30d > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          USDT {formatAmount(stats.volume30dByAsset.USDT ?? 0)} · USDC {formatAmount(stats.volume30dByAsset.USDC ?? 0)}
+        </p>
+      )}
 
       <div className="mt-3 grid grid-cols-2 gap-3">
         {tiles.map((tile) => (
@@ -695,11 +710,73 @@ function SecurityPanel({ security, loading }: { security?: SecuritySummary; load
 }
 
 function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPaymentMethod[]; loading?: boolean; onChanged: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [addBusy, setAddBusy] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [addForm, setAddForm] = useState({
+    countryCode: "",
+    methodName: "",
+    customBank: false,
+    customBankName: "",
+    accountHolderName: "",
+    details: {} as Record<string, string>,
+    note: ""
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ accountHolderName: "", accountIdentifier: "", note: "" });
+  const [form, setForm] = useState({ accountHolderName: "", details: {} as Record<string, string>, note: "" });
+  const selectedCountry = COUNTRIES.find((country) => country.code === addForm.countryCode);
+  const selectedOption = selectedCountry?.methods.find((method) => method.name === addForm.methodName);
+  const addMethodName = addForm.customBank ? addForm.customBankName : addForm.methodName;
+  const addMethodType = addForm.customBank ? "bank" : selectedOption?.category ?? "";
+
+  function resetAddForm() {
+    setAddForm({ countryCode: "", methodName: "", customBank: false, customBankName: "", accountHolderName: "", details: {}, note: "" });
+    setAddError("");
+  }
+
+  function toggleAdd() {
+    if (adding) resetAddForm();
+    setAdding((current) => !current);
+    setEditingId(null);
+    setConfirmingId(null);
+  }
+
+  async function addPaymentMethod(event: React.FormEvent) {
+    event.preventDefault();
+    setAddError("");
+    if (!selectedCountry || !addMethodName.trim() || !addMethodType) {
+      setAddError("Select a country and payment method.");
+      return;
+    }
+    setAddBusy(true);
+    const response = await fetch("/api/p2p/payment-methods", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        method_type: addMethodType,
+        method_name: addMethodName.trim(),
+        account_holder_name: addForm.accountHolderName || null,
+        details: {
+          ...addForm.details,
+          note: addForm.note,
+          countryCode: selectedCountry.code,
+          countryName: selectedCountry.name
+        }
+      })
+    });
+    const data = await readJson<{ error?: string }>(response);
+    setAddBusy(false);
+    if (!response.ok) {
+      setAddError(data?.error ?? "Unable to add this payment method.");
+      return;
+    }
+    setAdding(false);
+    resetAddForm();
+    onChanged();
+  }
 
   useEffect(() => {
     if (!confirmingId) return;
@@ -708,13 +785,17 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
   }, [confirmingId]);
 
   function startEdit(method: UserPaymentMethod) {
-    const details = method.details as { accountIdentifier?: string; note?: string };
+    const details = method.details as Record<string, unknown> & { note?: string };
+    setAdding(false);
+    resetAddForm();
     setEditingId(method.id);
     setConfirmingId(null);
     setError("");
     setForm({
       accountHolderName: method.account_holder_name ?? "",
-      accountIdentifier: details.accountIdentifier ?? "",
+      details: Object.fromEntries(getPaymentMethodFields(method.method_name, method.method_type)
+        .filter((field) => field.key !== "account_holder_name")
+        .map((field) => [field.key, paymentDetailValue(details, field, method.account_holder_name)])),
       note: details.note ?? ""
     });
   }
@@ -734,7 +815,7 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
         method_type: method.method_type,
         method_name: method.method_name,
         account_holder_name: form.accountHolderName || null,
-        details: { ...existingDetails, accountIdentifier: form.accountIdentifier, note: form.note }
+        details: { ...existingDetails, ...form.details, note: form.note }
       })
     });
     const data = await readJson<{ error?: string }>(res);
@@ -775,24 +856,100 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
       icon={<Banknote className="h-4 w-4" />}
       subtitle="How buyers pay you"
       action={
-        <Link href="/account/payment-methods" className="flex h-8 items-center gap-1.5 bg-ink px-3 text-xs font-semibold text-white transition-colors hover:bg-ocean">
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </Link>
+        <button type="button" onClick={toggleAdd} className="flex h-8 items-center gap-1.5 bg-ink px-3 text-xs font-semibold text-white transition-colors hover:bg-ocean">
+          {!adding && <Plus className="h-3.5 w-3.5" />}
+          {adding ? "Cancel" : "Add"}
+        </button>
       }
     >
-      {methods.length === 0 ? (
-        <EmptyState icon={<Banknote className="h-5 w-5" />} title="No payment methods" subtitle="Add bank or mobile-money methods to buy and sell crypto." cta={<Link href="/account/payment-methods" className="text-sm font-semibold text-ocean hover:underline">Add a method</Link>} />
-      ) : (
+      {adding && (
+        <form onSubmit={(event) => void addPaymentMethod(event)} className="mb-3 space-y-3 border border-line bg-panel p-4">
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Country / region</label>
+            <CustomSelect
+              value={addForm.countryCode}
+              onChange={(countryCode) => setAddForm((current) => ({ ...current, countryCode, methodName: "", customBank: false, customBankName: "", accountHolderName: "", details: {} }))}
+              groups={[{ options: [...COUNTRIES].sort((a, b) => a.name.localeCompare(b.name)).map((country) => ({ value: country.code, label: country.name })) }]}
+              placeholder="Select your country"
+              triggerClassName="h-10 bg-white"
+            />
+          </div>
+
+          {addForm.customBank ? (
+            <div>
+              <label htmlFor="dashboard-custom-bank" className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Bank name</label>
+              <input id="dashboard-custom-bank" value={addForm.customBankName} onChange={(event) => setAddForm((current) => ({ ...current, customBankName: event.target.value }))} required className="h-10 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean" placeholder="Enter your bank's name" />
+            </div>
+          ) : (
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Payment method</label>
+              <CustomSelect
+                value={addForm.methodName}
+                onChange={(methodName) => setAddForm((current) => ({ ...current, methodName, accountHolderName: "", details: {} }))}
+                disabled={!selectedCountry}
+                groups={(["bank", "mobile_money", "digital_wallet"] as const).map((category) => ({
+                  label: PAYMENT_METHOD_CATEGORY_LABELS[category],
+                  options: (selectedCountry?.methods ?? []).filter((method) => method.category === category).map((method) => ({ value: method.name, label: method.name }))
+                })).filter((group) => group.options.length > 0)}
+                placeholder={selectedCountry ? "Select a payment method" : "Select a country first"}
+                triggerClassName="h-10 bg-white"
+              />
+            </div>
+          )}
+
+          {selectedCountry && (
+            <p className="text-xs text-muted">
+              Bank not listed?{" "}
+              <button type="button" onClick={() => setAddForm((current) => ({ ...current, customBank: !current.customBank, methodName: "", customBankName: "", accountHolderName: "", details: {} }))} className="font-semibold text-ocean underline underline-offset-2">
+                {addForm.customBank ? "Choose from the list" : "Add another bank"}
+              </button>
+            </p>
+          )}
+
+          <PaymentDetailFields
+            methodName={addMethodName}
+            methodType={addMethodType}
+            accountHolderName={addForm.accountHolderName}
+            details={addForm.details}
+            onAccountHolderNameChange={(accountHolderName) => setAddForm((current) => ({ ...current, accountHolderName }))}
+            onDetailsChange={(details) => setAddForm((current) => ({ ...current, details }))}
+            idPrefix="dashboard-add-payment"
+            compact
+          />
+
+          {addMethodName && (
+            <div>
+              <label htmlFor="dashboard-payment-note" className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Note <span className="normal-case text-muted/70">(optional)</span></label>
+              <input id="dashboard-payment-note" value={addForm.note} onChange={(event) => setAddForm((current) => ({ ...current, note: event.target.value }))} className="h-10 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean" placeholder="Branch or useful payment instructions" />
+            </div>
+          )}
+
+          {addError && <p className="text-xs font-semibold text-coral">{addError}</p>}
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={addBusy} className="flex h-9 items-center gap-2 bg-ink px-3 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60">
+              {addBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Add payment method
+            </button>
+            <button type="button" onClick={toggleAdd} disabled={addBusy} className="h-9 border border-line bg-white px-3 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60">Cancel</button>
+          </div>
+        </form>
+      )}
+
+      {methods.length === 0 && !adding ? (
+        <EmptyState icon={<Banknote className="h-5 w-5" />} title="No payment methods" subtitle="Add bank, mobile-money, or digital-wallet details to start trading." cta={<button type="button" onClick={toggleAdd} className="text-sm font-semibold text-ocean hover:underline">Add a method</button>} />
+      ) : methods.length > 0 ? (
         <ul className="space-y-2">
           {methods.slice(0, 4).map((m) => {
-            const details = m.details as { accountIdentifier?: string };
+            const details = m.details as Record<string, unknown>;
+            const summary = getPaymentMethodFields(m.method_name, m.method_type)
+              .map((field) => paymentDetailValue(details, field, m.account_holder_name))
+              .find(Boolean);
             return (
               <li key={m.id} className="border border-line bg-panel">
                 <div className="flex items-center justify-between gap-3 px-3 py-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold">{m.method_name}</p>
-                    {details.accountIdentifier && <p className="truncate font-mono text-xs text-muted">{details.accountIdentifier}</p>}
+                    {summary && <p className="truncate text-xs text-muted">{summary}</p>}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {m.is_verified && <span className="text-[10px] font-semibold uppercase text-moss">Verified</span>}
@@ -813,25 +970,16 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
 
                 {editingId === m.id && (
                   <form onSubmit={(e) => void save(e)} className="space-y-3 border-t border-line bg-white p-3">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Account holder name</label>
-                      <input
-                        value={form.accountHolderName}
-                        onChange={(e) => setForm((f) => ({ ...f, accountHolderName: e.target.value }))}
-                        className="h-10 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
-                        placeholder="Name on the account (optional)"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Account number / identifier</label>
-                      <input
-                        value={form.accountIdentifier}
-                        onChange={(e) => setForm((f) => ({ ...f, accountIdentifier: e.target.value }))}
-                        required
-                        className="h-10 w-full border border-line bg-white px-3 font-mono text-sm outline-none transition-colors focus:border-ocean"
-                        placeholder="Account number, phone number, or wallet address"
-                      />
-                    </div>
+                    <PaymentDetailFields
+                      methodName={m.method_name}
+                      methodType={m.method_type}
+                      accountHolderName={form.accountHolderName}
+                      details={form.details}
+                      onAccountHolderNameChange={(value) => setForm((current) => ({ ...current, accountHolderName: value }))}
+                      onDetailsChange={(details) => setForm((current) => ({ ...current, details }))}
+                      idPrefix={`dashboard-payment-${m.id}`}
+                      compact
+                    />
                     <div>
                       <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Note</label>
                       <input
@@ -864,7 +1012,7 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
             </li>
           )}
         </ul>
-      )}
+      ) : null}
     </Card>
   );
 }
@@ -875,6 +1023,7 @@ const TRADE_STATUS_LABELS: Record<string, string> = {
   payment_sent: "Payment sent",
   released: "Payment confirmed",
   completed: "Completed",
+  declined: "Declined",
   cancelled: "Cancelled",
   expired: "Expired",
   disputed: "Disputed"
@@ -1160,6 +1309,60 @@ function VendorApplicationForm({ busy, error, applying, setApplying, bio, setBio
   );
 }
 
+function StopVendorPanel({ onChanged }: { onChanged: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function stopVendor() {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/p2p/vendor", { method: "DELETE" });
+      const data = await readJson<{ error?: string }>(response);
+      if (!response.ok) {
+        setError(data?.error ?? "Unable to stop vendor activity.");
+        return;
+      }
+      setConfirming(false);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="border border-coral/35 bg-coral/5 p-5 sm:p-6" aria-labelledby="stop-vendor-title">
+      {!confirming ? (
+        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+          <div>
+            <h2 id="stop-vendor-title" className="text-base font-semibold text-ink">Stop being a vendor</h2>
+            <p className="mt-1 max-w-xl text-sm leading-6 text-muted">Stop accepting new orders while keeping your account, trade history, ratings, and payment methods.</p>
+          </div>
+          <button type="button" onClick={() => { setConfirming(true); setError(""); }} className="h-10 shrink-0 border border-coral bg-transparent px-4 text-sm font-semibold text-coral transition-colors hover:bg-coral hover:text-white">
+            Stop being a vendor
+          </button>
+        </div>
+      ) : (
+        <div className="mt-4 border-t border-coral/25 pt-4">
+          <p className="text-sm font-semibold text-ink">Stop being a vendor?</p>
+          <p className="mt-1 text-sm leading-6 text-muted">Your listings will be removed and you won&apos;t receive new orders. Your completed trades, ratings, payment methods, and account will remain available. You can apply again later.</p>
+          {error && <p className="mt-2 text-sm font-semibold text-coral">{error}</p>}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button type="button" onClick={() => void stopVendor()} disabled={busy} className="flex h-9 items-center gap-2 bg-coral px-4 text-sm font-semibold text-white transition-colors hover:bg-coral/85 disabled:opacity-60">
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Confirm and stop
+            </button>
+            <button type="button" onClick={() => { setConfirming(false); setError(""); }} disabled={busy} className="h-9 border border-line bg-white px-4 text-sm font-semibold text-muted transition-colors hover:text-ink disabled:opacity-60">
+              Keep vendor account
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; loading?: boolean; onChanged: () => void }) {
   const active = trades.filter(isActiveTrade);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1236,20 +1439,18 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
   const [stars, setStars] = useState(0);
   const [comment, setComment] = useState("");
 
-  const history = trades.filter((t) => !isActiveTrade(t) && (t.status === "completed" || t.status === "cancelled" || t.status === "expired"));
+  const history = trades.filter((t) => !isActiveTrade(t) && (t.status === "completed" || t.status === "declined" || t.status === "cancelled" || t.status === "expired"));
   const filtered = filter === "all" ? history : history.filter((t) => t.status === filter);
   const shown = filtered.slice(0, visible);
   const reviewedById = useMemo(() => new Map(submittedReviews.map((r) => [r.trade_id, r])), [submittedReviews]);
 
   async function submitReview(tradeId: string) {
-    const map: Record<number, string> = { 5: "positive", 4: "positive", 3: "neutral", 2: "negative", 1: "negative" };
-    const rating = map[stars];
-    if (!rating) return;
+    if (stars < 1 || stars > 5) return;
     setBusy(true);
     const res = await fetch(`/api/p2p/trades/${tradeId}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rating, comment })
+      body: JSON.stringify({ star_rating: stars, comment })
     });
     setBusy(false);
     if (!res.ok) return;
@@ -1318,6 +1519,7 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
               const counterparty = t.my_role === "buyer" ? t.seller_name : t.buyer_name;
               const isBuy = t.my_role === "buyer";
               const isCompleted = t.status === "completed";
+              const canRateVendor = isCompleted && t.is_initiator;
               const existing = reviewedById.get(t.id);
               return (
                 <Fragment key={t.id}>
@@ -1337,12 +1539,12 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
                       <span className={`text-xs font-bold uppercase tracking-wide ${isCompleted ? "text-moss" : "text-muted"}`}>{statusLabel(t.status)}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      {isCompleted && !existing && (
+                      {canRateVendor && !existing && (
                         <button onClick={() => { setReviewing(t.id); setStars(0); setComment(""); }} className="text-xs font-semibold text-ocean hover:underline">
                           Rate
                         </button>
                       )}
-                      {isCompleted && existing && (
+                      {canRateVendor && existing && (
                         <span className="flex items-center justify-end gap-0.5 text-moss" title="Rated">
                           {[1, 2, 3, 4, 5].map((i) => (
                             <Star key={i} className={`h-3.5 w-3.5 ${i <= ratingToStars(existing.rating) ? "fill-current" : "text-line"}`} />
@@ -1582,8 +1784,6 @@ type InventoryEntry = {
 const INVENTORY_TOKENS = ["USDT", "USDC"];
 
 function InventoryEditor({ onChanged, managed }: { onChanged: () => void; managed?: boolean }) {
-  const [managedVendors, setManagedVendors] = useState<{ id: string; name: string }[]>([]);
-  const [vendorId, setVendorId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [balances, setBalances] = useState<Record<string, string>>({ USDT: "", USDC: "" });
@@ -1599,26 +1799,17 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
     });
   };
 
-  const loadInventory = useCallback(async (vid?: string) => {
-    const qs = managed && vid ? `?user_id=${encodeURIComponent(vid)}` : "";
-    const res = await fetch(`/api/p2p/vendor/inventory${qs}`);
-    const data = await readJson<{ inventory?: InventoryEntry[]; managed_vendors?: { id: string; name: string }[] }>(res);
+  const loadInventory = useCallback(async () => {
+    const res = await fetch("/api/p2p/vendor/inventory");
+    const data = await readJson<{ inventory?: InventoryEntry[] }>(res);
     if (res.ok && data?.inventory) {
       applyInventory(data.inventory);
-      if (data.managed_vendors?.length) {
-        setManagedVendors(data.managed_vendors);
-        setVendorId((prev) => (data.managed_vendors!.some((v) => v.id === prev) ? prev : data.managed_vendors![0].id));
-      }
     }
-  }, [managed]);
+  }, []);
 
   useEffect(() => {
     void loadInventory();
   }, [loadInventory]);
-
-  useEffect(() => {
-    if (managed && vendorId) void loadInventory(vendorId);
-  }, [vendorId, managed, loadInventory]);
 
   const save = async () => {
     const balancesToSave: Record<string, number> = {};
@@ -1639,12 +1830,10 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
     setBusy(true);
     setError("");
     try {
-      const body: Record<string, unknown> = { balances: balancesToSave };
-      if (managed && vendorId) body.user_id = vendorId;
       const res = await fetch("/api/p2p/vendor/inventory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ balances: balancesToSave })
       });
       const data = await readJson<{ inventory?: InventoryEntry[]; error?: string }>(res);
       if (!res.ok) {
@@ -1658,29 +1847,14 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
     }
   };
 
-  const showVendorSelect = managed && managedVendors.length > 0;
-
   return (
     <div>
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">Inventory for sale</p>
       <p className="mt-1 text-xs text-muted">
-        Set how much USDC and USDT {managed ? "each vendor" : "you"} have available to sell. Buyers see this as the listing limit.
+        {managed
+          ? "Set the shared USDC and USDT balance available across all vendor profiles you manage."
+          : "Set how much USDC and USDT you have available to sell. Buyers see this as the listing limit."}
       </p>
-
-      {showVendorSelect && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
-          <CustomSelect
-            value={vendorId}
-            onChange={setVendorId}
-            groups={[{ options: managedVendors.map((v) => ({ value: v.id, label: v.name })) }]}
-            placeholder="Select vendor"
-            wrapperClassName="w-48"
-            align="right"
-            triggerClassName="h-9"
-          />
-        </div>
-      )}
 
       <div className="mt-3 space-y-2">
         {INVENTORY_TOKENS.map((code) => (
@@ -1699,7 +1873,7 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
 
       <button
         onClick={() => void save()}
-        disabled={busy || (showVendorSelect && !vendorId)}
+        disabled={busy}
         className="mt-3 flex h-10 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save inventory"}
@@ -1710,35 +1884,24 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
 }
 
 function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; managed?: boolean }) {
-  const [managedVendors, setManagedVendors] = useState<{ id: string; name: string }[]>([]);
-  const [vendorId, setVendorId] = useState("");
   const [buyFeePercent, setBuyFeePercent] = useState("");
   const [sellFeePercent, setSellFeePercent] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const loadFee = useCallback(async (vid?: string) => {
-    const qs = managed && vid ? `?user_id=${encodeURIComponent(vid)}` : "";
-    const res = await fetch(`/api/p2p/vendor/fee${qs}`);
-    const data = await readJson<{ vendor_buy_fee_percent?: number; vendor_sell_fee_percent?: number; managed_vendors?: { id: string; name: string }[] }>(res);
+  const loadFee = useCallback(async () => {
+    const res = await fetch("/api/p2p/vendor/fee");
+    const data = await readJson<{ vendor_buy_fee_percent?: number; vendor_sell_fee_percent?: number }>(res);
     if (res.ok && data) {
       setBuyFeePercent(String(data.vendor_buy_fee_percent ?? 0));
       setSellFeePercent(String(data.vendor_sell_fee_percent ?? 0));
-      if (data.managed_vendors?.length) {
-        setManagedVendors(data.managed_vendors);
-        setVendorId((prev) => (data.managed_vendors!.some((v) => v.id === prev) ? prev : data.managed_vendors![0].id));
-      }
     }
-  }, [managed]);
+  }, []);
 
   useEffect(() => {
     void loadFee();
   }, [loadFee]);
-
-  useEffect(() => {
-    if (managed && vendorId) void loadFee(vendorId);
-  }, [vendorId, managed, loadFee]);
 
   async function save() {
     const buy = Number(buyFeePercent);
@@ -1755,12 +1918,10 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
     setError("");
     setSuccess("");
     try {
-      const body: Record<string, unknown> = { vendor_buy_fee_percent: buy, vendor_sell_fee_percent: sell };
-      if (managed && vendorId) body.user_id = vendorId;
       const res = await fetch("/api/p2p/vendor/fee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ vendor_buy_fee_percent: buy, vendor_sell_fee_percent: sell })
       });
       const data = await readJson<{ error?: string; vendor_buy_fee_percent?: number; vendor_sell_fee_percent?: number }>(res);
       if (!res.ok) {
@@ -1777,7 +1938,6 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
     }
   }
 
-  const showVendorSelect = managed && managedVendors.length > 0;
   const currentBuyFee = Number(buyFeePercent) || 0;
   const currentSellFee = Number(sellFeePercent) || 0;
 
@@ -1785,23 +1945,10 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
     <div>
       <p className="text-xs font-semibold uppercase tracking-wide text-muted">Trading fees</p>
       <p className="mt-1 text-xs text-muted">
-        Set the percentage you charge on top of the standard exchange rate for each direction.
+        {managed
+          ? "Set the shared percentage applied across all vendor profiles you manage."
+          : "Set the percentage you charge on top of the standard exchange rate for each direction."}
       </p>
-
-      {showVendorSelect && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted">Vendor</span>
-          <CustomSelect
-            value={vendorId}
-            onChange={setVendorId}
-            groups={[{ options: managedVendors.map((v) => ({ value: v.id, label: v.name })) }]}
-            placeholder="Select vendor"
-            wrapperClassName="w-48"
-            align="right"
-            triggerClassName="h-9"
-          />
-        </div>
-      )}
 
       <div className="mt-3 space-y-2">
         <label className="block">
@@ -1829,14 +1976,14 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
       </div>
 
       <div className="mt-2 text-xs text-muted">
-        {currentSellFee > 0 && <span>Sell: Standard <span className="font-semibold text-moss">+ {currentSellFee}%</span> · </span>}
-        {currentBuyFee > 0 && <span>Buy: Standard <span className="font-semibold text-coral">- {currentBuyFee}%</span></span>}
+        {currentSellFee > 0 && <span>Sell: Standard <span className="font-semibold text-ink">+ {currentSellFee}%</span> · </span>}
+        {currentBuyFee > 0 && <span>Buy: Standard <span className="font-semibold text-ink">- {currentBuyFee}%</span></span>}
         {currentSellFee === 0 && currentBuyFee === 0 && <span>Displaying standard rate with no markup.</span>}
       </div>
 
       <button
         onClick={() => void save()}
-        disabled={busy || (showVendorSelect && !vendorId)}
+        disabled={busy}
         className="mt-3 flex h-10 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
       >
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save fees"}

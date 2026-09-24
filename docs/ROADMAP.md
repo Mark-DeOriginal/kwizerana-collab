@@ -69,10 +69,11 @@ Status: **planned on top of partially implemented features**
 - Keep requested trades visible until participant cancellation; never translate an escrow recovery deadline into an unverified off-chain terminal state.
 - Keep cancelled or expired funded trades in Active Trades until the escrow refund is confirmed; clearly distinguish refund required from refund pending.
 - Distinguish the request initiator from buyer/seller asset roles: initiators cancel their request, while receiving counterparties decline it.
+- Treat a counterparty decline as a terminal unfunded transition for both participants, retain the stated reason, and remove all approval, funding, and proceed-anyway actions.
 - Apply initiator permissions after funding as well, and keep receipt submission consistent across buy and sell trades while enforcing the escrow actor on-chain and server-side.
 - Keep Buy and Sell acceptance semantics distinct: Buy vendors review and fund escrow, while Sell vendors first confirm fiat liquidity and only then may the initiating crypto seller fund escrow.
 - Complete receipts, chat, notification, cancellation, refund, review, and dispute journeys.
-- Preserve a single clear completion activity entry for both participants when a trade settles.
+- Preserve recipient-specific lifecycle activity for both participants without duplicate delivery of the same transition.
 - Add member dashboard routes for orders, wallets, payment methods, security, and reputation.
 
 Exit: realistic end-to-end buy and sell journeys pass happy-path and failure-path tests on testnet.

@@ -395,6 +395,8 @@ const schemaStatements = [
   `ALTER TABLE p2p_advertiser_applications ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}'::jsonb`,
   `UPDATE p2p_trades SET status = 'escrow_locked', updated_at = NOW()
      WHERE status = 'pending_payment'`,
+  `UPDATE p2p_trades SET status = 'declined', updated_at = NOW()
+     WHERE status = 'created' AND declined_at IS NOT NULL`,
 
   // ── P2P Marketplace: indexes ─────────────────────────────────────────────
   `CREATE INDEX IF NOT EXISTS p2p_ads_crypto_idx ON p2p_ads(crypto_currency)`,  `CREATE INDEX IF NOT EXISTS p2p_ads_fiat_idx ON p2p_ads(fiat_currency)`,

@@ -75,7 +75,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   const action = String(body.action ?? "");
-  const validActions: TradeAction[] = ["set_receive_wallet", "approve", "accept", "mark_paid", "release", "claim", "cancel", "refund", "close_trade", "decline", "proceed"];
+  const validActions: TradeAction[] = ["set_receive_wallet", "approve", "accept", "mark_paid", "release", "claim", "cancel", "refund", "close_trade", "decline"];
   if (!validActions.includes(action as TradeAction)) {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }

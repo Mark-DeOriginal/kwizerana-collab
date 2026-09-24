@@ -102,6 +102,15 @@ async function seedDefaultVendors(): Promise<void> {
       [vendorId, email, vendorName, adminUserId]
     );
 
+    // DAO storefronts are intentionally one-per-fiat. Deactivate any generic
+    // fallback listings that were accidentally provisioned for another fiat.
+    await dbQuery(
+      `UPDATE p2p_ads
+       SET status = 'inactive', is_paused = TRUE, updated_at = NOW()
+       WHERE user_id = $1 AND fiat_currency <> $2 AND status = 'active'`,
+      [vendorId, code]
+    );
+
     // Seed a default declared balance for sale per token so seeded vendors
     // appear on the trade page (per-token gating requires balance > 0).
     const defaultInventory = Number(process.env.DAOVENDOR_INVENTORY ?? 100000);
@@ -144,8 +153,10 @@ async function seedDefaultVendors(): Promise<void> {
     const pmIds = pmRows.map((r) => r.id);
 
     const existingAds = await dbQuery<{ count: string }>(
-      `SELECT COUNT(*)::TEXT AS count FROM p2p_ads WHERE user_id = $1`,
-      [vendorId]
+      `SELECT COUNT(*)::TEXT AS count
+       FROM p2p_ads
+       WHERE user_id = $1 AND fiat_currency = $2 AND status = 'active'`,
+      [vendorId, code]
     );
 
     if (Number(existingAds[0]?.count ?? "0") === 0) {
@@ -201,5 +212,15 @@ export async function linkUnlinkedDAOVendors(): Promise<void> {
     `UPDATE users SET owner_user_id = $1, updated_at = NOW()
      WHERE id LIKE 'kwizerana-dao-%' AND owner_user_id IS NULL`,
     [adminUserId]
+  );
+
+  await dbQuery(
+    `UPDATE p2p_ads a
+     SET status = 'inactive', is_paused = TRUE, updated_at = NOW()
+     FROM users u
+     WHERE a.user_id = u.id
+       AND u.id LIKE 'kwizerana-dao-%'
+       AND LOWER(a.fiat_currency) <> REPLACE(u.id, 'kwizerana-dao-', '')
+       AND a.status = 'active'`
   );
 }

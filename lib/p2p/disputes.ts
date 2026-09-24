@@ -1,5 +1,6 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
-import { createNotification, updateTradeNotification, notifyByEmail } from "@/lib/p2p/notifications";
+import { randomUUID } from "crypto";
+import { createNotification, notifyByEmail } from "@/lib/p2p/notifications";
 import { verifyEscrowTransaction } from "@/lib/p2p/chain-verification";
 import { isEscrowDeployed } from "@/lib/web3/escrow";
 
@@ -59,16 +60,20 @@ export async function createDispute(
   const counterpartyId = isBuyer
     ? trade.seller_owner_id || trade.seller_id
     : trade.buyer_owner_id || trade.buyer_id;
-  await createNotification(counterpartyId, {
-    type: "trade_disputed",
-    title: "Trade disputed",
-    body: `A dispute was opened on your trade. Support will review it shortly.`,
-    data: { tradeId: input.tradeId }
-  });
-  await updateTradeNotification(input.tradeId, {
-    title: "Order under dispute",
-    body: `This order is now under dispute review. Support will decide the outcome.`
-  });
+  await Promise.allSettled([
+    createNotification(userId, {
+      type: "trade_disputed",
+      title: "Dispute submitted",
+      body: "Your dispute was submitted for administrator review. Add any supporting evidence in the dispute center.",
+      data: { tradeId: input.tradeId, disputeId: inserted[0].id }
+    }),
+    createNotification(counterpartyId, {
+      type: "trade_disputed",
+      title: "Dispute opened",
+      body: "The other party opened a dispute for this trade. Review the case and provide your evidence in the dispute center.",
+      data: { tradeId: input.tradeId, disputeId: inserted[0].id }
+    })
+  ]);
   await notifyByEmail(counterpartyId, "A trade was disputed", "A dispute was opened on one of your trades. Our support team will review it and contact you with the outcome.");
 
   return inserted[0];
@@ -90,6 +95,17 @@ export type DisputeDetail = {
   created_at: string;
   counterparty: string;
   my_side: "buyer" | "seller";
+  evidence_buyer: DisputeEvidence[];
+  evidence_seller: DisputeEvidence[];
+};
+
+export type DisputeEvidence = {
+  id: string;
+  author_id: string;
+  side: "buyer" | "seller";
+  description: string;
+  image_url?: string;
+  created_at: string;
 };
 
 /** Disputes the current user is involved in (as raiser or counterparty). */
@@ -102,6 +118,7 @@ export async function listMyDisputes(userId: string): Promise<DisputeDetail[]> {
             t.crypto_currency, t.crypto_amount::TEXT AS crypto_amount,
             t.fiat_currency, t.fiat_amount::TEXT AS fiat_amount,
             d.raised_by, d.reason, d.status, d.resolution, d.resolved_at, d.created_at,
+            d.evidence_buyer, d.evidence_seller,
             t.buyer_id, t.seller_id, b.name AS buyer_name, s.name AS seller_name
      FROM p2p_disputes d
      JOIN p2p_trades t ON t.id = d.trade_id
@@ -123,6 +140,73 @@ export async function listMyDisputes(userId: string): Promise<DisputeDetail[]> {
   });
 }
 
+export async function addDisputeEvidence(
+  userId: string,
+  disputeId: string,
+  input: { description?: string; imageUrl?: string }
+): Promise<DisputeEvidence> {
+  await ensureDatabase();
+  const rows = await dbQuery<{
+    trade_id: string; status: string; buyer_id: string; seller_id: string;
+    buyer_owner_id: string | null; seller_owner_id: string | null;
+  }>(
+    `SELECT d.trade_id::TEXT AS trade_id, d.status, t.buyer_id, t.seller_id,
+            buyer.owner_user_id AS buyer_owner_id, seller.owner_user_id AS seller_owner_id
+     FROM p2p_disputes d
+     JOIN p2p_trades t ON t.id = d.trade_id
+     JOIN users buyer ON buyer.id = t.buyer_id
+     JOIN users seller ON seller.id = t.seller_id
+     WHERE d.id = $1`,
+    [disputeId]
+  );
+  const dispute = rows[0];
+  if (!dispute) throw new Error("Dispute not found.");
+  if (dispute.status !== "open") throw new Error("Evidence can only be added to an open dispute.");
+
+  const side = dispute.buyer_id === userId || dispute.buyer_owner_id === userId
+    ? "buyer"
+    : dispute.seller_id === userId || dispute.seller_owner_id === userId
+      ? "seller"
+      : null;
+  if (!side) throw new Error("You are not a participant in this dispute.");
+
+  const description = input.description?.trim() ?? "";
+  const imageUrl = input.imageUrl?.trim() ?? "";
+  if (!description && !imageUrl) throw new Error("Add a description or an image as evidence.");
+  if (description.length > 2000) throw new Error("Evidence notes must be 2,000 characters or fewer.");
+  if (imageUrl && (!/^data:image\/(jpeg|png|webp);base64,/.test(imageUrl) || imageUrl.length > 2_500_000)) {
+    throw new Error("Upload a JPG, PNG, or WebP image smaller than 2 MB.");
+  }
+
+  const evidence: DisputeEvidence = {
+    id: randomUUID(),
+    author_id: userId,
+    side,
+    description,
+    ...(imageUrl ? { image_url: imageUrl } : {}),
+    created_at: new Date().toISOString()
+  };
+  const column = side === "buyer" ? "evidence_buyer" : "evidence_seller";
+  await dbQuery(
+    `UPDATE p2p_disputes
+     SET ${column} = ${column} || $2::jsonb, updated_at = NOW()
+     WHERE id = $1 AND status = 'open'`,
+    [disputeId, JSON.stringify([evidence])]
+  );
+
+  const counterpartyId = side === "buyer"
+    ? dispute.seller_owner_id || dispute.seller_id
+    : dispute.buyer_owner_id || dispute.buyer_id;
+  await createNotification(counterpartyId, {
+    type: "trade_dispute_evidence",
+    title: "New dispute evidence",
+    body: "The other party added evidence to your open dispute. Review it in the dispute center.",
+    data: { tradeId: dispute.trade_id, disputeId }
+  }).catch(() => {});
+
+  return evidence;
+}
+
 export type AdminDispute = {
   id: string;
   trade_id: string;
@@ -136,6 +220,8 @@ export type AdminDispute = {
   created_at: string;
   resolved_at: string | null;
   receipt_image: string | null;
+  evidence_buyer: DisputeEvidence[];
+  evidence_seller: DisputeEvidence[];
 };
 
 export async function listAllDisputes(): Promise<AdminDispute[]> {
@@ -143,6 +229,7 @@ export async function listAllDisputes(): Promise<AdminDispute[]> {
   return dbQuery<AdminDispute>(
     `SELECT d.id::TEXT AS id, d.trade_id::TEXT AS trade_id, t.trade_ref,
             d.reason, d.status, d.resolution, d.raised_by, t.receipt_image,
+            d.evidence_buyer, d.evidence_seller,
             b.name AS buyer_name, s.name AS seller_name,
             d.created_at, d.resolved_at
      FROM p2p_disputes d
@@ -158,11 +245,15 @@ export type DisputeResolution = "release_buyer" | "refund_seller";
 export async function resolveDispute(adminUserId: string, disputeId: string, resolution: DisputeResolution, txHash?: string): Promise<void> {
   await ensureDatabase();
 
-  const rows = await dbQuery<{ trade_id: string; trade_ref: string; buyer_id: string; seller_id: string; buyer_wallet_address: string | null; seller_wallet_address: string | null; crypto_currency: string; crypto_amount: string; status: string }>(
+  const rows = await dbQuery<{ trade_id: string; trade_ref: string; buyer_id: string; seller_id: string; buyer_owner_id: string | null; seller_owner_id: string | null; buyer_wallet_address: string | null; seller_wallet_address: string | null; crypto_currency: string; crypto_amount: string; status: string }>(
     `SELECT d.trade_id::TEXT AS trade_id, t.trade_ref, t.buyer_id, t.seller_id,
+            buyer.owner_user_id AS buyer_owner_id, seller.owner_user_id AS seller_owner_id,
             t.buyer_wallet_address, t.seller_wallet_address, t.crypto_currency,
             t.crypto_amount::TEXT AS crypto_amount, d.status
-     FROM p2p_disputes d JOIN p2p_trades t ON t.id = d.trade_id
+     FROM p2p_disputes d
+     JOIN p2p_trades t ON t.id = d.trade_id
+     JOIN users buyer ON buyer.id = t.buyer_id
+     JOIN users seller ON seller.id = t.seller_id
      WHERE d.id = $1`,
     [disputeId]
   );
@@ -230,18 +321,18 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
   );
   if (!persisted[0]?.applied) throw new Error("Dispute has already been resolved.");
 
-  const copy: Record<DisputeResolution, string> = {
-    release_buyer: "Resolved: crypto released to the buyer.",
-    refund_seller: "Resolved: escrow refunded to the seller."
-  };
-
-  for (const uid of [d.buyer_id, d.seller_id]) {
-    await createNotification(uid, {
-      type: "trade_dispute_resolved",
-      title: "Dispute resolved",
-      body: copy[resolution],
-      data: { tradeId: d.trade_id }
-    });
-    await notifyByEmail(uid, "Dispute resolved", copy[resolution]);
-  }
+  const buyerCopy = resolution === "release_buyer"
+    ? `The dispute was resolved in your favor. ${d.crypto_amount} ${d.crypto_currency} was released to the buyer wallet.`
+    : `The dispute was resolved and ${d.crypto_amount} ${d.crypto_currency} was returned to the crypto seller.`;
+  const sellerCopy = resolution === "refund_seller"
+    ? `The dispute was resolved in your favor. ${d.crypto_amount} ${d.crypto_currency} was refunded to the seller wallet.`
+    : `The dispute was resolved and ${d.crypto_amount} ${d.crypto_currency} was released to the buyer.`;
+  const recipients = [
+    { id: d.buyer_owner_id || d.buyer_id, body: buyerCopy },
+    { id: d.seller_owner_id || d.seller_id, body: sellerCopy }
+  ];
+  await Promise.allSettled(recipients.flatMap(({ id, body }) => [
+    createNotification(id, { type: "trade_dispute_resolved", title: "Dispute resolved", body, data: { tradeId: d.trade_id, disputeId } }),
+    notifyByEmail(id, "Dispute resolved", body)
+  ]));
 }

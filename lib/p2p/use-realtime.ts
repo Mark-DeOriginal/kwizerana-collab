@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { readJson } from "@/lib/client-request";
 import type { Trade } from "@/lib/p2p/trades";
 
-export const TERMINAL_TRADE_STATUSES = ["completed", "cancelled", "expired", "disputed"];
+export const TERMINAL_TRADE_STATUSES = ["completed", "declined", "cancelled", "expired", "disputed"];
 
 export function isTerminalTrade(status: string): boolean {
   return TERMINAL_TRADE_STATUSES.includes(status);

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   ArrowRight,
   Check,
@@ -32,6 +33,7 @@ import { TradeChat } from "@/components/p2p/trade-chat";
 import { NumInput } from "@/components/p2p/custom-ui";
 import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
 import { escrowChain } from "@/lib/web3/config";
+import { getPaymentMethodFields, paymentDetailValue } from "@/lib/p2p/payment-methods-shared";
 
 function fn(value: number, decimals = 2): string {
   if (!Number.isFinite(value)) value = 0;
@@ -72,7 +74,7 @@ export function TradeOrderCard({ trade, onOpen }: { trade: Trade; onOpen: () => 
       ? "bg-mint text-moss"
       : trade.status === "disputed"
         ? "bg-coral/10 text-coral"
-        : (trade.status === "cancelled" || trade.status === "expired") && !refundPending
+        : (trade.status === "declined" || trade.status === "cancelled" || trade.status === "expired") && !refundPending
           ? "bg-panel text-muted"
           : needsAction
             ? "bg-ocean/10 text-ocean"
@@ -171,7 +173,11 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
   const isBuyer = viewRole === "buyer";
   const counterparty = isBuyer ? trade.seller_name : trade.buyer_name;
-  const accountIdentifier = (trade.payment_details as { accountIdentifier?: string }).accountIdentifier;
+  const customerCanRate = trade.is_initiator && (trade.status === "completed" || (!isBuyer && trade.status === "released"));
+  const paymentDetails = (trade.payment_details ?? {}) as Record<string, unknown>;
+  const paymentFields = getPaymentMethodFields(trade.payment_method_name ?? "", trade.payment_method_type ?? "")
+    .map((field) => ({ field, value: paymentDetailValue(paymentDetails, field, trade.payment_account_holder) }))
+    .filter(({ value }) => Boolean(value));
   const escrowFunded = trade.escrow_status === "funded" || trade.escrow_status === "released" || trade.escrow_status === "claimed";
   const hasEscrowDeposit = Boolean(trade.escrow_debit_tx);
   const escrowConfigured = isEscrowDeployed();
@@ -275,6 +281,9 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         setDisputeReason("");
         onRefresh();
         return true;
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : "Unable to update this trade. Check your connection and try again.");
+        return false;
       } finally {
         setActiveAction((current) => current === action ? null : current);
       }
@@ -368,6 +377,19 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           Trade completed. {isBuyer ? `You received ${fn(trade.crypto_amount, 6)} ${trade.crypto_currency}.` : `The buyer received ${fn(trade.crypto_amount, 6)} ${trade.crypto_currency}.`}
         </span>
       </div>
+    ) : trade.status === "declined" ? (
+      <div className="border border-coral/30 bg-coral/5 p-3 text-sm">
+        <p className="font-semibold text-coral">
+          {trade.is_initiator ? `${counterparty} declined your order` : "You declined this order"}
+        </p>
+        {trade.is_initiator && trade.decline_feedback && (
+          <div className="mt-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Reason</p>
+            <p className="mt-1 leading-6 text-ink">{trade.decline_feedback}</p>
+          </div>
+        )}
+        {!trade.is_initiator && <p className="mt-1 text-muted">The other party has been notified.</p>}
+      </div>
     ) : trade.status === "cancelled" ? (
       escrowFunded ? (
         <div className="border border-coral/30 bg-coral/5 p-3 text-sm">
@@ -434,7 +456,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
             ? "bg-mint text-moss"
             : trade.status === "disputed"
               ? "bg-coral/10 text-coral"
-              : trade.status === "cancelled" || trade.status === "expired"
+              : trade.status === "declined" || trade.status === "cancelled" || trade.status === "expired"
                 ? "bg-panel text-muted"
                 : "bg-ocean/10 text-ocean"
         }`}>
@@ -443,7 +465,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
       </div>
 
       {/* Progress tracker */}
-      {!["cancelled", "expired", "disputed"].includes(trade.status) && (
+      {!["declined", "cancelled", "expired", "disputed"].includes(trade.status) && (
         <div className="border border-line bg-white p-4">
           <ol className="flex items-center">
             {stepsFor(isBuyer).map((label, i) => {
@@ -470,7 +492,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         </div>
       )}
 
-      {terminalBanner}
+      {trade.status !== "declined" && terminalBanner}
 
       <TradeChat tradeId={trade.id} />
 
@@ -526,14 +548,17 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         {trade.payment_reference && <Row label="Payment reference" value={<span className="font-mono">{trade.payment_reference}</span>} />}
       </div>
 
+      {trade.status === "declined" && terminalBanner}
+
       {/* Payment details */}
       {showPaymentDetails && (
         <div className="border border-line bg-white p-4">
           <p className="text-sm font-semibold">{isBuyer ? "Send your fiat to" : "You'll receive fiat via"}</p>
           <div className="mt-2 space-y-1 text-sm text-muted">
             <p className="font-semibold text-ink">{trade.payment_method_name ?? "—"}</p>
-            {trade.payment_account_holder && <p>Account holder: <span className="font-semibold text-ink">{trade.payment_account_holder}</span></p>}
-            {accountIdentifier && <p>Account: <span className="font-mono font-semibold text-ink">{accountIdentifier}</span></p>}
+            {paymentFields.map(({ field, value }) => (
+              <p key={field.key}>{field.label}: <span className="font-semibold text-ink">{value}</span></p>
+            ))}
             {trade.payment_reference && (
               <p>Include this reference in your payment: <span className="font-mono font-semibold text-ink">{trade.payment_reference}</span></p>
             )}
@@ -581,37 +606,15 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           </>
         )}
 
-        {/* Buyer: created → awaiting vendor approval (or declined banner + proceed) */}
+        {/* Buyer: created → awaiting vendor approval. */}
         {isBuyer && trade.status === "created" && (
           <>
             <ReceiveWalletSetup
               trade={trade}
               busy={activeAction === "set_receive_wallet"}
               onSave={(destination) => doAction("set_receive_wallet", { dest_address: destination })}
-              onError={setError}
             />
-            {trade.decline_feedback && trade.is_initiator ? (
-              <div className="flex flex-col gap-2.5 border border-coral/40 bg-coral/5 p-3">
-                <div className="flex items-start gap-2">
-                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
-                  <div className="text-sm">
-                    <p className="font-semibold text-coral">{counterparty} declined your order</p>
-                    <p className="mt-1 text-muted">&ldquo;{trade.decline_feedback}&rdquo;</p>
-                    <p className="mt-1 text-xs text-muted">You can cancel the order, or proceed anyway and ask {counterparty} to approve it.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => void doAction("proceed")}
-                    disabled={activeAction === "proceed"}
-                    className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
-                  >
-                    {activeAction === "proceed" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Proceed anyway"}
-                  </button>
-                  <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />
-                </div>
-              </div>
-            ) : trade.is_initiator ? (
+            {trade.is_initiator ? (
               <>
                 <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
                   <Clock className="mt-0.5 h-4 w-4 shrink-0 text-ocean" />
@@ -619,11 +622,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                 </div>
                 <CancelTradeButton busy={activeAction === "cancel"} onClick={() => void doAction("cancel")} />
               </>
-            ) : trade.decline_feedback ? (
-              <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm text-muted">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-moss" />
-                You declined this order. The initiator can review your reason and decide whether to continue.
-              </div>
             ) : trade.buyer_wallet_address ? (
               <>
                 <div className="flex items-start gap-2 border border-line bg-panel p-3 text-sm">
@@ -785,11 +783,49 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           </>
         )}
 
-        {/* Seller: released → payment confirmed (final stage for the seller) */}
+        {/* Seller: released is their final stage; the buyer claims separately. */}
         {!isBuyer && trade.status === "released" && (
           <div className="flex items-start gap-2 border border-mint bg-mint/40 p-3 text-sm font-semibold text-moss">
             <Check className="mt-0.5 h-4 w-4 shrink-0" />
-            Payment confirmed.
+            Trade completed successfully
+          </div>
+        )}
+
+        {trade.status === "completed" && (
+          <div className="flex items-start gap-2 border border-mint bg-mint/40 p-3 text-sm font-semibold text-moss">
+            <Check className="mt-0.5 h-4 w-4 shrink-0" />
+            Trade completed successfully
+          </div>
+        )}
+
+        {customerCanRate && (
+          <RatingPanel
+            tradeId={trade.id}
+            vendorName={isBuyer ? trade.seller_name : trade.buyer_name}
+            prompt="Rate the vendor"
+            rated={rated}
+            starRating={starRating}
+            hoveredStar={hoveredStar}
+            ratingBusy={ratingBusy}
+            ratingError={ratingError}
+            onHover={setHoveredStar}
+            onSelect={setStarRating}
+            onSubmit={() => void submitRating()}
+          />
+        )}
+
+        {trade.status === "disputed" && (
+          <div className="border border-coral/30 bg-coral/5 p-4">
+            <div className="flex items-start gap-2">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral" />
+              <div>
+                <p className="text-sm font-semibold text-coral">Trade under dispute</p>
+                <p className="mt-1 text-xs leading-5 text-muted">Settlement is paused while an administrator reviews both parties&apos; evidence. Add any receipt, payment reference, or relevant screenshot in the dispute center.</p>
+              </div>
+            </div>
+            <Link href="/p2p/disputes" className="mt-3 inline-flex h-9 items-center bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean">
+              Open dispute center
+            </Link>
           </div>
         )}
 
@@ -930,22 +966,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           </div>
         )}
 
-        {/* Only the customer (initiator) rates the counterparty, which is always a vendor. */}
-        {trade.is_initiator && trade.status === "completed" && (
-          <RatingPanel
-            tradeId={trade.id}
-            vendorName={isBuyer ? trade.seller_name : trade.buyer_name}
-            prompt="Rate the vendor"
-            rated={rated}
-            starRating={starRating}
-            hoveredStar={hoveredStar}
-            ratingBusy={ratingBusy}
-            ratingError={ratingError}
-            onHover={setHoveredStar}
-            onSelect={setStarRating}
-            onSubmit={() => void submitRating()}
-          />
-        )}
       </div>
     </div>
   );
@@ -972,6 +992,26 @@ function DeclineOrderControl({
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  async function submitDecline() {
+    const trimmedReason = reason.trim();
+    if (!trimmedReason || busy) return;
+    const succeeded = await onDecline(trimmedReason);
+    if (!succeeded) return;
+    setSubmitted(true);
+    setOpen(false);
+    setReason("");
+  }
+
+  if (submitted) {
+    return (
+      <div className="border border-coral/30 bg-coral/5 p-3 text-sm">
+        <p className="font-semibold text-coral">Order declined</p>
+        <p className="mt-1 leading-6 text-muted">The other party has been notified and can review your reason.</p>
+      </div>
+    );
+  }
 
   if (!open) {
     return (
@@ -997,7 +1037,7 @@ function DeclineOrderControl({
       />
       <div className="flex items-center gap-2">
         <button
-          onClick={() => void onDecline(reason.trim())}
+          onClick={() => void submitDecline()}
           disabled={busy || !reason.trim()}
           className="flex h-9 items-center gap-2 bg-coral px-4 text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60"
         >

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
-import { becomeVendor, getVendorStatus } from "@/lib/p2p/vendor";
+import { becomeVendor, closeVendorAccount, getVendorStatus } from "@/lib/p2p/vendor";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { isAdminEmail } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -47,4 +50,25 @@ export async function POST(request: Request) {
   await becomeVendor(userId, { cryptoAvailable, fiatAvailable, rate, paymentMethodIds });
 
   return NextResponse.json({ ok: true });
+}
+
+export async function DELETE() {
+  const userId = await getCurrentUserId();
+  if (!userId) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+
+  const session = await getServerSession(authOptions);
+  if (isAdminEmail(session?.user?.email)) {
+    return NextResponse.json({ error: "Default administrator vendors cannot be closed here." }, { status: 403 });
+  }
+
+  const result = await closeVendorAccount(userId);
+  if (result.ok) return NextResponse.json({ ok: true });
+
+  const messages = {
+    not_vendor: "This account is not currently a vendor.",
+    managed_account: "Managed and default vendor accounts cannot be closed here.",
+    active_trades: `Complete or close your active trades before stopping vendor activity${result.count ? ` (${result.count} remaining)` : ""}.`,
+    open_disputes: `Resolve your open disputes before stopping vendor activity${result.count ? ` (${result.count} remaining)` : ""}.`
+  } as const;
+  return NextResponse.json({ error: messages[result.reason], reason: result.reason }, { status: 409 });
 }

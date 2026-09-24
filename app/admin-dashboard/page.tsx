@@ -831,6 +831,8 @@ type AdminDispute = {
   created_at: string;
   resolved_at: string | null;
   receipt_image: string | null;
+  evidence_buyer: Array<{ id: string; description: string; image_url?: string; created_at: string }>;
+  evidence_seller: Array<{ id: string; description: string; image_url?: string; created_at: string }>;
 };
 
 function DisputesTab() {
@@ -933,6 +935,33 @@ function DisputesTab() {
                       <span className="mt-1 block text-xs font-semibold text-ocean">Open payment receipt</span>
                     </a>
                   )}
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {([
+                      ["Buyer evidence", d.evidence_buyer],
+                      ["Seller evidence", d.evidence_seller]
+                    ] as const).map(([label, evidence]) => (
+                      <div key={label} className="border border-line bg-panel p-2.5">
+                        <p className="text-xs font-bold uppercase tracking-wide text-muted">{label}</p>
+                        {evidence.length === 0 ? (
+                          <p className="mt-1 text-xs text-muted">Nothing submitted.</p>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            {evidence.map((item) => (
+                              <div key={item.id} className="bg-white p-2 text-xs">
+                                {item.description && <p className="whitespace-pre-wrap leading-5">{item.description}</p>}
+                                {item.image_url && (
+                                  <a href={item.image_url} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                                    <img src={item.image_url} alt={`${label} attachment`} className="max-h-32 max-w-56 object-contain" />
+                                  </a>
+                                )}
+                                <p className="mt-1 text-[11px] text-muted">{relativeTime(item.created_at)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                   <p className="mt-1 text-xs text-muted">Raised {relativeTime(d.created_at)}</p>
                 </div>
                 {d.status === "open" ? (

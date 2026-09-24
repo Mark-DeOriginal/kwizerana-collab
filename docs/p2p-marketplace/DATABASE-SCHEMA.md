@@ -82,6 +82,37 @@ CREATE TABLE IF NOT EXISTS p2p_payment_methods (
 );
 ```
 
+`details` stores method-specific receiving fields rather than a universal
+account number. Examples include `email` for PayPal/Interac, `emailOrPhone`
+for Zelle, `accountHandle` for Cash App/Venmo, `phoneNumber` for mobile money,
+and `iban`/`bic` or `accountNumber`/`swiftCode` for international bank
+transfers. `accountIdentifier` is a legacy read-compatibility key only; new
+writes use the explicit field names. The API validates required fields against
+the selected method before persisting them.
+
+Managed vendor profiles with `users.owner_user_id` share the owner account's
+inventory rows and directional fee values. Offer discovery, trade pricing,
+completed-trade deductions, and inventory confirmation resolve through that
+owner so one wallet balance is not duplicated across currency-specific vendor
+profiles. Legacy per-vendor settings remain readable until the owner saves the
+new shared values.
+
+Reputation is projected from `p2p_trades` and `p2p_reviews`; the legacy
+counter columns on `users` are not authoritative dashboard data. Managed
+profiles are grouped by their owner for completed trades, rolling 30-day
+completion and stablecoin volume, distinct customers, release time, and
+ratings. Trade metrics follow participation as either buyer or seller rather
+than only advertisements owned by the account. This prevents taker trades from
+disappearing and stops one operator from presenting fragmented reputation
+across several storefronts.
+
+Voluntary vendor closure sets `users.p2p_advertiser_status` to `none`, marks
+the user's active advertisements inactive/paused, and marks their approved
+advertiser application `withdrawn`. Historical trades, reviews, payment
+methods, and inventory are retained. Reapplication reactivates matching ads;
+closure is refused while active trades, funded escrow, or unresolved disputes
+exist.
+
 ### `p2p_supported_methods`
 ```sql
 CREATE TABLE IF NOT EXISTS p2p_supported_methods (

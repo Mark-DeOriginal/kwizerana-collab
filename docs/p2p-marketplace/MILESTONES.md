@@ -18,10 +18,10 @@ Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`
 |---|---|---|
 | Offer discovery, fiat/crypto data | Implemented | Market UI, offer and currency APIs |
 | Admin-triggered rate refresh | Partial | Manual dashboard update is implemented; resilience/monitoring required |
-| Payment methods and ad CRUD | Implemented | Account/dashboard/API support |
+| Payment methods and ad CRUD | Implemented | Account, dashboard, and trade forms render method-specific fields (email, phone, handle, bank account, IBAN/BIC) from one shared definition; API validation mirrors the UI and legacy identifiers remain readable. |
 | Floating/vendor-margin pricing | Partial | Precision, snapshots, deviation controls needed |
 | Payment-method binding | Partial | Ownership/applicability validation needs hardening |
-| Inventory | Partial | Vendor-declared, not cryptographically verified |
+| Inventory | Partial | Managed vendor profiles now reference one owner-level inventory pool and shared directional fees; marketplace reads and completed-trade deductions use that pool. Balances remain vendor-declared and are not cryptographically verified. |
 | One-click matching | Planned | No verified implementation found |
 
 ## Vendors and reputation
@@ -29,23 +29,24 @@ Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
 | Vendor profile, application, admin review | Implemented | Vendor/admin routes and UI |
+| Voluntary vendor closure | Implemented | Ordinary vendors can stop vendor activity from the dashboard only after active trades, funded escrow, and open disputes are cleared. Listings are deactivated while account history, ratings, payment methods, and reapplication remain available; admin/default/managed vendors are blocked in UI and API. |
 | Tier eligibility/enforcement | Partial | Data/services exist; full policy enforcement needs verification |
 | Vendor fee configuration | Implemented | Buy/sell fee fields and interfaces |
 | Reviews and rating summaries | Implemented | The dashboard trade modal remains open after buyer claim so the completed-state vendor rating panel is shown; anti-gaming remains. |
-| Completion statistics | Partial | Must derive from verified settlement and correct rolling windows |
+| Completion statistics | Partial | Dashboard, vendor profiles, and offer cards now derive owner-scoped completed trades, true rolling 30-day completion/USDT+USDC volume, distinct customers, release time, and combined ratings from trade/review records. Production still requires event-derived settlement projections and indexed rollups at scale. |
 | Fraud/wash-trade detection | Planned | No robust implementation found |
 
 ## Trade lifecycle
 
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
-| Trade creation and snapshot | Partial | Connected buyer wallets are captured during order creation; awaiting-approval orders have a server-validated receiving-wallet step; initiator/counterparty identity now controls cancel-versus-decline permissions independently of buyer/seller roles. Atomicity, precise math, and eligibility still need hardening. |
+| Trade creation and snapshot | Partial | Connected buyer wallets are captured during order creation; awaiting-approval orders have a server-validated receiving-wallet step; initiator/counterparty identity controls cancel-versus-decline permissions independently of buyer/seller roles, and a decline is terminal for both parties with its reason retained. Atomicity, precise math, and eligibility still need hardening. |
 | Seller accept/fund | Partial/testnet | Buy orders let the advertising crypto seller review and fund escrow after the destination exists. Sell orders now require the fiat-paying vendor to accept and confirm liquidity before the initiating crypto seller can fund. The server enforces both sequences and checks the lock event; submitted/confirmed projection separation remains. |
 | Buyer payment submission | Implemented | Buy and sell flows share the same enabled receipt action; authorization is enforced by the escrow transaction and verified server-side instead of a brittle client-side address gate. Secure upload controls remain required. |
 | Seller release and buyer claim | Partial/unsafe | Hardened contract ABI and immediate receipt/event checks exist; submitted/confirmed states and testnet reconciliation still need completion |
 | Cancel/expiry/refund | Partial/testnet | Cancelled or expired trades with funded escrow remain in the seller's Active Trades until a confirmed refund. Fiat buyers can either protect a payment and dispute with a receipt, or confirm after a countdown that no payment was sent and close the trade without a wallet action. The seller's refund remains governed by the contract's 30-minute payment-protection window. Application event persistence and full end-to-end testing remain. |
 | Chat and trade export | Implemented | Retention/rate/abuse controls remain |
-| Notifications/email | Partial | Dashboard completion activity now reaches both trade participants without duplicating the updated order row; durable delivery queue and telemetry still needed |
+| Notifications/email | Partial | Trade creation, vendor acceptance, escrow funding, payment submission, release, completion, cancellation, decline, refund, and dispute activity now use recipient-specific customer/vendor copy. Durable delivery queue, retry telemetry, and notification deep links still need completion. |
 | Formal state machine | Documented target | Implementation migration pending |
 
 ## Escrow and chain integration
@@ -65,7 +66,7 @@ Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
 | Participant and admin dispute flows | Implemented | Routes/services/UI exist |
-| Evidence workspace | Partial | Secure uploads and structured evidence needed |
+| Evidence workspace | Partial | Both participants can review buyer/seller evidence and submit notes or compressed receipt/screenshot evidence while a case is open; admins see both evidence sets. Object storage, malware scanning, retention controls, evidence immutability, and audit events remain required. |
 | On-chain resolution | Unsafe for production | Current resolution changes database only |
 | Split resolution | Unsupported | Prototype contract cannot split funds |
 | Appeals/SLA/escalation | Planned | Policy and workflow required |

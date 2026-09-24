@@ -135,11 +135,11 @@ export default function VendorProfilePage() {
             </div>
             <div className="border border-line bg-panel px-3 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Completion</p>
-              <p className="mt-1 text-lg font-bold">{stats.completionRate30d}%</p>
+              <p className="mt-1 text-lg font-bold">{stats.eligibleTrades30d > 0 ? `${stats.completionRate30d}%` : "—"}</p>
             </div>
             <div className="border border-line bg-panel px-3 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">30d volume</p>
-              <p className="mt-1 text-lg font-bold">{stats.volume30d.toLocaleString()} USDT</p>
+              <p className="mt-1 text-lg font-bold">{stats.volume30d.toLocaleString()} USD</p>
             </div>
             <div className="border border-line bg-panel px-3 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Rating</p>

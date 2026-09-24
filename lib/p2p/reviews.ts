@@ -16,19 +16,29 @@ export async function createReview(
 ): Promise<Review> {
   await ensureDatabase();
 
-  const trades = await dbQuery<{ buyer_id: string; seller_id: string; status: string }>(
-    `SELECT buyer_id, seller_id, status FROM p2p_trades WHERE id = $1`,
+  const trades = await dbQuery<{
+    buyer_id: string;
+    seller_id: string;
+    status: string;
+    vendor_id: string;
+    initiator_id: string;
+  }>(
+    `SELECT t.buyer_id, t.seller_id, t.status, ad.user_id AS vendor_id,
+            CASE WHEN t.buyer_id = ad.user_id THEN t.seller_id ELSE t.buyer_id END AS initiator_id
+     FROM p2p_trades t
+     JOIN p2p_ads ad ON ad.id = t.ad_id
+     WHERE t.id = $1`,
     [input.tradeId]
   );
   const trade = trades[0];
   if (!trade) throw new Error("Trade not found.");
-  if (trade.status !== "completed") throw new Error("Only completed trades can be rated.");
+  if (trade.initiator_id !== userId) throw new Error("Only the customer can rate the vendor for this trade.");
 
-  const isBuyer = trade.buyer_id === userId;
-  const isSeller = trade.seller_id === userId;
-  if (!isBuyer && !isSeller) throw new Error("Not your trade.");
+  const customerSoldCrypto = trade.initiator_id === trade.seller_id;
+  const canRate = trade.status === "completed" || (customerSoldCrypto && trade.status === "released");
+  if (!canRate) throw new Error("This trade must be completed before the vendor can be rated.");
 
-  const revieweeId = isBuyer ? trade.seller_id : trade.buyer_id;
+  const revieweeId = trade.vendor_id;
 
   const existing = await dbQuery<{ id: string }>(
     `SELECT id FROM p2p_reviews WHERE trade_id = $1 AND reviewer_id = $2`,
@@ -51,17 +61,21 @@ export async function createReview(
 
 export type PublicReview = Review & { reviewer_name: string };
 
-export async function listReviewsForUser(revieweeId: string, limit = 20): Promise<PublicReview[]> {
+function revieweeIds(value: string | string[]): string[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+export async function listReviewsForUser(revieweeId: string | string[], limit = 20): Promise<PublicReview[]> {
   await ensureDatabase();
   return dbQuery<PublicReview>(
     `SELECT r.id::TEXT AS id, r.trade_id::TEXT AS trade_id, r.reviewer_id, r.reviewee_id,
             r.rating, r.comment, r.created_at, u.name AS reviewer_name
      FROM p2p_reviews r
      JOIN users u ON u.id = r.reviewer_id
-     WHERE r.reviewee_id = $1
+     WHERE r.reviewee_id = ANY($1)
      ORDER BY r.created_at DESC
      LIMIT $2`,
-    [revieweeId, limit]
+    [revieweeIds(revieweeId), limit]
   );
 }
 
@@ -72,14 +86,14 @@ export type RatingSummary = {
   negative: number;
 };
 
-export async function getRatingSummary(revieweeId: string): Promise<RatingSummary> {
+export async function getRatingSummary(revieweeId: string | string[]): Promise<RatingSummary> {
   await ensureDatabase();
   const rows = await dbQuery<{ rating: string; count: string }>(
     `SELECT rating, COUNT(*)::TEXT AS count
      FROM p2p_reviews
-     WHERE reviewee_id = $1
+     WHERE reviewee_id = ANY($1)
      GROUP BY rating`,
-    [revieweeId]
+    [revieweeIds(revieweeId)]
   );
   const summary: RatingSummary = { total: 0, positive: 0, neutral: 0, negative: 0 };
   for (const r of rows) {
@@ -114,12 +128,13 @@ export async function listSubmittedReviews(reviewerId: string): Promise<Review[]
 }
 
 /** Average star rating (1–6) for a vendor, rounded to one decimal. */
-export async function getVendorAverageStars(revieweeId: string): Promise<{ avg: number; count: number } | null> {
+export async function getVendorAverageStars(revieweeId: string | string[]): Promise<{ avg: number; count: number } | null> {
   await ensureDatabase();
   const rows = await dbQuery<{ avg: string; count: string }>(
-    `SELECT AVG(star_rating)::NUMERIC(4,1) AS avg, COUNT(*)::TEXT AS count
-     FROM p2p_reviews WHERE reviewee_id = $1 AND star_rating IS NOT NULL`,
-    [revieweeId]
+    `SELECT AVG(COALESCE(star_rating, CASE rating WHEN 'positive' THEN 5 WHEN 'neutral' THEN 3 ELSE 1 END))::NUMERIC(4,1) AS avg,
+            COUNT(*)::TEXT AS count
+     FROM p2p_reviews WHERE reviewee_id = ANY($1)`,
+    [revieweeIds(revieweeId)]
   );
   const r = rows[0];
   if (!r || Number(r.count) === 0) return null;

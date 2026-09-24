@@ -2,6 +2,7 @@ import { dbQuery, ensureDatabase } from "@/lib/db";
 import { listAllFees } from "@/lib/p2p/fees";
 import { listLiveRates } from "@/lib/p2p/price-feed";
 import { SEED_RATES } from "@/lib/p2p/currencies-shared";
+import { getReputationScope } from "@/lib/p2p/stats";
 
 export type OfferVendor = {
   id: string;
@@ -18,6 +19,7 @@ export type OfferVendor = {
   limitMin: number;
   // Vendor's custom fee percentage applied on top of the standard rate.
   vendorFeePercent: number;
+  isOwnedByViewer: boolean;
 };
 
 export type OfferPaymentMethod = {
@@ -72,28 +74,61 @@ type AdRow = {
 // The minimum floor for a listing's displayed limit.
 export const CRYPTO_LIMIT_MIN = 10;
 
-export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<Offer[]> {
+export async function listOffers({ side, asset, fiat }: OfferFilters, viewerId?: string | null): Promise<Offer[]> {
   await ensureDatabase();
+  const viewerScope = viewerId ? new Set(await getReputationScope(viewerId)) : new Set<string>();
 
   // Buy tab lists sellers (ad_type 'sell'); Sell tab lists buyers (ad_type 'buy').
   const adType = side === "buy" ? "sell" : "buy";
 
   const rows = await dbQuery<AdRow>(
-    `SELECT a.id::TEXT AS id, a.ad_type, a.crypto_currency, a.fiat_currency, a.price_type,
+    `WITH trade_participants AS (
+       SELECT t.*, COALESCE(buyer.owner_user_id, buyer.id) AS reputation_id
+       FROM p2p_trades t
+       JOIN users buyer ON buyer.id = t.buyer_id
+       UNION ALL
+       SELECT t.*, COALESCE(seller.owner_user_id, seller.id) AS reputation_id
+       FROM p2p_trades t
+       JOIN users seller ON seller.id = t.seller_id
+     ), reputation AS (
+       SELECT t.reputation_id,
+              COUNT(*) FILTER (WHERE t.status IN ('released', 'completed') AND t.released_at IS NOT NULL) AS completed_trades,
+              COUNT(*) FILTER (
+                WHERE COALESCE(t.claimed_at, t.released_at, t.cancelled_at, t.declined_at, t.updated_at) >= NOW() - INTERVAL '30 days'
+                  AND (t.status IN ('released', 'completed') OR t.declined_at IS NOT NULL OR t.status = 'expired')
+              ) AS eligible_30d,
+              COUNT(*) FILTER (
+                WHERE t.status IN ('released', 'completed') AND t.released_at IS NOT NULL
+                  AND COALESCE(t.claimed_at, t.released_at) >= NOW() - INTERVAL '30 days'
+              ) AS completed_30d,
+              ROUND(AVG(EXTRACT(EPOCH FROM (t.released_at - t.buyer_paid_at))) FILTER (
+                WHERE t.released_at IS NOT NULL AND t.buyer_paid_at IS NOT NULL AND t.released_at >= t.buyer_paid_at
+              ))::INTEGER AS avg_release_seconds
+       FROM trade_participants t
+       GROUP BY t.reputation_id
+     )
+     SELECT a.id::TEXT AS id, a.ad_type, a.crypto_currency, a.fiat_currency, a.price_type,
             a.price_value::TEXT AS price_value, a.price_margin::TEXT AS price_margin,
             a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
             u.id AS vendor_id, u.name AS vendor_name,
-            CASE WHEN a.ad_type = 'sell' THEN COALESCE(u.vendor_sell_fee_percent, u.vendor_fee_percent)
-                 ELSE COALESCE(u.vendor_buy_fee_percent, u.vendor_fee_percent)
+            CASE WHEN a.ad_type = 'sell' THEN COALESCE(owner.vendor_sell_fee_percent, u.vendor_sell_fee_percent, u.vendor_fee_percent, owner.vendor_fee_percent)
+                 ELSE COALESCE(owner.vendor_buy_fee_percent, u.vendor_buy_fee_percent, u.vendor_fee_percent, owner.vendor_fee_percent)
             END::TEXT AS vendor_fee_percent,
             u.p2p_advertiser_status, u.p2p_advertiser_level, u.p2p_verified_tier,
-            u.p2p_completion_rate_30d, u.p2p_total_trades, u.p2p_avg_release_seconds,
-            inv.declared_balance::TEXT AS declared_balance
+            COALESCE(ROUND(rep.completed_30d::NUMERIC / NULLIF(rep.eligible_30d, 0) * 100, 1), 0)::TEXT AS p2p_completion_rate_30d,
+            COALESCE(rep.completed_trades, 0)::TEXT AS p2p_total_trades,
+            COALESCE(rep.avg_release_seconds, 0)::TEXT AS p2p_avg_release_seconds,
+            COALESCE(shared_inv.declared_balance, vendor_inv.declared_balance)::TEXT AS declared_balance
      FROM p2p_ads a
      JOIN users u ON u.id = a.user_id
-     LEFT JOIN p2p_vendor_inventory inv ON inv.user_id = a.user_id AND inv.crypto_currency = a.crypto_currency
+     LEFT JOIN users owner ON owner.id = u.owner_user_id
+     LEFT JOIN reputation rep ON rep.reputation_id = COALESCE(u.owner_user_id, u.id)
+     LEFT JOIN p2p_vendor_inventory shared_inv ON shared_inv.user_id = u.owner_user_id AND shared_inv.crypto_currency = a.crypto_currency
+     LEFT JOIN p2p_vendor_inventory vendor_inv ON vendor_inv.user_id = a.user_id AND vendor_inv.crypto_currency = a.crypto_currency
      WHERE a.status = 'active' AND a.is_paused = FALSE
-       AND a.ad_type = $1 AND a.crypto_currency = $2 AND a.fiat_currency = $3`,
+       AND u.p2p_advertiser_status <> 'none'
+       AND a.ad_type = $1 AND a.crypto_currency = $2 AND a.fiat_currency = $3
+       AND (u.id NOT LIKE 'kwizerana-dao-%' OR LOWER(a.fiat_currency) = REPLACE(u.id, 'kwizerana-dao-', ''))`,
     [adType, asset, fiat]
   );
 
@@ -151,7 +186,8 @@ export async function listOffers({ side, asset, fiat }: OfferFilters): Promise<O
         avgReleaseSeconds: Number(row.p2p_avg_release_seconds),
         balance: declared,
         limitMin: CRYPTO_LIMIT_MIN,
-        vendorFeePercent: vendorFee
+        vendorFeePercent: vendorFee,
+        isOwnedByViewer: viewerScope.has(row.vendor_id)
       },
       payment_methods: methodsByVendor.get(row.vendor_id) ?? []
     };

@@ -6,12 +6,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useAccount } from "wagmi";
 import { WalletProviders } from "@/app/wallet-providers";
-import { ArrowLeft, ArrowRight, BadgeCheck, Check, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BadgeCheck, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect, OptionsMenu } from "@/components/p2p/custom-ui";
+import { PaymentDetailFields } from "@/components/p2p/payment-detail-fields";
 import { formatThousandsInput } from "@/lib/p2p/number-format";
 import { compressImage } from "@/lib/p2p/compress-image";
-import { CRYPTO_CURRENCIES, type Currency } from "@/lib/p2p/currencies-shared";
+import { CRYPTO_CURRENCIES, FIAT_CURRENCIES, type Currency } from "@/lib/p2p/currencies-shared";
 import { COUNTRIES, PAYMENT_METHOD_CATEGORY_LABELS, type Country } from "@/lib/p2p/countries-shared";
 import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 import type { Offer } from "@/lib/p2p/offers";
@@ -28,6 +29,7 @@ const TRADE_STATUS_LABELS: Record<string, string> = {
   pending_payment: "Awaiting payment",
   payment_sent: "Payment sent",
   completed: "Completed",
+  declined: "Declined",
   cancelled: "Cancelled",
   expired: "Expired",
   disputed: "Disputed"
@@ -110,7 +112,7 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
   const [methodName, setMethodName] = useState("");
   const [customBankName, setCustomBankName] = useState("");
   const [accountHolder, setAccountHolder] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
+  const [details, setDetails] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -145,7 +147,7 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
         method_type: methodType,
         method_name: finalName,
         account_holder_name: accountHolder,
-        details: { accountIdentifier: accountNumber, countryCode: country.code, countryName: country.name }
+        details: { ...details, countryCode: country.code, countryName: country.name }
       })
     });
     const data = await readJson<{ method?: UserPaymentMethod; error?: string }>(res);
@@ -178,7 +180,7 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
           <label htmlFor="pm-method" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Method</label>
           <CustomSelect
             value={methodName}
-            onChange={setMethodName}
+            onChange={(value) => { setMethodName(value); setAccountHolder(""); setDetails({}); }}
             groups={grouped.map((group) => ({
               label: PAYMENT_METHOD_CATEGORY_LABELS[group.category],
               options: group.options.map((m) => ({ value: m.name, label: m.name }))
@@ -192,34 +194,23 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
       <div className="text-sm text-muted">
         Bank not in the list?{" "}
         {customBank ? (
-          <button type="button" onClick={() => { setCustomBank(false); setCustomBankName(""); }} className="font-semibold text-ocean underline underline-offset-2">Cancel</button>
+          <button type="button" onClick={() => { setCustomBank(false); setCustomBankName(""); setAccountHolder(""); setDetails({}); }} className="font-semibold text-ocean underline underline-offset-2">Cancel</button>
         ) : (
-          <button type="button" onClick={() => { setCustomBank(true); setMethodName(""); }} className="font-semibold text-ocean underline underline-offset-2">Add bank</button>
+          <button type="button" onClick={() => { setCustomBank(true); setMethodName(""); setAccountHolder(""); setDetails({}); }} className="font-semibold text-ocean underline underline-offset-2">Add bank</button>
         )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label htmlFor="pm-holder" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Account holder</label>
-          <input
-            id="pm-holder"
-            value={accountHolder}
-            onChange={(e) => setAccountHolder(e.target.value)}
-            className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
-            placeholder="Name on account"
-          />
-        </div>
-        <div>
-          <label htmlFor="pm-number" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">Account number</label>
-          <input
-            id="pm-number"
-            value={accountNumber}
-            onChange={(e) => setAccountNumber(e.target.value)}
-            required
-            className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
-            placeholder="Account / phone number"
-          />
-        </div>
+        <PaymentDetailFields
+          methodName={customBank ? customBankName : methodName}
+          methodType={customBank ? "bank" : country.methods.find((method) => method.name === methodName)?.category ?? ""}
+          accountHolderName={accountHolder}
+          details={details}
+          onAccountHolderNameChange={setAccountHolder}
+          onDetailsChange={setDetails}
+          idPrefix="new-trade-payment-method"
+          compact
+        />
       </div>
 
       {error && <p className="text-sm font-semibold text-coral">{error}</p>}
@@ -283,7 +274,7 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, i
               </span>
             )}
             <span className="text-xs text-muted">
-              {offer.vendor.completionRate}% · {formatNumber(offer.vendor.totalTrades, 0)} trades
+              {offer.vendor.totalTrades > 0 ? `${offer.vendor.completionRate}%` : "New"} · {formatNumber(offer.vendor.totalTrades, 0)} completed
             </span>
           </div>
 
@@ -320,7 +311,7 @@ function OfferCard({ offer, side, activeTrade, onSelect, onResume, isFavorite, i
               : "Resume trade"}
             <ArrowRight className="h-4 w-4" />
           </button>
-        ) : myUserId && myUserId === offer.vendor.id ? (
+        ) : offer.vendor.isOwnedByViewer || (myUserId && myUserId === offer.vendor.id) ? (
           <span className="flex h-11 shrink-0 items-center gap-2 border border-line bg-panel px-6 text-sm font-semibold text-muted">
             You
           </span>
@@ -347,6 +338,8 @@ function OfferList({
   onFiatChange,
   offers,
   loading,
+  error,
+  onRefresh,
   onSelect,
   activeTradesByAd,
   onResume,
@@ -367,6 +360,8 @@ function OfferList({
   onFiatChange: (fiat: string) => void;
   offers: Offer[];
   loading: boolean;
+  error: string;
+  onRefresh: () => void;
   onSelect: (offer: Offer) => void;
   activeTradesByAd: Map<string, Trade>;
   onResume: (trade: Trade) => void;
@@ -439,12 +434,23 @@ function OfferList({
 
       {/* Vendor list */}
       <div className="space-y-3 p-4 sm:p-5">
+        {error && (
+          <div className="flex flex-col items-start justify-between gap-3 border border-line bg-panel p-4 sm:flex-row sm:items-center">
+            <div>
+              <p className="text-sm font-semibold text-ink">Vendors couldn&apos;t be loaded</p>
+              <p className="mt-0.5 text-xs text-muted">Check your connection and try again.</p>
+            </div>
+            <button type="button" onClick={onRefresh} className="h-9 shrink-0 border border-line bg-white px-4 text-sm font-semibold text-ink transition-colors hover:border-ocean hover:text-ocean">
+              Refresh
+            </button>
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center gap-3 border border-line bg-white p-6 text-sm text-muted">
             <Loader2 className="h-5 w-5 animate-spin text-ocean" />
             Loading vendors…
           </div>
-        ) : visible.length === 0 ? (
+        ) : error && visible.length === 0 ? null : visible.length === 0 ? (
           favoritesOnly ? (
             <div className="border border-dashed border-line bg-panel p-10 text-center">
               <p className="font-semibold">
@@ -567,7 +573,7 @@ function OrderForm({
             Limits: {formatNumber(offer.min_amount)} – {formatNumber(offer.max_amount)} {offer.fiat_currency}
           </p>
           <p className="mt-1 hidden text-xs text-muted sm:block">
-            {offer.vendor.completionRate}% completion · {formatNumber(offer.vendor.totalTrades, 0)} trades
+            {offer.vendor.totalTrades > 0 ? `${offer.vendor.completionRate}% completion` : "New vendor"} · {formatNumber(offer.vendor.totalTrades, 0)} completed
           </p>
         </div>
       </div>
@@ -600,27 +606,22 @@ function OrderForm({
       <div>
         <span className="mb-2 block text-sm font-semibold">{isBuy ? "Pay with" : "Receive fiat via"}</span>
         {isBuy ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {offer.payment_methods.map((pm) => {
-              const active = paymentMethodId === pm.id;
-              return (
-                <button
-                  key={pm.id}
-                  type="button"
-                  onClick={() => setPaymentMethodId(pm.id)}
-                  className={`flex h-11 items-center justify-between border px-3 text-sm font-semibold transition-colors ${
-                    active ? "border-ocean bg-mint/60 text-ink" : "border-line bg-white text-muted hover:border-ocean hover:text-ink"
-                  }`}
-                >
-                  {pm.method_name}
-                  {active && <Check className="h-4 w-4 text-ocean" />}
-                </button>
-              );
-            })}
-            {offer.payment_methods.length === 0 && (
-              <p className="text-sm text-muted sm:col-span-2">This vendor hasn&apos;t added receiving options yet.</p>
-            )}
-          </div>
+          offer.payment_methods.length > 0 ? (
+            <CustomSelect
+              value={paymentMethodId}
+              onChange={setPaymentMethodId}
+              groups={[{
+                options: offer.payment_methods.map((method) => ({
+                  value: method.id,
+                  label: method.method_name
+                }))
+              }]}
+              placeholder="Select how you'll pay"
+              triggerClassName="h-11"
+            />
+          ) : (
+            <p className="text-sm text-muted">This vendor hasn&apos;t added receiving options yet.</p>
+          )
         ) : !selectedCountry ? (
           <p className="text-sm text-muted">No payment methods available for {offer.fiat_currency}.</p>
         ) : (
@@ -705,10 +706,18 @@ function TradeClient() {
   const [side, setSide] = useState<Side>(searchParams.get("side") === "sell" ? "sell" : "buy");
   const [asset, setAsset] = useState("USDT");
   const [fiat, setFiat] = useState("USD");
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>(() =>
+    FIAT_CURRENCIES.map((currency) => ({
+      id: currency.code,
+      ...currency,
+      is_fiat: true,
+      is_active: true
+    }))
+  );
   const [savedMethods, setSavedMethods] = useState<UserPaymentMethod[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [offersLoading, setOffersLoading] = useState(true);
+  const [offersError, setOffersError] = useState("");
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
   const [activeTrade, setActiveTrade] = useState<Trade | null>(null);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
@@ -782,23 +791,21 @@ function TradeClient() {
   useEffect(() => {
     if (status !== "authenticated") return;
     const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      Promise.all([
-        fetch("/api/p2p/currencies", { cache: "no-store", signal: controller.signal }),
-        fetch("/api/p2p/payment-methods", { cache: "no-store", signal: controller.signal })
-      ])
-        .then(([cRes, pRes]) => Promise.all([
-          readJson<{ currencies: Currency[] }>(cRes),
-          readJson<{ methods: UserPaymentMethod[] }>(pRes)
-        ]))
-        .then(([cData, pData]) => {
-          setCurrencies(cData?.currencies ?? []);
-          setSavedMethods(pData?.methods ?? []);
-        })
-        .catch(() => {});
-    }, 400);
+    fetch("/api/p2p/currencies", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => ({ ok: response.ok, data: await readJson<{ currencies: Currency[] }>(response) }))
+      .then(({ ok, data }) => {
+        if (ok && data?.currencies?.length) setCurrencies(data.currencies);
+      })
+      .catch(() => {});
+
+    fetch("/api/p2p/payment-methods", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => ({ ok: response.ok, data: await readJson<{ methods: UserPaymentMethod[] }>(response) }))
+      .then(({ ok, data }) => {
+        if (ok && data?.methods) setSavedMethods(data.methods);
+      })
+      .catch(() => {});
+
     return () => {
-      window.clearTimeout(timer);
       controller.abort();
     };
   }, [status]);
@@ -840,14 +847,22 @@ function TradeClient() {
     offersAbortRef.current?.abort();
     const controller = new AbortController();
     offersAbortRef.current = controller;
-    if (!background) setOffersLoading(true);
+    if (!background) {
+      setOffersLoading(true);
+      setOffersError("");
+    }
     try {
       const res = await fetch(`/api/p2p/offers?side=${side}&asset=${asset}&fiat=${fiat}`, {
         cache: "no-store",
         signal: controller.signal
       });
       const data = await readJson<{ offers: Offer[] }>(res);
-      if (!res.ok || controller.signal.aborted) return;
+      if (controller.signal.aborted) return;
+      if (!res.ok) {
+        setOffersError("Unable to load vendors.");
+        return;
+      }
+      setOffersError("");
       const list = data?.offers ?? [];
       const stamp = list
         .map((o) => `${o.id}:${o.price_value}:${o.price_margin ?? ""}:${o.min_amount}:${o.max_amount}:${o.ad_type}:${o.vendor.id}:${o.vendor.advertiserStatus}:${o.vendor.completionRate}:${o.vendor.totalTrades}:${o.vendor.avgReleaseSeconds}:${o.vendor.balance}`)
@@ -858,7 +873,7 @@ function TradeClient() {
       }
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
-        // Keep the already-rendered shell/list available; the next poll retries.
+        setOffersError("Unable to load vendors.");
       }
     } finally {
       if (offersAbortRef.current === controller) {
@@ -869,7 +884,14 @@ function TradeClient() {
   }, [side, asset, fiat]);
 
   useEffect(() => {
-    if (status === "authenticated") void loadOffers();
+    if (status === "authenticated") {
+      // Never display results from the previous asset/fiat/side while a new
+      // filtered request is loading or has failed.
+      setOffers([]);
+      offersStampRef.current = "";
+      setOffersError("");
+      void loadOffers();
+    }
     return () => offersAbortRef.current?.abort();
   }, [status, loadOffers]);
 
@@ -934,6 +956,8 @@ function TradeClient() {
                 onFiatChange={setFiat}
                 offers={offers}
                 loading={offersLoading && offers.length === 0}
+                error={offersError}
+                onRefresh={() => void loadOffers()}
                 onSelect={(offer) => { setActiveTrade(null); setSelectedOffer(offer); }}
                 activeTradesByAd={activeTradesByAd}
                 onResume={(trade) => {

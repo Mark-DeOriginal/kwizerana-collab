@@ -64,8 +64,9 @@ export async function GET() {
     results[index].status === "fulfilled" ? results[index].value as T : fallback;
 
   const stats = value(0, {
-    totalTrades: 0, completedTrades: 0, completionRate30d: 0, volume30d: 0,
-    avgReleaseSeconds: 0, cumulativeCounterparties: 0, trustScore: 0,
+    totalTrades: 0, completedTrades: 0, completionRate30d: 0, eligibleTrades30d: 0, volume30d: 0,
+    volume30dByAsset: { USDT: 0, USDC: 0 }, avgReleaseSeconds: 0, cumulativeCounterparties: 0, trustScore: 0,
+    ratingAverage: null, ratingCount: 0,
     advertiserStatus: "none", advertiserLevel: "none", verifiedTier: "none",
     firstTradeAt: null, isOnline: false
   });

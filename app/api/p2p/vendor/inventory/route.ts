@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
-import { getVendorStatus, getVendorInventory, upsertVendorInventory, resolveInventoryTarget, ensureVendorListings } from "@/lib/p2p/vendor";
+import { getVendorStatus, getVendorInventory, getEffectiveVendorInventory, upsertVendorInventory, resolveInventoryTarget, ensureVendorListings } from "@/lib/p2p/vendor";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+export async function GET() {
   const userId = await getCurrentUserId();
   if (!userId) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
@@ -15,11 +15,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Only vendors can manage inventory." }, { status: 403 });
   }
 
-  const url = new URL(request.url);
-  const requestedId = url.searchParams.get("user_id");
-  const { targetId, managedVendors } = await resolveInventoryTarget(userId, requestedId);
+  const { targetId, managedVendors } = await resolveInventoryTarget(userId);
 
-  const inventory = await getVendorInventory(targetId);
+  const inventory = await getEffectiveVendorInventory(targetId, managedVendors);
   return NextResponse.json({
     inventory,
     managed_vendors: managedVendors.length > 0 ? managedVendors : undefined
@@ -44,9 +42,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const requestedId = body.user_id ? String(body.user_id) : undefined;
-
-  const { targetId, managedVendors } = await resolveInventoryTarget(userId, requestedId);
+  const { targetId, managedVendors } = await resolveInventoryTarget(userId);
 
   const updates: { code: string; value: number }[] = [];
 
@@ -81,7 +77,11 @@ export async function POST(request: Request) {
 
   // Ensure the vendor actually has listings for the currencies they trade,
   // so declaring a balance is enough to appear on the trade page.
-  await ensureVendorListings(targetId);
+  // Managed storefronts already own their currency-specific ads. Provisioning
+  // each one here would apply the generic USD fallback to every storefront.
+  if (managedVendors.length === 0) {
+    await ensureVendorListings(targetId);
+  }
 
   const inventory = await getVendorInventory(targetId);
   return NextResponse.json({

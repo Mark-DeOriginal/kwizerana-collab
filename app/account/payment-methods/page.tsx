@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CreditCard, Loader2, Pencil, Plus, Trash2, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect } from "@/components/p2p/custom-ui";
+import { PaymentDetailFields } from "@/components/p2p/payment-detail-fields";
 import { COUNTRIES, countryLabel, PAYMENT_METHOD_CATEGORY_LABELS } from "@/lib/p2p/countries-shared";
-import type { UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
+import { getPaymentMethodFields, paymentDetailValue, type UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
 
 type FormState = {
   countryCode: string;
@@ -13,7 +14,7 @@ type FormState = {
   customBank: boolean;
   customBankName: string;
   accountHolderName: string;
-  accountIdentifier: string;
+  details: Record<string, string>;
   note: string;
 };
 
@@ -23,7 +24,7 @@ const emptyForm: FormState = {
   customBank: false,
   customBankName: "",
   accountHolderName: "",
-  accountIdentifier: "",
+  details: {},
   note: ""
 };
 
@@ -76,7 +77,7 @@ export default function PaymentMethodsPage() {
   }
 
   function startEdit(method: UserPaymentMethod) {
-    const details = method.details as { accountIdentifier?: string; note?: string; countryCode?: string };
+    const details = method.details as Record<string, unknown> & { note?: string; countryCode?: string };
     const countryCode = details.countryCode ?? "";
     const country = COUNTRIES.find((c) => c.code === countryCode);
     const isKnownMethod = country?.methods.some((m) => m.name === method.method_name);
@@ -88,7 +89,11 @@ export default function PaymentMethodsPage() {
       customBank: !isKnownMethod && method.method_type === "bank",
       customBankName: !isKnownMethod && method.method_type === "bank" ? method.method_name : "",
       accountHolderName: method.account_holder_name ?? "",
-      accountIdentifier: details.accountIdentifier ?? "",
+      details: Object.fromEntries(
+        getPaymentMethodFields(method.method_name, method.method_type)
+          .filter((field) => field.key !== "account_holder_name")
+          .map((field) => [field.key, paymentDetailValue(details, field, method.account_holder_name)])
+      ),
       note: details.note ?? ""
     });
     setError("");
@@ -96,7 +101,7 @@ export default function PaymentMethodsPage() {
   }
 
   function selectCountry(code: string) {
-    setForm((f) => ({ ...f, countryCode: code, methodName: "", customBank: false, customBankName: "" }));
+    setForm((f) => ({ ...f, countryCode: code, methodName: "", customBank: false, customBankName: "", accountHolderName: "", details: {} }));
   }
 
   async function submit(e: React.FormEvent) {
@@ -125,7 +130,7 @@ export default function PaymentMethodsPage() {
       method_name: methodName,
       account_holder_name: form.accountHolderName,
       details: {
-        accountIdentifier: form.accountIdentifier,
+        ...form.details,
         note: form.note,
         countryCode: form.countryCode,
         countryName: selectedCountry?.name ?? ""
@@ -216,7 +221,7 @@ export default function PaymentMethodsPage() {
               </label>
               <CustomSelect
                 value={form.methodName}
-                onChange={(v) => setForm((f) => ({ ...f, methodName: v }))}
+                onChange={(v) => setForm((f) => ({ ...f, methodName: v, accountHolderName: "", details: {} }))}
                 disabled={!selectedCountry}
                 groups={groupedMethods.map((group) => ({
                   label: PAYMENT_METHOD_CATEGORY_LABELS[group.category],
@@ -241,32 +246,15 @@ export default function PaymentMethodsPage() {
             )}
           </div>
 
-          <div>
-            <label htmlFor="accountHolderName" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              Account holder name <span className="normal-case text-muted/70">(optional)</span>
-            </label>
-            <input
-              id="accountHolderName"
-              value={form.accountHolderName}
-              onChange={(e) => setForm((f) => ({ ...f, accountHolderName: e.target.value }))}
-              className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
-              placeholder="Name on the account"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="accountIdentifier" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
-              Account number / identifier
-            </label>
-            <input
-              id="accountIdentifier"
-              value={form.accountIdentifier}
-              onChange={(e) => setForm((f) => ({ ...f, accountIdentifier: e.target.value }))}
-              required
-              className="h-11 w-full border border-line bg-white px-3 text-sm outline-none transition-colors focus:border-ocean"
-              placeholder="Account number, phone number, or wallet address"
-            />
-          </div>
+          <PaymentDetailFields
+            methodName={form.customBank ? form.customBankName : form.methodName}
+            methodType={form.customBank ? "bank" : selectedCountry?.methods.find((method) => method.name === form.methodName)?.category ?? ""}
+            accountHolderName={form.accountHolderName}
+            details={form.details}
+            onAccountHolderNameChange={(value) => setForm((current) => ({ ...current, accountHolderName: value }))}
+            onDetailsChange={(details) => setForm((current) => ({ ...current, details }))}
+            idPrefix="payment-method"
+          />
 
           <div>
             <label htmlFor="note" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-muted">
@@ -309,7 +297,10 @@ export default function PaymentMethodsPage() {
       ) : (
         <ul className="space-y-3">
           {methods.map((method) => {
-            const details = method.details as { accountIdentifier?: string; note?: string; countryCode?: string };
+            const details = method.details as Record<string, unknown> & { note?: string; countryCode?: string };
+            const summaryFields = getPaymentMethodFields(method.method_name, method.method_type)
+              .map((field) => ({ field, value: paymentDetailValue(details, field, method.account_holder_name) }))
+              .filter(({ value }) => Boolean(value));
             return (
               <li key={method.id} className="flex items-start justify-between gap-4 border border-line bg-white p-4">
                 <div className="min-w-0">
@@ -327,8 +318,9 @@ export default function PaymentMethodsPage() {
                     )}
                   </div>
                   {details.countryCode && <p className="mt-0.5 text-xs text-muted">{countryLabel(details.countryCode)}</p>}
-                  {method.account_holder_name && <p className="mt-0.5 text-sm text-muted">{method.account_holder_name}</p>}
-                  {details.accountIdentifier && <p className="truncate font-mono text-sm text-muted">{details.accountIdentifier}</p>}
+                  {summaryFields.map(({ field, value }) => (
+                    <p key={field.key} className="truncate text-sm text-muted"><span className="font-medium">{field.label}:</span> {value}</p>
+                  ))}
                   {details.note && <p className="text-sm text-muted">{details.note}</p>}
                 </div>
                 <div className="flex shrink-0 gap-1">

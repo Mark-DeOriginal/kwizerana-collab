@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import { dbQuery, ensureDatabase } from "@/lib/db";
-import { createNotification, updateTradeNotification } from "@/lib/p2p/notifications";
+import { createNotification } from "@/lib/p2p/notifications";
 import { getFees } from "@/lib/p2p/fees";
 import { getLiveRate } from "@/lib/p2p/price-feed";
 import { SUPPORTED_METHODS } from "@/lib/p2p/payment-methods-shared";
@@ -14,69 +14,96 @@ function fmtCryptoAmount(n: number): string {
   return Number(n.toFixed(6)).toLocaleString("en-US", { maximumFractionDigits: 6 });
 }
 
-type TradeNoticeRow = {
-  status: string;
-  trade_ref: string;
-  crypto_amount: number | string;
-  crypto_currency: string;
-};
+type TradeActivityEvent = "approved" | "funded" | "payment_sent" | "released" | "completed" | "cancelled" | "declined" | "refunded";
 
-// Trade activity notices are limited to the three lifecycle states that matter:
-// the order being placed, cancellation, and completion. Intermediate states
-// (approve, fund, pay, release) intentionally produce no notice.
-function tradeNoticeCopy(t: TradeNoticeRow): { title: string; body: string } | null {
-  const amt = fmtCryptoAmount(Number(t.crypto_amount));
-  const ref = t.trade_ref;
-  if (t.status === "completed") {
-    return { title: "Transaction completed", body: `Order ${ref} is complete. The buyer received ${amt} ${t.crypto_currency}.` };
-  }
-  if (t.status === "cancelled") {
-    return { title: "Order cancelled", body: `Order ${ref} was cancelled.` };
-  }
-  return null;
-}
-
-async function syncTradeNotification(tradeId: string): Promise<void> {
-  const rows = await dbQuery<TradeNoticeRow>(
-    `SELECT status, trade_ref, crypto_amount, crypto_currency
-     FROM p2p_trades WHERE id = $1`,
+async function createTradeActivity(tradeId: string, event: TradeActivityEvent, actorId: string, declineReason?: string): Promise<void> {
+  const rows = await dbQuery<{
+    trade_ref: string; buyer_id: string; seller_id: string; buyer_name: string; seller_name: string;
+    vendor_id: string;
+    buyer_owner_id: string | null; seller_owner_id: string | null; crypto_amount: string;
+    crypto_currency: string; fiat_amount: string; fiat_currency: string; escrow_status: string | null;
+  }>(
+    `SELECT t.trade_ref, t.buyer_id, t.seller_id, ad.user_id AS vendor_id,
+            buyer.name AS buyer_name, seller.name AS seller_name,
+            buyer.owner_user_id AS buyer_owner_id, seller.owner_user_id AS seller_owner_id,
+            t.crypto_amount::TEXT AS crypto_amount, t.crypto_currency,
+            t.fiat_amount::TEXT AS fiat_amount, t.fiat_currency, escrow.status AS escrow_status
+     FROM p2p_trades t
+     JOIN p2p_ads ad ON ad.id = t.ad_id
+     JOIN users buyer ON buyer.id = t.buyer_id
+     JOIN users seller ON seller.id = t.seller_id
+     LEFT JOIN LATERAL (
+       SELECT status FROM p2p_escrow WHERE trade_id = t.id ORDER BY id DESC LIMIT 1
+     ) escrow ON TRUE
+     WHERE t.id = $1`,
     [tradeId]
   );
-  const t = rows[0];
-  if (!t) return;
-  const copy = tradeNoticeCopy(t);
-  if (!copy) return;
-  await updateTradeNotification(tradeId, copy);
-}
+  const trade = rows[0];
+  if (!trade) return;
 
-async function ensureTradeCompletionActivity(
-  tradeId: string,
-  trade: { buyer_id: string; seller_id: string; trade_ref: string; crypto_amount: number | string; crypto_currency: string }
-): Promise<void> {
-  const amount = fmtCryptoAmount(Number(trade.crypto_amount));
+  const crypto = `${fmtCryptoAmount(Number(trade.crypto_amount))} ${trade.crypto_currency}`;
+  const fiat = `${fmtCryptoAmount(Number(trade.fiat_amount))} ${trade.fiat_currency}`;
+  const buyerNotifyId = trade.buyer_owner_id || trade.buyer_id;
+  const sellerNotifyId = trade.seller_owner_id || trade.seller_id;
+  const actorName = actorId === trade.buyer_id ? trade.buyer_name : trade.seller_name;
 
-  // The participant who received the original order request already has that
-  // activity row updated to "Trade completed" by syncTradeNotification. Add a
-  // completion row only for participants who are not represented by that row.
-  // Owned vendor profiles route activity to the account that manages them.
-  await dbQuery(
-    `INSERT INTO p2p_notifications (user_id, notification_type, title, body, data)
-     SELECT DISTINCT COALESCE(u.owner_user_id, u.id),
-            'trade_completed',
-            'Transaction completed',
-            $4,
-            jsonb_build_object('tradeId', $1::TEXT)
-     FROM users u
-     WHERE u.id IN ($2, $3)
-       AND NOT EXISTS (
-         SELECT 1
-         FROM p2p_notifications n
-         WHERE n.user_id = COALESCE(u.owner_user_id, u.id)
-           AND n.data->>'tradeId' = $1::TEXT
-           AND n.notification_type IN ('trade_created', 'trade_completed')
-       )`,
-    [tradeId, trade.buyer_id, trade.seller_id, `Order ${trade.trade_ref} is complete. The buyer received ${amount} ${trade.crypto_currency}.`]
-  );
+  let buyer: { title: string; body: string };
+  let seller: { title: string; body: string };
+  switch (event) {
+    case "approved":
+      buyer = { title: "Sell order accepted", body: `You accepted ${trade.seller_name}'s order for ${crypto}. Waiting for them to fund escrow.` };
+      seller = { title: "Vendor accepted your order", body: `${trade.buyer_name} confirmed they can send ${fiat}. You can now fund escrow.` };
+      break;
+    case "funded":
+      buyer = { title: "Crypto secured in escrow", body: `${crypto} has been secured in escrow. You can now send ${fiat}.` };
+      seller = { title: "Escrow funded", body: `You secured ${crypto} in escrow. Waiting for ${trade.buyer_name} to send ${fiat}.` };
+      break;
+    case "payment_sent":
+      buyer = { title: "Payment submitted", body: `You marked the ${fiat} payment as sent. ${trade.seller_name} is reviewing it.` };
+      seller = { title: "Payment marked as sent", body: `${trade.buyer_name} says the ${fiat} payment has been sent. Confirm it is in your account before releasing ${crypto}.` };
+      break;
+    case "released":
+      if (trade.vendor_id === trade.buyer_id) {
+        buyer = { title: "Crypto ready to receive", body: `${trade.seller_name} confirmed your payment. ${crypto} is ready to receive.` };
+        seller = { title: "Trade completed successfully", body: `You confirmed ${trade.buyer_name}'s payment and released ${crypto} from escrow.` };
+      } else {
+        buyer = { title: "Payment confirmed", body: `${trade.seller_name} confirmed your payment. ${crypto} is ready to receive.` };
+        seller = { title: "Crypto released", body: `You confirmed ${trade.buyer_name}'s payment and released ${crypto} from escrow.` };
+      }
+      break;
+    case "completed":
+      buyer = { title: "Trade completed", body: `You successfully bought ${crypto} from ${trade.seller_name}.` };
+      seller = { title: "Trade completed", body: `You successfully sold ${crypto} to ${trade.buyer_name}.` };
+      break;
+    case "cancelled":
+      buyer = actorId === trade.buyer_id
+        ? { title: "Trade cancelled", body: `You cancelled your ${crypto} trade with ${trade.seller_name}.` }
+        : { title: `Trade cancelled by ${actorName}`, body: `${actorName} cancelled the ${crypto} trade before it was completed.` };
+      seller = actorId === trade.seller_id
+        ? { title: "Trade cancelled", body: `You cancelled your ${crypto} trade with ${trade.buyer_name}.` }
+        : { title: `Trade cancelled by ${actorName}`, body: `${actorName} cancelled the ${crypto} trade before it was completed.` };
+      if (trade.escrow_status === "funded") {
+        seller = { title: "Request your refund", body: `The trade was cancelled while ${crypto} remained in escrow. Open the trade to request your refund.` };
+      }
+      break;
+    case "declined":
+      buyer = actorId === trade.buyer_id
+        ? { title: "Order declined", body: `You declined ${trade.seller_name}'s order for ${crypto}.` }
+        : { title: "Order declined", body: `${trade.seller_name} declined your order for ${crypto}${declineReason ? `: ${declineReason}` : "."}` };
+      seller = actorId === trade.seller_id
+        ? { title: "Order declined", body: `You declined ${trade.buyer_name}'s order for ${crypto}.` }
+        : { title: "Order declined", body: `${trade.buyer_name} declined your order for ${crypto}${declineReason ? `: ${declineReason}` : "."}` };
+      break;
+    case "refunded":
+      buyer = { title: "Trade refunded", body: `The cancelled trade is closed and ${crypto} was returned to the crypto seller.` };
+      seller = { title: "Refund received", body: `${crypto} was returned to your wallet from escrow.` };
+      break;
+  }
+
+  await Promise.allSettled([
+    createNotification(buyerNotifyId, { type: `trade_${event}`, ...buyer, data: { tradeId } }),
+    createNotification(sellerNotifyId, { type: `trade_${event}`, ...seller, data: { tradeId } })
+  ]);
 }
 
 export type Trade = {
@@ -136,6 +163,7 @@ export type TradeStatus =
   | "payment_sent" // buyer uploaded receipt
   | "released" // seller confirmed fiat received; buyer can claim
   | "completed" // buyer claimed crypto
+  | "declined" // receiving counterparty rejected the unfunded order
   | "cancelled"
   | "expired"
   | "disputed"
@@ -157,6 +185,7 @@ export const TRADE_STATUS_LABELS: Record<string, string> = {
   payment_sent: "Payment sent",
   released: "Ready to receive",
   completed: "Completed",
+  declined: "Declined",
   cancelled: "Cancelled",
   expired: "Expired",
   disputed: "Disputed",
@@ -299,20 +328,32 @@ export async function createTrade(
     min_amount: string;
     max_amount: string;
     vendor_fee_percent: string;
+    effective_vendor_id: string;
   }>(
     `SELECT a.id::TEXT AS id, a.user_id, a.ad_type, a.crypto_currency, a.fiat_currency,
             a.price_type, a.price_value::TEXT AS price_value, a.price_margin::TEXT AS price_margin,
             a.min_amount::TEXT AS min_amount, a.max_amount::TEXT AS max_amount,
-            CASE WHEN a.ad_type = 'sell' THEN COALESCE(u.vendor_sell_fee_percent, u.vendor_fee_percent)
-                 ELSE COALESCE(u.vendor_buy_fee_percent, u.vendor_fee_percent)
-            END::TEXT AS vendor_fee_percent
+            CASE WHEN a.ad_type = 'sell' THEN COALESCE(owner.vendor_sell_fee_percent, u.vendor_sell_fee_percent, u.vendor_fee_percent, owner.vendor_fee_percent)
+                 ELSE COALESCE(owner.vendor_buy_fee_percent, u.vendor_buy_fee_percent, u.vendor_fee_percent, owner.vendor_fee_percent)
+            END::TEXT AS vendor_fee_percent,
+            COALESCE(u.owner_user_id, u.id)::TEXT AS effective_vendor_id
      FROM p2p_ads a
      JOIN users u ON u.id = a.user_id
-     WHERE a.id = $1 AND a.status = 'active' AND a.is_paused = FALSE`,
+     LEFT JOIN users owner ON owner.id = u.owner_user_id
+     WHERE a.id = $1 AND a.status = 'active' AND a.is_paused = FALSE
+       AND u.p2p_advertiser_status <> 'none'`,
     [input.adId]
   );
   const ad = ads[0];
   if (!ad) throw new Error("Vendor is no longer available.");
+
+  const viewerRows = await dbQuery<{ effective_user_id: string }>(
+    `SELECT COALESCE(owner_user_id, id)::TEXT AS effective_user_id FROM users WHERE id = $1`,
+    [userId]
+  );
+  if ((viewerRows[0]?.effective_user_id ?? userId) === ad.effective_vendor_id) {
+    throw new Error("You cannot open a trade with your own vendor listing.");
+  }
 
   const vendorFee = Number(ad.vendor_fee_percent) || 0;
   const standardRate = await getLiveRate(ad.crypto_currency, ad.fiat_currency);
@@ -392,14 +433,29 @@ export async function createTrade(
   );
   const notifyUserId = ownerRows[0]?.owner_user_id || counterpartyId;
 
-  await createNotification(notifyUserId, {
-    type: "trade_created",
-    title: counterpartySells ? "New buy order" : "New sell order",
-    body: counterpartySells
-      ? `${initiatorName} wants to buy ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} from you. Review the order and deposit the crypto if you can fulfill it.`
-      : `${initiatorName} wants to sell ${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency} to you. Confirm that you can send ${fmtCryptoAmount(fiatAmount)} ${ad.fiat_currency}, then accept the order. The seller deposits the crypto only after you accept.`,
-    data: { tradeId }
-  });
+  const crypto = `${fmtCryptoAmount(Number(input.cryptoAmount))} ${ad.crypto_currency}`;
+  const fiat = `${fmtCryptoAmount(fiatAmount)} ${ad.fiat_currency}`;
+  const counterpartyNameRows = await dbQuery<{ name: string }>(`SELECT name FROM users WHERE id = $1`, [counterpartyId]);
+  const counterpartyName = counterpartyNameRows[0]?.name ?? "the vendor";
+
+  await Promise.allSettled([
+    createNotification(notifyUserId, {
+      type: "trade_created",
+      title: counterpartySells ? "New buy order" : "New sell order",
+      body: counterpartySells
+        ? `${initiatorName} wants to buy ${crypto} for ${fiat}. Review the order and fund escrow if you can fulfill it.`
+        : `${initiatorName} wants to sell ${crypto} for ${fiat}. Confirm that you can make the payment before accepting the order.`,
+      data: { tradeId }
+    }),
+    createNotification(userId, {
+      type: "trade_created",
+      title: counterpartySells ? "Buy order sent" : "Sell order sent",
+      body: counterpartySells
+        ? `Your order to buy ${crypto} from ${counterpartyName} has been submitted.`
+        : `Your order to sell ${crypto} to ${counterpartyName} has been submitted.`,
+      data: { tradeId }
+    })
+  ]);
 
   const ownedVendorIds = await getOwnedVendorIds(userId);
   return getTrade(userId, tradeId, ownedVendorIds, isSuperAdmin);
@@ -436,7 +492,7 @@ export async function listTrades(userId: string, isSuperAdmin = false): Promise<
   return rows.map((row) => mapTrade(row, userId, ownedVendorIds, isSuperAdmin));
 }
 
-export type TradeAction = "set_receive_wallet" | "approve" | "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "close_trade" | "decline" | "proceed";
+export type TradeAction = "set_receive_wallet" | "approve" | "accept" | "mark_paid" | "release" | "claim" | "cancel" | "refund" | "close_trade" | "decline";
 
 export type TradeActionInput = {
   actionRequestId?: string;
@@ -610,16 +666,7 @@ export async function applyTradeAction(
       if (!isBuyer && !isSeller) throw new Error("Only the receiving party can decline this order.");
       if (status !== "created") throw new Error("This order is no longer awaiting approval.");
       if (!input.declineFeedback?.trim()) throw new Error("Please provide a reason for declining the order.");
-      // Order stays in "created"; feedback is recorded for the buyer to review.
-      break;
-    }
-    case "proceed": {
-      if (!isInitiator) throw new Error("Only the person who started this trade can choose to proceed.");
-      if (status !== "created" || !row.decline_feedback) {
-        throw new Error("There is no declined order to proceed with.");
-      }
-      // Buyer chose to proceed despite vendor's feedback; clear the feedback and continue as normal.
-      newStatus = status;
+      newStatus = "declined";
       break;
     }
   }
@@ -652,8 +699,7 @@ export async function applyTradeAction(
         receipt = COALESCE($4, receipt),
         receipt_image = COALESCE($5, receipt_image),
         declined_at = CASE WHEN $7 = 'decline' THEN NOW() ELSE declined_at END,
-        decline_feedback = CASE WHEN $7 = 'proceed' THEN NULL
-                                WHEN $7 = 'decline' THEN $6
+        decline_feedback = CASE WHEN $7 = 'decline' THEN $6
                                 ELSE decline_feedback END,
         buyer_closed_at = CASE WHEN $7 = 'close_trade' THEN NOW() ELSE buyer_closed_at END,
         updated_at = NOW()
@@ -717,36 +763,35 @@ export async function applyTradeAction(
       `UPDATE p2p_vendor_inventory
        SET declared_balance = GREATEST(declared_balance - $3::numeric, 0),
            updated_at = NOW()
-       WHERE user_id = $1 AND crypto_currency = $2`,
+       WHERE user_id = COALESCE(
+         (SELECT u.owner_user_id
+          FROM users u
+          JOIN p2p_vendor_inventory shared
+            ON shared.user_id = u.owner_user_id AND shared.crypto_currency = $2
+          WHERE u.id = $1),
+         $1
+       )
+         AND crypto_currency = $2`,
       [row.seller_id, row.crypto_currency, toNumber(row.crypto_amount)]
     );
   }
 
-  // Activity notices are limited to the three lifecycle states handled by
-  // syncTradeNotification (placed / cancelled / completed). Intermediate state
-  // changes do not notify.
-  if (newStatus !== status) {
-    await syncTradeNotification(tradeId);
-  }
-
-  if (newStatus === "completed") {
-    await ensureTradeCompletionActivity(tradeId, row);
-  }
-
-  // A successful refund is a money-moving event worth surfacing in the seller's
-  // activity, routed to the owning account for owned vendor profiles.
-  if (action === "refund") {
-    const sellerRows = await dbQuery<{ owner_user_id: string | null }>(
-      `SELECT owner_user_id FROM users WHERE id = $1`,
-      [row.seller_id]
-    );
-    const sellerNotifyId = sellerRows[0]?.owner_user_id || row.seller_id;
-    await createNotification(sellerNotifyId, {
-      type: "trade_refunded",
-      title: "Refund successful",
-      body: `Your ${fmtCryptoAmount(Number(row.crypto_amount))} ${row.crypto_currency} has been refunded to your wallet.`,
-      data: { tradeId }
-    });
+  const activityByAction: Partial<Record<TradeAction, { event: TradeActivityEvent; actorId: string }>> = {
+    approve: { event: "approved", actorId: row.buyer_id },
+    accept: { event: "funded", actorId: row.seller_id },
+    mark_paid: { event: "payment_sent", actorId: row.buyer_id },
+    release: { event: "released", actorId: row.seller_id },
+    claim: { event: "completed", actorId: row.buyer_id },
+    cancel: { event: "cancelled", actorId: row.initiator_id },
+    decline: {
+      event: "declined",
+      actorId: row.buyer_id === row.initiator_id ? row.seller_id : row.buyer_id
+    },
+    refund: { event: "refunded", actorId: row.seller_id }
+  };
+  const activity = activityByAction[action];
+  if (activity) {
+    await createTradeActivity(tradeId, activity.event, activity.actorId, input.declineFeedback);
   }
 
   return getTrade(userId, tradeId, ownedVendorIds, isSuperAdmin);
@@ -812,7 +857,10 @@ export async function confirmInventory(userId: string, tradeId: string, declared
      VALUES ($1, $2, $3, NOW())
      ON CONFLICT (user_id, crypto_currency)
      DO UPDATE SET declared_balance = $3, updated_at = NOW()`,
-    [row.seller_id, row.crypto_currency, declaredBalance]
+    [(await dbQuery<{ inventory_owner_id: string }>(
+      `SELECT COALESCE(owner_user_id, id)::TEXT AS inventory_owner_id FROM users WHERE id = $1`,
+      [row.seller_id]
+    ))[0]?.inventory_owner_id ?? row.seller_id, row.crypto_currency, declaredBalance]
   );
 
   await dbQuery(

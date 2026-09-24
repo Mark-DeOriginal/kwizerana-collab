@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { useEffect, useRef, useState } from "react";
+import { useAccount, useDisconnect, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { formatUnits, isAddress, parseUnits } from "viem";
+import { parseUnits } from "viem";
 import { ArrowRight, Check, Loader2, RefreshCw, ShieldCheck, TriangleAlert } from "lucide-react";
 import {
   ERC20_ABI,
@@ -42,14 +42,14 @@ export function EscrowModeNotice() {
   );
 }
 
-function ConnectPrompt({ label, verb = "to" }: { label: string; verb?: string }) {
+function ConnectPrompt({ label, verb = "to" }: { label?: string; verb?: string }) {
   const { openConnectModal } = useConnectModal();
   return (
     <button
       onClick={() => openConnectModal?.()}
       className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-ocean"
     >
-      Connect wallet {verb} {label}
+      {label ? `Connect wallet ${verb} ${label}` : "Connect wallet"}
     </button>
   );
 }
@@ -63,40 +63,47 @@ export type EscrowButtonProps = {
 export function ReceiveWalletSetup({
   trade,
   busy,
-  onSave,
-  onError
+  onSave
 }: {
   trade: Trade;
   busy: boolean;
   onSave: (address: string) => Promise<boolean>;
-  onError: (message: string) => void;
 }) {
   const { address, isConnected } = useAccount();
+  const { disconnectAsync } = useDisconnect();
   const { openConnectModal } = useConnectModal();
-  const [useDifferent, setUseDifferent] = useState(Boolean(trade.buyer_wallet_address && trade.buyer_wallet_address.toLowerCase() !== address?.toLowerCase()));
-  const [customAddress, setCustomAddress] = useState(trade.buyer_wallet_address ?? "");
-  const [saved, setSaved] = useState(false);
-  const destination = useDifferent ? customAddress.trim() : address ?? "";
-  const valid = isAddress(destination);
+  const syncedAddress = useRef<string | null>(null);
 
-  async function save() {
-    if (!valid) {
-      onError("Enter a valid Avalanche wallet address.");
+  useEffect(() => {
+    if (!isConnected || !address) {
+      syncedAddress.current = null;
       return;
     }
-    const didSave = await onSave(destination);
-    if (didSave) setSaved(true);
+
+    const normalizedAddress = address.toLowerCase();
+    if (trade.buyer_wallet_address?.toLowerCase() === normalizedAddress) {
+      syncedAddress.current = normalizedAddress;
+      return;
+    }
+    if (busy || syncedAddress.current === normalizedAddress) return;
+
+    syncedAddress.current = normalizedAddress;
+    void onSave(address);
+  }, [address, busy, isConnected, onSave, trade.buyer_wallet_address]);
+
+  async function changeWallet() {
+    try {
+      await disconnectAsync();
+    } finally {
+      window.setTimeout(() => openConnectModal?.(), 0);
+    }
   }
 
   return (
     <div className="space-y-3 bg-panel p-4">
       <div>
-        <p className="text-sm font-semibold text-ink">Where should we send your {trade.crypto_currency}?</p>
-        <p className="mt-1 text-xs leading-5 text-muted">
-          {trade.is_initiator
-            ? "Choose where to receive your crypto before the seller deposits it. The address is locked in once the crypto is deposited."
-            : "Choose where to receive the crypto before accepting this sell order. The address is locked in once the crypto is deposited."}
-        </p>
+        <p className="text-sm font-semibold text-ink">Receiving wallet</p>
+        <p className="mt-1 text-xs leading-5 text-muted">Your {trade.crypto_currency} will be sent to your connected Avalanche wallet.</p>
       </div>
 
       {!isConnected ? (
@@ -108,63 +115,21 @@ export function ReceiveWalletSetup({
           Connect Avalanche wallet
         </button>
       ) : (
-        <label
-          className={`flex min-h-16 cursor-pointer items-start gap-3 border p-3 text-left transition-colors ${!useDifferent ? "border-moss bg-mint/60" : "border-line bg-white hover:border-moss/60 hover:bg-mint/25"}`}
-        >
-          <input
-            type="radio"
-            name="receiving-wallet"
-            checked={!useDifferent}
-            onChange={() => { setUseDifferent(false); setSaved(false); }}
-            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-moss"
-          />
-          <span className="min-w-0">
+        <div className="flex min-h-16 items-center justify-between gap-3 border border-moss bg-mint/60 p-3">
+          <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold text-ink">Connected wallet</span>
             <span className="mt-0.5 block truncate font-mono text-xs text-muted">{shortAddr(address ?? "")}</span>
           </span>
-        </label>
-      )}
-
-      <label
-        className={`flex min-h-16 cursor-pointer items-start gap-3 border p-3 text-left transition-colors ${useDifferent ? "border-moss bg-mint/60" : "border-line bg-white hover:border-moss/60 hover:bg-mint/25"}`}
-      >
-        <input
-          type="radio"
-          name="receiving-wallet"
-          checked={useDifferent}
-          onChange={() => { setUseDifferent(true); setSaved(false); }}
-          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-moss"
-        />
-        <span>
-          <span className="block text-sm font-semibold text-ink">Use a different wallet</span>
-          <span className="mt-0.5 block text-xs text-muted">Send the crypto to another Avalanche wallet you can access.</span>
-        </span>
-      </label>
-
-      {useDifferent && (
-        <div className="space-y-1.5">
-          <input
-            value={customAddress}
-            onChange={(event) => { setCustomAddress(event.target.value); setSaved(false); }}
-            placeholder="0x..."
-            autoComplete="off"
-            spellCheck={false}
-            aria-label="Receiving wallet address"
-            className="h-11 w-full border border-line bg-white px-3 font-mono text-sm outline-none focus:border-moss"
-          />
-          <p className="text-xs leading-5 text-muted">You&apos;ll need to connect this wallet when you confirm that payment has been sent.</p>
+          <button
+            type="button"
+            onClick={() => void changeWallet()}
+            disabled={busy}
+            className="shrink-0 px-2 py-1.5 text-xs font-semibold text-ink transition-colors hover:text-moss disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Change wallet
+          </button>
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={() => void save()}
-        disabled={busy || !valid || saved}
-        className="flex h-11 w-full items-center justify-center gap-2 bg-ink text-sm font-semibold text-white transition-colors hover:bg-moss disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-        {saved ? "Saved" : "Save receiving wallet"}
-      </button>
     </div>
   );
 }
@@ -286,7 +251,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   }
 
   const isSellInitiator = trade.is_initiator;
-  if (!isConnected && real) return <ConnectPrompt label={isSellInitiator ? "deposit crypto" : "approve and deposit crypto"} />;
+  if (!isConnected && real) return <ConnectPrompt />;
 
   const label = isSellInitiator ? "Deposit crypto" : "Approve order and deposit crypto";
   const disabled = Boolean(!buyAddrOk || (real && (insufficient || feeBps === undefined)) || phase !== "idle");
@@ -307,11 +272,6 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
         label={label}
         icon={<ShieldCheck className="h-4 w-4" />}
       />
-      {real && feeAmount !== undefined && (
-        <p className="text-xs text-muted">
-          Service fee: {formatUnits(feeAmount, TOKEN_DECIMALS)} {trade.crypto_currency} ({Number(feeBps) / 100}%). Refunded if the trade does not settle.
-        </p>
-      )}
       {simDone && (
         <p className="flex items-center gap-1.5 text-xs font-semibold text-moss">
           <Check className="h-3.5 w-3.5" /> Escrow funded (simulated in demo mode).

@@ -10,6 +10,10 @@ export type VendorStatus = {
   availableFiat: number;
 };
 
+export type VendorClosureResult =
+  | { ok: true }
+  | { ok: false; reason: "not_vendor" | "managed_account" | "active_trades" | "open_disputes"; count?: number };
+
 function toNumber(value: unknown): number {
   if (value === null || value === undefined) return 0;
   const n = Number(value);
@@ -72,6 +76,92 @@ export async function getVendorStatus(userId: string): Promise<VendorStatus> {
   };
 }
 
+export async function closeVendorAccount(userId: string): Promise<VendorClosureResult> {
+  await ensureDatabase();
+  const rows = await dbQuery<{
+    advertiser_status: string;
+    owner_user_id: string | null;
+    owned_count: string;
+    active_trade_count: string;
+    open_dispute_count: string;
+  }>(
+    `SELECT u.p2p_advertiser_status AS advertiser_status,
+            u.owner_user_id,
+            (SELECT COUNT(*)::TEXT FROM users child WHERE child.owner_user_id = u.id) AS owned_count,
+            (SELECT COUNT(DISTINCT t.id)::TEXT
+             FROM p2p_trades t
+             WHERE (t.buyer_id = u.id OR t.seller_id = u.id)
+               AND (
+                 t.status IN ('created', 'approved', 'escrow_locked', 'pending_payment', 'payment_sent', 'released', 'disputed', 'reconciliation_required')
+                 OR EXISTS (SELECT 1 FROM p2p_escrow e WHERE e.trade_id = t.id AND e.status = 'funded')
+               )) AS active_trade_count,
+            (SELECT COUNT(DISTINCT d.id)::TEXT
+             FROM p2p_disputes d
+             JOIN p2p_trades t ON t.id = d.trade_id
+             WHERE (t.buyer_id = u.id OR t.seller_id = u.id)
+               AND d.status NOT IN ('resolved', 'closed')) AS open_dispute_count
+     FROM users u
+     WHERE u.id = $1`,
+    [userId]
+  );
+  const account = rows[0];
+  if (!account || account.advertiser_status === "none") return { ok: false, reason: "not_vendor" };
+  if (account.owner_user_id || Number(account.owned_count) > 0 || userId.startsWith("kwizerana-dao-")) {
+    return { ok: false, reason: "managed_account" };
+  }
+  if (Number(account.open_dispute_count) > 0) {
+    return { ok: false, reason: "open_disputes", count: Number(account.open_dispute_count) };
+  }
+  if (Number(account.active_trade_count) > 0) {
+    return { ok: false, reason: "active_trades", count: Number(account.active_trade_count) };
+  }
+
+  const closed = await dbQuery<{ id: string }>(
+    `WITH eligible AS (
+       SELECT u.id
+       FROM users u
+       WHERE u.id = $1
+         AND u.p2p_advertiser_status <> 'none'
+         AND u.owner_user_id IS NULL
+         AND u.id NOT LIKE 'kwizerana-dao-%'
+         AND NOT EXISTS (SELECT 1 FROM users child WHERE child.owner_user_id = u.id)
+         AND NOT EXISTS (
+           SELECT 1 FROM p2p_trades t
+           WHERE (t.buyer_id = u.id OR t.seller_id = u.id)
+             AND (
+               t.status IN ('created', 'approved', 'escrow_locked', 'pending_payment', 'payment_sent', 'released', 'disputed', 'reconciliation_required')
+               OR EXISTS (SELECT 1 FROM p2p_escrow e WHERE e.trade_id = t.id AND e.status = 'funded')
+             )
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM p2p_disputes d
+           JOIN p2p_trades t ON t.id = d.trade_id
+           WHERE (t.buyer_id = u.id OR t.seller_id = u.id)
+             AND d.status NOT IN ('resolved', 'closed')
+         )
+       FOR UPDATE
+     ), closed_user AS (
+       UPDATE users
+       SET p2p_advertiser_status = 'none', p2p_is_online = FALSE, updated_at = NOW()
+       WHERE id IN (SELECT id FROM eligible)
+       RETURNING id
+     ), closed_ads AS (
+       UPDATE p2p_ads
+       SET status = 'inactive', is_paused = TRUE, updated_at = NOW()
+       WHERE user_id IN (SELECT id FROM closed_user)
+       RETURNING id
+     ), closed_applications AS (
+       UPDATE p2p_advertiser_applications
+       SET status = 'withdrawn', reviewed_at = NOW()
+       WHERE user_id IN (SELECT id FROM closed_user) AND status = 'approved'
+       RETURNING id
+     )
+     SELECT id::TEXT AS id FROM closed_user`,
+    [userId]
+  );
+  return closed.length > 0 ? { ok: true } : { ok: false, reason: "active_trades" };
+}
+
 export type VendorInventoryEntry = {
   crypto_currency: string;
   declared_balance: number;
@@ -91,6 +181,30 @@ export async function getVendorInventory(userId: string): Promise<VendorInventor
     crypto_currency: r.crypto_currency,
     declared_balance: toNumber(r.declared_balance),
     updated_at: r.updated_at
+  }));
+}
+
+export async function getEffectiveVendorInventory(
+  ownerId: string,
+  managedVendors: ManagedVendor[]
+): Promise<VendorInventoryEntry[]> {
+  const shared = await getVendorInventory(ownerId);
+  if (shared.length > 0 || managedVendors.length === 0) return shared;
+
+  const rows = await dbQuery<{ crypto_currency: string; declared_balance: string; updated_at: string | null }>(
+    `SELECT crypto_currency,
+            MAX(declared_balance)::TEXT AS declared_balance,
+            MAX(updated_at) AS updated_at
+     FROM p2p_vendor_inventory
+     WHERE user_id = ANY($1)
+     GROUP BY crypto_currency
+     ORDER BY crypto_currency ASC`,
+    [managedVendors.map((vendor) => vendor.id)]
+  );
+  return rows.map((row) => ({
+    crypto_currency: row.crypto_currency,
+    declared_balance: toNumber(row.declared_balance),
+    updated_at: row.updated_at
   }));
 }
 
@@ -115,14 +229,13 @@ export type ManagedVendor = {
 };
 
 /**
- * Resolve which vendor account inventory should be read/written for.
- * - A user who is themself a vendor manages their own account (or an owned one if explicitly requested).
- * - A user who owns vendor accounts (e.g. the DAO admin) manages one of those; `requestedId`
- *   selects which, otherwise the first owned vendor is the default.
+ * Resolve the inventory/fee owner for an account. Managed vendor profiles use
+ * their owner's single pool so one wallet balance cannot be counted once per
+ * storefront. Standalone vendors continue to own their own pool.
  */
 export async function resolveInventoryTarget(
   userId: string,
-  requestedId?: string | null
+  _requestedId?: string | null
 ): Promise<{ targetId: string; managedVendors: ManagedVendor[] }> {
   await ensureDatabase();
   const ownedRows = await dbQuery<{ id: string; name: string }>(
@@ -130,25 +243,11 @@ export async function resolveInventoryTarget(
     [userId]
   );
   const managedVendors = ownedRows.map((r) => ({ id: r.id, name: r.name }));
-  const ownedIds = new Set(managedVendors.map((v) => v.id));
-
-  const selfRows = await dbQuery<{ status: string }>(
-    `SELECT p2p_advertiser_status::TEXT AS status FROM users WHERE id = $1`,
+  const ownerRows = await dbQuery<{ owner_user_id: string | null }>(
+    `SELECT owner_user_id FROM users WHERE id = $1`,
     [userId]
   );
-  const ownStatus = selfRows[0]?.status ?? "none";
-
-  if (ownStatus !== "none") {
-    const targetId = requestedId && ownedIds.has(requestedId) ? requestedId : userId;
-    return { targetId, managedVendors };
-  }
-
-  if (requestedId) {
-    if (ownedIds.has(requestedId)) return { targetId: requestedId, managedVendors };
-    if (requestedId === userId) return { targetId: requestedId, managedVendors };
-  }
-
-  return { targetId: managedVendors[0]?.id ?? userId, managedVendors };
+  return { targetId: ownerRows[0]?.owner_user_id ?? userId, managedVendors };
 }
 
 export type BecomeVendorInput = {
@@ -191,7 +290,15 @@ export async function becomeVendor(userId: string, input: BecomeVendorInput): Pr
     [userId]
   );
 
-  if (Number(existingAds[0]?.count ?? "0") > 0) return;
+  if (Number(existingAds[0]?.count ?? "0") > 0) {
+    await dbQuery(
+      `UPDATE p2p_ads
+       SET status = 'active', is_paused = FALSE, payment_method_ids = $2::bigint[], updated_at = NOW()
+       WHERE user_id = $1 AND crypto_currency = 'USDT' AND fiat_currency = 'USD'`,
+      [userId, input.paymentMethodIds]
+    );
+    return;
+  }
 
   const pmIds = input.paymentMethodIds;
 
@@ -230,6 +337,15 @@ export async function provisionVendorListings(userId: string, input: ProvisionVe
       const buyPrice = Number((rate * 0.99).toFixed(2));
       const minAmount = Math.round(rate * 50);
       const maxAmount = Math.round(rate * 100000);
+
+      await dbQuery(
+        `UPDATE p2p_ads
+         SET status = 'active', is_paused = FALSE,
+             payment_method_ids = CASE WHEN cardinality($4::bigint[]) > 0 THEN $4::bigint[] ELSE payment_method_ids END,
+             updated_at = NOW()
+         WHERE user_id = $1 AND crypto_currency = $2 AND fiat_currency = $3`,
+        [userId, crypto, fiat, pmIds]
+      );
 
       const existing = await dbQuery<{ sell: string; buy: string }>(
         `SELECT COUNT(*) FILTER (WHERE ad_type = 'sell')::TEXT AS sell,

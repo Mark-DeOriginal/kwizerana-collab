@@ -28,6 +28,7 @@ An administrator is not automatically the buyer or seller. Administrative databa
 | `claim_submitted` | Buyer claim transaction is unconfirmed | Chain verifier |
 | `completed` | Valid claim/settlement event confirmed and reconciled | None/review |
 | `cancelled_unfunded` | Request ended before funding | None |
+| `declined_unfunded` | Receiving counterparty rejected the request before funding | None |
 | `cancellation_pending` | Seller requested cancellation; buyer protection window is active | Buyer or chain clock |
 | `refund_required` | Cancellation protection elapsed without payment being marked | Anyone through the contract |
 | `refund_submitted` | Refund transaction is unconfirmed | Chain verifier |
@@ -44,6 +45,7 @@ Names may be adjusted in a migration, but submitted, confirmed, and reconciled s
 requested
   -> funding_submitted -> escrow_funded (Buy order: advertising crypto seller funds)
   -> accepted -> funding_submitted -> escrow_funded (Sell order: fiat-paying vendor accepts first)
+  -> declined_unfunded
   -> cancelled_unfunded
   -> expired_unfunded
 
@@ -72,7 +74,7 @@ any nonterminal chain-backed state
   -> reconciliation_required when verified facts conflict
 ```
 
-Terminal states are `completed`, `refunded`, `cancelled_unfunded`, and `expired_unfunded`. Reviews may follow completion but cannot reopen settlement.
+Terminal states are `completed`, `refunded`, `declined_unfunded`, `cancelled_unfunded`, and `expired_unfunded`. Only the customer who initiated an order may rate the advertisement owner; vendors do not rate ordinary customers. A Buy-order customer may review after `completed`. A Sell-order customer may review after the vendor payment is confirmed and escrow is released, because that is the crypto seller's completed user journey even if the fiat-paying vendor has not claimed the crypto yet. Reviews cannot reopen settlement.
 
 ## Transition invariants
 
@@ -146,8 +148,10 @@ If the fiat buyer did not send payment, the buyer may explicitly close the cance
 
 Opening a dispute freezes normal application actions where the contract permits. Resolution must create an auditable decision and initiate the matching contract action. A dispute is not financially resolved until the resulting event is confirmed and reconciled.
 
+Both participants can see an open dispute in the dashboard and dispute center. While it remains open, each side can submit factual notes and compressed receipt/screenshot evidence; the counterparty is notified when new evidence is added, and administrators can review the buyer and seller evidence separately. The current JSONB/image-data implementation is suitable for test workflows only. Production requires private object storage, signed access, malware scanning, retention limits, immutable evidence events, and an administrator audit trail.
+
 The current `split` concept is unsupported by the prototype contract and must not be exposed until a contract supports precise partial settlement.
 
 ## Current implementation mapping
 
-The current code uses `created`, `approved`, `escrow_locked`, `payment_sent`, `released`, `completed`, `cancelled`, `expired`, and `disputed`. `approved` is used only for Sell orders: the fiat-paying vendor has accepted, and the initiating crypto seller may then fund escrow. Buy orders continue directly from `created` to `escrow_locked` when the advertising crypto seller funds. Browser-submitted and chain-confirmed states are still collapsed in places; migration to the full target model must preserve historical records and label unverifiable/demo hashes explicitly.
+The current code uses `created`, `approved`, `escrow_locked`, `payment_sent`, `released`, `completed`, `declined`, `cancelled`, `expired`, and `disputed`. A counterparty decline transitions an unfunded `created` trade to terminal `declined` for both participants; it cannot subsequently be approved or funded. `approved` is used only for Sell orders: the fiat-paying vendor has accepted, and the initiating crypto seller may then fund escrow. Buy orders continue directly from `created` to `escrow_locked` when the advertising crypto seller funds. Browser-submitted and chain-confirmed states are still collapsed in places; migration to the full target model must preserve historical records and label unverifiable/demo hashes explicitly.
