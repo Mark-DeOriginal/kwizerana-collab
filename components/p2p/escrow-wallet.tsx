@@ -253,7 +253,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   const isSellInitiator = trade.is_initiator;
   if (!isConnected && real) return <ConnectPrompt />;
 
-  const label = isSellInitiator ? "Deposit crypto" : "Approve order and deposit crypto";
+  const label = isSellInitiator ? "Deposit crypto" : "Approve order";
   const disabled = Boolean(!buyAddrOk || (real && (insufficient || feeBps === undefined)) || phase !== "idle");
 
   return (

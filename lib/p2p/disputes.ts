@@ -93,6 +93,7 @@ export type DisputeDetail = {
   resolution: string | null;
   resolved_at: string | null;
   created_at: string;
+  updated_at: string;
   counterparty: string;
   my_side: "buyer" | "seller";
   evidence_buyer: DisputeEvidence[];
@@ -111,25 +112,29 @@ export type DisputeEvidence = {
 /** Disputes the current user is involved in (as raiser or counterparty). */
 export async function listMyDisputes(userId: string): Promise<DisputeDetail[]> {
   await ensureDatabase();
-  const owned = await dbQuery<{ id: string }>(`SELECT id FROM users WHERE owner_user_id = $1`, [userId]);
-  const ids = [userId, ...owned.map((o) => o.id)];
-  const rows = await dbQuery<DisputeDetail & { buyer_id: string; seller_id: string; buyer_name: string; seller_name: string }>(
-    `SELECT d.id::TEXT AS id, d.trade_id::TEXT AS trade_id, t.trade_ref,
+  const rows = await dbQuery<DisputeDetail & { buyer_id: string; seller_id: string; buyer_name: string; seller_name: string; is_buyer_identity: boolean }>(
+    `WITH identities AS (
+       SELECT $1::TEXT AS id
+       UNION ALL
+       SELECT id::TEXT FROM users WHERE owner_user_id = $1
+     )
+     SELECT d.id::TEXT AS id, d.trade_id::TEXT AS trade_id, t.trade_ref,
             t.crypto_currency, t.crypto_amount::TEXT AS crypto_amount,
             t.fiat_currency, t.fiat_amount::TEXT AS fiat_amount,
-            d.raised_by, d.reason, d.status, d.resolution, d.resolved_at, d.created_at,
+            d.raised_by, d.reason, d.status, d.resolution, d.resolved_at, d.created_at, d.updated_at,
             d.evidence_buyer, d.evidence_seller,
-            t.buyer_id, t.seller_id, b.name AS buyer_name, s.name AS seller_name
+            t.buyer_id, t.seller_id, b.name AS buyer_name, s.name AS seller_name,
+            (t.buyer_id IN (SELECT id FROM identities)) AS is_buyer_identity
      FROM p2p_disputes d
      JOIN p2p_trades t ON t.id = d.trade_id
      JOIN users b ON b.id = t.buyer_id
      JOIN users s ON s.id = t.seller_id
-     WHERE t.buyer_id = ANY($1) OR t.seller_id = ANY($1)
+     WHERE t.buyer_id IN (SELECT id FROM identities) OR t.seller_id IN (SELECT id FROM identities)
      ORDER BY d.created_at DESC`,
-    [ids]
+    [userId]
   );
   return rows.map((r) => {
-    const my_side = ids.includes(r.buyer_id) ? ("buyer" as const) : ("seller" as const);
+    const my_side = r.is_buyer_identity ? ("buyer" as const) : ("seller" as const);
     return {
       ...r,
       crypto_amount: Number(r.crypto_amount),
@@ -138,6 +143,23 @@ export async function listMyDisputes(userId: string): Promise<DisputeDetail[]> {
       my_side
     };
   });
+}
+
+export async function getMyDisputesChangedAt(userId: string): Promise<string> {
+  await ensureDatabase();
+  const rows = await dbQuery<{ changed_at: string | null }>(
+    `WITH identities AS (
+       SELECT $1::TEXT AS id
+       UNION ALL
+       SELECT id::TEXT FROM users WHERE owner_user_id = $1
+     )
+     SELECT MAX(d.updated_at)::TEXT AS changed_at
+     FROM p2p_disputes d
+     JOIN p2p_trades t ON t.id = d.trade_id
+     WHERE t.buyer_id IN (SELECT id FROM identities) OR t.seller_id IN (SELECT id FROM identities)`,
+    [userId]
+  );
+  return rows[0]?.changed_at ?? "";
 }
 
 export async function addDisputeEvidence(

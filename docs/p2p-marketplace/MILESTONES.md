@@ -66,7 +66,7 @@ Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
 | Participant and admin dispute flows | Implemented | Routes/services/UI exist |
-| Evidence workspace | Partial | Both participants can review buyer/seller evidence and submit notes or compressed receipt/screenshot evidence while a case is open; admins see both evidence sets. Object storage, malware scanning, retention controls, evidence immutability, and audit events remain required. |
+| Evidence workspace | Partial | Both participants can review buyer/seller evidence and submit notes or compressed receipt/screenshot evidence while a case is open; participant evidence views check for updates every five seconds without repeatedly downloading unchanged images, and admins see both evidence sets. Object storage, malware scanning, retention controls, evidence immutability, and audit events remain required. |
 | On-chain resolution | Unsafe for production | Current resolution changes database only |
 | Split resolution | Unsupported | Prototype contract cannot split funds |
 | Appeals/SLA/escalation | Planned | Policy and workflow required |

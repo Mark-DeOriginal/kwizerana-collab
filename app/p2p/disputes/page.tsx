@@ -1,10 +1,11 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ImagePlus, Loader2, Scale, Send, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { compressImage } from "@/lib/p2p/compress-image";
+import { usePoll } from "@/lib/p2p/use-realtime";
 import type { DisputeDetail, DisputeEvidence } from "@/lib/p2p/disputes";
 
 function timeAgo(iso: string): string {
@@ -33,18 +34,41 @@ export default function DisputesPage() {
   const [image, setImage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const changedAtRef = useRef("");
+  const loadedRef = useRef(false);
 
-  async function load() {
-    await fetch("/api/p2p/disputes", { cache: "no-store" })
-      .then((res) => readJson<{ disputes: DisputeDetail[] }>(res))
-      .then((data) => setDisputes(data?.disputes ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }
+  const load = useCallback(async (silent = false) => {
+    try {
+      const response = await fetch("/api/p2p/disputes", { cache: "no-store" });
+      const data = await readJson<{ disputes?: DisputeDetail[]; changedAt?: string; error?: string }>(response);
+      if (!response.ok || !data?.disputes) {
+        if (!silent) setError(data?.error ?? "Unable to load disputes.");
+        return;
+      }
+      setDisputes(data.disputes);
+      changedAtRef.current = data.changedAt ?? "";
+      loadedRef.current = true;
+      setError("");
+    } catch {
+      if (!silent) setError("Unable to load disputes. Check your connection and try again.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     void load();
-  }, []);
+  }, [load]);
+
+  usePoll(async () => {
+    const response = await fetch("/api/p2p/disputes?digest=1", { cache: "no-store" });
+    const data = await readJson<{ changedAt?: string }>(response);
+    if (!response.ok) return;
+    const nextChangedAt = data?.changedAt ?? "";
+    if (!loadedRef.current || nextChangedAt !== changedAtRef.current) {
+      await load(true);
+    }
+  }, { intervalMs: 5000, enabled: !loading });
 
   async function submitEvidence(disputeId: string) {
     if (!description.trim() && !image) return;
@@ -64,7 +88,7 @@ export default function DisputesPage() {
     setRespondingTo(null);
     setDescription("");
     setImage(null);
-    await load();
+    await load(true);
   }
 
   return (

@@ -841,6 +841,7 @@ function DisputesTab() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pendingHashes, setPendingHashes] = useState<Record<string, string>>({});
+  const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null);
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const ensureEscrowChain = useEscrowChainGuard();
@@ -866,6 +867,20 @@ function DisputesTab() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!imagePreview) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setImagePreview(null);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [imagePreview]);
 
   async function resolve(dispute: AdminDispute, resolution: "release_buyer" | "refund_seller") {
     const id = dispute.id;
@@ -930,10 +945,10 @@ function DisputesTab() {
                   <p className="mt-1 text-sm font-semibold">Buyer: {d.buyer_name} · Seller: {d.seller_name}</p>
                   <p className="mt-1 text-sm text-muted">{d.reason}</p>
                   {d.receipt_image && (
-                    <a href={d.receipt_image} target="_blank" rel="noreferrer" className="mt-3 inline-block border border-line bg-panel p-2 transition-colors hover:border-ocean">
+                    <button type="button" onClick={() => setImagePreview({ src: d.receipt_image!, alt: `Payment receipt for ${d.trade_ref}` })} className="mt-3 block border border-line bg-panel p-2 text-left transition-colors hover:border-ocean">
                       <img src={d.receipt_image} alt={`Payment receipt for ${d.trade_ref}`} className="max-h-40 max-w-64 object-contain" />
-                      <span className="mt-1 block text-xs font-semibold text-ocean">Open payment receipt</span>
-                    </a>
+                      <span className="mt-1 block text-xs font-semibold text-ocean">View payment receipt</span>
+                    </button>
                   )}
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {([
@@ -950,9 +965,9 @@ function DisputesTab() {
                               <div key={item.id} className="bg-white p-2 text-xs">
                                 {item.description && <p className="whitespace-pre-wrap leading-5">{item.description}</p>}
                                 {item.image_url && (
-                                  <a href={item.image_url} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                                  <button type="button" onClick={() => setImagePreview({ src: item.image_url!, alt: `${label} attachment` })} className="mt-2 block">
                                     <img src={item.image_url} alt={`${label} attachment`} className="max-h-32 max-w-56 object-contain" />
-                                  </a>
+                                  </button>
                                 )}
                                 <p className="mt-1 text-[11px] text-muted">{relativeTime(item.created_at)}</p>
                               </div>
@@ -979,6 +994,32 @@ function DisputesTab() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {imagePreview && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4 sm:p-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Evidence image preview"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setImagePreview(null);
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setImagePreview(null)}
+            className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-white/10 text-white backdrop-blur-sm transition-colors hover:bg-white hover:text-ink sm:right-6 sm:top-6"
+            aria-label="Close image preview"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <img
+            src={imagePreview.src}
+            alt={imagePreview.alt}
+            className="max-h-[88vh] max-w-[94vw] object-contain shadow-2xl"
+          />
         </div>
       )}
     </div>

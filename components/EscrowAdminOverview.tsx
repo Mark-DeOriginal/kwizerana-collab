@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Activity, AlertTriangle, ArrowUpRight, Banknote, CheckCircle2, CircleDollarSign, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { formatUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { friendlyError, readJson } from "@/lib/client-request";
@@ -11,8 +11,6 @@ import { escrowWalletError, useEscrowChainGuard } from "@/lib/web3/use-escrow-ch
 
 type Metrics = {
   summary: { totalTrades: number; completedTrades: number; verifiedTrades: number; activeTrades: number; openDisputes: number };
-  cryptoVolumes: Array<{ currency: string; amount: number }>;
-  fiatVolumes: Array<{ currency: string; amount: number }>;
 };
 
 function number(value: number, maximumFractionDigits = 2) {
@@ -144,25 +142,6 @@ export function EscrowAdminOverview() {
             <p className="mt-1 text-xs text-muted">{note}</p>
           </div>
         ))}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="border border-line bg-white p-5">
-          <div className="flex items-center gap-2"><Banknote className="h-4 w-4 text-ocean" /><h3 className="text-sm font-bold">Verified crypto volume</h3></div>
-          <div className="mt-4 space-y-3">
-            {(metrics?.cryptoVolumes.length ?? 0) === 0 ? <p className="text-sm text-muted">No chain-verified settlements yet.</p> : metrics?.cryptoVolumes.map((item) => (
-              <div key={item.currency} className="flex items-center justify-between border-b border-line pb-3 last:border-0 last:pb-0"><span className="text-sm text-muted">Total {item.currency} traded</span><span className="text-lg font-bold">{number(item.amount, 6)} {item.currency}</span></div>
-            ))}
-          </div>
-        </div>
-        <div className="border border-line bg-white p-5">
-          <div className="flex items-center gap-2"><CircleDollarSign className="h-4 w-4 text-ocean" /><h3 className="text-sm font-bold">Verified fiat volume</h3></div>
-          <div className="mt-4 space-y-3">
-            {(metrics?.fiatVolumes.length ?? 0) === 0 ? <p className="text-sm text-muted">No chain-verified settlements yet.</p> : metrics?.fiatVolumes.map((item) => (
-              <div key={item.currency} className="flex items-center justify-between border-b border-line pb-3 last:border-0 last:pb-0"><span className="text-sm text-muted">Settled in {item.currency}</span><span className="text-lg font-bold">{number(item.amount)} {item.currency}</span></div>
-            ))}
-          </div>
-        </div>
       </div>
 
       <section>
