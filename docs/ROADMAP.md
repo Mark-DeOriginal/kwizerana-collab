@@ -95,6 +95,7 @@ Status: **planned on top of partially implemented features**
 
 - Build trade monitoring and escrow reconciliation queues.
 - Create a complete dispute evidence and resolution workspace.
+- Make arbitration settlement durable: persist the funding deployment, require matching on-chain settlement evidence before terminal notifications, and add retryable submitted/confirmed/reconciled projections for wallet-success/API-failure recovery.
 - Consolidate role/permission checks.
 - Add immutable audit logs, rate/provider health, job status, and configuration warnings.
 - Retain influencer submission and ranking administration as a distinct module.

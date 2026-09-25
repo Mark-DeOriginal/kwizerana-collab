@@ -30,6 +30,7 @@ import { RankingsTab } from "@/components/RankingsTab";
 import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
 import { EscrowAdminOverview } from "@/components/EscrowAdminOverview";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { WalletProviders } from "@/app/wallet-providers";
 import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
 import { escrowChain } from "@/lib/web3/config";
@@ -841,8 +842,10 @@ function DisputesTab() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pendingHashes, setPendingHashes] = useState<Record<string, string>>({});
+  const [connectPrompt, setConnectPrompt] = useState<{ disputeId: string; resolution: "release_buyer" | "refund_seller" } | null>(null);
   const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null);
   const { address } = useAccount();
+  const { openConnectModal } = useConnectModal();
   const { writeContractAsync } = useWriteContract();
   const ensureEscrowChain = useEscrowChainGuard();
   const escrow = getEscrowAddress();
@@ -869,6 +872,10 @@ function DisputesTab() {
   }, [load]);
 
   useEffect(() => {
+    if (address) setConnectPrompt(null);
+  }, [address]);
+
+  useEffect(() => {
     if (!imagePreview) return;
     const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -884,13 +891,21 @@ function DisputesTab() {
 
   async function resolve(dispute: AdminDispute, resolution: "release_buyer" | "refund_seller") {
     const id = dispute.id;
+    if (realEscrow && !address) {
+      if (connectPrompt?.disputeId === id && connectPrompt.resolution === resolution) {
+        openConnectModal?.();
+      } else {
+        setConnectPrompt({ disputeId: id, resolution });
+      }
+      return;
+    }
     setActionId(id);
     setError("");
     try {
       let txHash = pendingHashes[`${id}:${resolution}`];
       if (realEscrow && !txHash) {
-        if (!address || !arbitrator || address.toLowerCase() !== arbitrator.toLowerCase()) {
-          throw new Error("Connect the escrow arbitrator wallet or Safe before resolving this dispute.");
+        if (!arbitrator || address!.toLowerCase() !== arbitrator.toLowerCase()) {
+          throw new Error("The connected wallet is not authorized to resolve escrow disputes.");
         }
         await ensureEscrowChain();
         txHash = await writeContractAsync({
@@ -981,16 +996,15 @@ function DisputesTab() {
                 </div>
                 {d.status === "open" ? (
                   <div className="flex shrink-0 flex-col gap-1.5">
-                    <button onClick={() => void resolve(d, "release_buyer")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 bg-moss px-3 text-xs font-bold text-white transition-colors hover:bg-moss/90 disabled:opacity-60">
-                      {actionId === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />} Release to buyer
+                    <button onClick={() => void resolve(d, "release_buyer")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ink bg-ink px-3 text-xs font-bold text-white transition-colors hover:bg-black disabled:opacity-60">
+                      {actionId === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                      {connectPrompt?.disputeId === d.id && connectPrompt.resolution === "release_buyer" && !address ? "Connect wallet" : "Release to buyer"}
                     </button>
-                    <button onClick={() => void resolve(d, "refund_seller")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ocean/30 bg-white px-3 text-xs font-bold text-ocean transition-colors hover:bg-ocean/5 disabled:opacity-60">
-                      Refund seller
+                    <button onClick={() => void resolve(d, "refund_seller")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ink bg-transparent px-3 text-xs font-bold text-ink transition-colors hover:bg-panel disabled:opacity-60">
+                      {connectPrompt?.disputeId === d.id && connectPrompt.resolution === "refund_seller" && !address ? "Connect wallet" : "Refund seller"}
                     </button>
                   </div>
-                ) : (
-                  <span className="shrink-0 text-xs font-bold text-moss">{d.resolution}</span>
-                )}
+                ) : null}
               </div>
             </div>
           ))}

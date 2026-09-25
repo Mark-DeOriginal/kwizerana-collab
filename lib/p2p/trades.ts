@@ -4,7 +4,7 @@ import { createNotification } from "@/lib/p2p/notifications";
 import { getFees } from "@/lib/p2p/fees";
 import { getLiveRate } from "@/lib/p2p/price-feed";
 import { isAddress } from "viem";
-import { isEscrowDeployed } from "@/lib/web3/escrow";
+import { getEscrowAddress, isEscrowDeployed } from "@/lib/web3/escrow";
 import { verifyEscrowTransaction, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
 import { reconcileEscrowTrade } from "@/lib/p2p/reconciliation";
 
@@ -706,6 +706,7 @@ export async function applyTradeAction(
     await dbQuery(
       `UPDATE p2p_escrow SET
           status = $2,
+          contract_address = CASE WHEN $2 = 'funded' THEN COALESCE(contract_address, $7) ELSE contract_address END,
           funded_at = COALESCE(funded_at, CASE WHEN $2 = 'funded' THEN NOW() END),
           debit_tx_hash = CASE WHEN $2 = 'funded' THEN COALESCE($3, debit_tx_hash) ELSE debit_tx_hash END,
           release_tx_hash = CASE WHEN $2 = 'released' THEN COALESCE($3, release_tx_hash) ELSE release_tx_hash END,
@@ -718,7 +719,15 @@ export async function applyTradeAction(
           chain_verified_at = CASE WHEN $5::NUMERIC IS NOT NULL THEN NOW() ELSE NULL END,
           chain_verifier_version = CASE WHEN $5::NUMERIC IS NOT NULL THEN 'escrow-events-v2' ELSE NULL END
         WHERE trade_id = $1`,
-      [tradeId, escrowStatus, escrowTx, input.destAddress ?? null, chainVerification?.blockNumber.toString() ?? null, chainVerification?.logIndex ?? null]
+      [
+        tradeId,
+        escrowStatus,
+        escrowTx,
+        input.destAddress ?? null,
+        chainVerification?.blockNumber.toString() ?? null,
+        chainVerification?.logIndex ?? null,
+        escrowStatus === "funded" && isEscrowDeployed() ? getEscrowAddress() : null
+      ]
     );
   }
 

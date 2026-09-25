@@ -21,7 +21,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  Scale,
   ShieldCheck,
   Star,
   Store,
@@ -310,11 +309,6 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
               onChanged={load}
             />
           </Card>
-        </div>
-
-        {/* Disputes */}
-        <div className="mt-4">
-          <DisputesPanel disputes={data?.disputes ?? []} loading={loading && !data} />
         </div>
 
         {/* Referral */}
@@ -1610,52 +1604,6 @@ function TradeHistoryPanel({ trades, submittedReviews, loading, onChanged }: { t
         </button>
       )}
     </div>
-  );
-}
-
-function DisputesPanel({ disputes, loading }: { disputes: DisputeDetail[]; loading?: boolean }) {
-  if (loading) {
-    return (
-      <Card title="Disputes" icon={<Scale className="h-4 w-4" />} subtitle="Open and resolved cases">
-        <div className="flex items-center gap-3 text-sm text-muted">
-          <Loader2 className="h-5 w-5 animate-spin text-ocean" />
-          Loading disputes…
-        </div>
-      </Card>
-    );
-  }
-
-  const open = disputes.filter((d) => d.status === "open");
-  const resolved = disputes.filter((d) => d.status !== "open");
-
-  if (disputes.length === 0) {
-    return (
-      <Card title="Disputes" icon={<Scale className="h-4 w-4" />} subtitle="Open and resolved cases" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
-        <EmptyState icon={<Scale className="h-5 w-5" />} title="No disputes" subtitle="Any open or resolved disputes will appear here." />
-      </Card>
-    );
-  }
-
-  return (
-    <Card title="Disputes" icon={<Scale className="h-4 w-4" />} subtitle="Open and resolved cases" action={<Link href="/p2p/disputes" className="text-xs font-semibold text-ocean hover:underline">Dispute center</Link>}>
-      <div className="mb-3 flex flex-wrap gap-3">
-        <span className="text-sm font-semibold text-coral">{open.length} open</span>
-        <span className="text-sm font-semibold text-muted">{resolved.length} resolved</span>
-      </div>
-      <ul className="space-y-2">
-        {disputes.slice(0, 3).map((d) => (
-          <li key={d.id} className="flex items-center justify-between gap-2 border border-line bg-panel px-3 py-2">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">{d.trade_ref} · {d.counterparty}</p>
-              <p className="truncate text-xs text-muted">{d.crypto_amount} {d.crypto_currency} · {timeAgo(d.created_at)}</p>
-            </div>
-            <span className={`shrink-0 text-xs font-bold uppercase tracking-wide ${d.status === "open" ? "text-coral" : "text-moss"}`}>
-              {d.status}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Card>
   );
 }
 

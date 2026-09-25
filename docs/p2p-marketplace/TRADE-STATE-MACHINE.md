@@ -149,6 +149,8 @@ If the fiat buyer did not send payment, the buyer may explicitly close the cance
 
 Opening a dispute freezes normal application actions where the contract permits. Resolution must create an auditable decision and initiate the matching contract action. A dispute is not financially resolved until the resulting event is confirmed and reconciled.
 
+For the currently deployed contract, buyer-favoring arbitration calls `resolveToBuyer` and atomically transfers the principal to the recorded buyer; seller-favoring arbitration calls `resolveToSeller` and atomically refunds principal plus fee to the recorded seller. These are terminal outcomes, not a separate participant claim step. The application records the escrow contract used when funding and must verify the matching `Claimed` or `Refunded` event before changing the dispute/trade to a terminal state or sending a resolution notification. A missing or mismatched contract configuration must stop resolution rather than enable simulation for a chain-backed trade.
+
 Both participants can see an open dispute in the dashboard and dispute center. While it remains open, each side can submit factual notes and compressed receipt/screenshot evidence; the counterparty is notified when new evidence is added, and administrators can review the buyer and seller evidence separately. The current JSONB/image-data implementation is suitable for test workflows only. Production requires private object storage, signed access, malware scanning, retention limits, immutable evidence events, and an administrator audit trail.
 
 The current `split` concept is unsupported by the prototype contract and must not be exposed until a contract supports precise partial settlement.

@@ -2,7 +2,7 @@ import { dbQuery, ensureDatabase } from "@/lib/db";
 import { randomUUID } from "crypto";
 import { createNotification, notifyByEmail } from "@/lib/p2p/notifications";
 import { verifyEscrowTransaction } from "@/lib/p2p/chain-verification";
-import { isEscrowDeployed } from "@/lib/web3/escrow";
+import { getEscrowAddress, isEscrowDeployed } from "@/lib/web3/escrow";
 
 export type Dispute = {
   id: string;
@@ -267,15 +267,27 @@ export type DisputeResolution = "release_buyer" | "refund_seller";
 export async function resolveDispute(adminUserId: string, disputeId: string, resolution: DisputeResolution, txHash?: string): Promise<void> {
   await ensureDatabase();
 
-  const rows = await dbQuery<{ trade_id: string; trade_ref: string; buyer_id: string; seller_id: string; buyer_owner_id: string | null; seller_owner_id: string | null; buyer_wallet_address: string | null; seller_wallet_address: string | null; crypto_currency: string; crypto_amount: string; status: string }>(
+  const rows = await dbQuery<{
+    trade_id: string; trade_ref: string; buyer_id: string; seller_id: string;
+    buyer_owner_id: string | null; seller_owner_id: string | null;
+    buyer_wallet_address: string | null; seller_wallet_address: string | null;
+    crypto_currency: string; crypto_amount: string; status: string;
+    escrow_contract_address: string | null; seller_is_advertiser: boolean;
+  }>(
     `SELECT d.trade_id::TEXT AS trade_id, t.trade_ref, t.buyer_id, t.seller_id,
             buyer.owner_user_id AS buyer_owner_id, seller.owner_user_id AS seller_owner_id,
             t.buyer_wallet_address, t.seller_wallet_address, t.crypto_currency,
-            t.crypto_amount::TEXT AS crypto_amount, d.status
+            t.crypto_amount::TEXT AS crypto_amount, d.status,
+            escrow.contract_address AS escrow_contract_address,
+            (ad.user_id = t.seller_id) AS seller_is_advertiser
      FROM p2p_disputes d
      JOIN p2p_trades t ON t.id = d.trade_id
+     JOIN p2p_ads ad ON ad.id = t.ad_id
      JOIN users buyer ON buyer.id = t.buyer_id
      JOIN users seller ON seller.id = t.seller_id
+     LEFT JOIN LATERAL (
+       SELECT contract_address FROM p2p_escrow WHERE trade_id = t.id ORDER BY id DESC LIMIT 1
+     ) escrow ON TRUE
      WHERE d.id = $1`,
     [disputeId]
   );
@@ -283,8 +295,16 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
   if (!d) throw new Error("Dispute not found.");
   if (d.status !== "open") throw new Error("Dispute has already been resolved.");
 
+  const chainBacked = Boolean(d.escrow_contract_address);
+  if (chainBacked && !isEscrowDeployed()) {
+    throw new Error("This trade was funded on-chain, but its escrow contract is not configured. Restore the escrow configuration before resolving it.");
+  }
+  if (chainBacked && d.escrow_contract_address!.toLowerCase() !== getEscrowAddress().toLowerCase()) {
+    throw new Error("This trade belongs to a different escrow deployment and cannot be resolved with the configured contract.");
+  }
+
   let proof: { blockNumber: bigint; logIndex: number } | null = null;
-  if (isEscrowDeployed()) {
+  if (chainBacked || isEscrowDeployed()) {
     if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) throw new Error("A valid arbitration transaction is required.");
     proof = await verifyEscrowTransaction({
       action: resolution === "release_buyer" ? "resolve_buyer" : "resolve_seller",
@@ -299,6 +319,10 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
   }
 
   const tradeStatus = resolution === "refund_seller" ? "cancelled" : "completed";
+
+  if ((chainBacked || isEscrowDeployed()) && !proof) {
+    throw new Error("The arbitration transaction could not be verified.");
+  }
 
   const persisted = await dbQuery<{ applied: boolean }>(
     `WITH resolved_dispute AS (
@@ -327,6 +351,28 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
            chain_verifier_version = CASE WHEN $8::NUMERIC IS NOT NULL THEN 'escrow-events-v2' ELSE NULL END
        WHERE trade_id IN (SELECT trade_id FROM resolved_dispute)
        RETURNING trade_id
+     ), updated_participants AS (
+       UPDATE users
+       SET p2p_total_trades = p2p_total_trades + 1,
+           p2p_completed_trades = p2p_completed_trades + 1,
+           p2p_completion_rate_30d = ROUND((p2p_completed_trades + 1)::NUMERIC / (p2p_total_trades + 1) * 100, 1),
+           p2p_cumulative_counterparties = p2p_cumulative_counterparties + 1,
+           updated_at = NOW()
+       WHERE $4 = 'completed'
+         AND EXISTS (SELECT 1 FROM resolved_dispute)
+         AND (id = $10 OR id = $11)
+       RETURNING id
+     ), updated_inventory AS (
+       UPDATE p2p_vendor_inventory
+       SET declared_balance = GREATEST(declared_balance - $12::NUMERIC, 0), updated_at = NOW()
+       WHERE $4 = 'completed' AND $13::BOOLEAN
+         AND EXISTS (SELECT 1 FROM resolved_dispute)
+         AND crypto_currency = $14
+         AND user_id = COALESCE(
+           (SELECT owner_user_id FROM users WHERE id = $11),
+           $11
+         )
+       RETURNING user_id
      )
      SELECT EXISTS (SELECT 1 FROM resolved_dispute) AS applied`,
     [
@@ -338,17 +384,22 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
       txHash ?? null,
       d.buyer_wallet_address,
       proof?.blockNumber.toString() ?? null,
-      proof?.logIndex ?? null
+      proof?.logIndex ?? null,
+      d.buyer_id,
+      d.seller_id,
+      Number(d.crypto_amount),
+      d.seller_is_advertiser,
+      d.crypto_currency
     ]
   );
   if (!persisted[0]?.applied) throw new Error("Dispute has already been resolved.");
 
   const buyerCopy = resolution === "release_buyer"
-    ? `The dispute was resolved in your favor. ${d.crypto_amount} ${d.crypto_currency} was released to the buyer wallet.`
-    : `The dispute was resolved and ${d.crypto_amount} ${d.crypto_currency} was returned to the crypto seller.`;
+    ? `The dispute was resolved in your favor. ${d.crypto_amount} ${d.crypto_currency} has been credited to your wallet.`
+    : "The dispute was resolved in the crypto seller's favor. The trade is now closed.";
   const sellerCopy = resolution === "refund_seller"
-    ? `The dispute was resolved in your favor. ${d.crypto_amount} ${d.crypto_currency} was refunded to the seller wallet.`
-    : `The dispute was resolved and ${d.crypto_amount} ${d.crypto_currency} was released to the buyer.`;
+    ? `The dispute was resolved in your favor. ${d.crypto_amount} ${d.crypto_currency} has been returned to your wallet.`
+    : "The dispute was resolved in the buyer's favor. The trade is now complete.";
   const recipients = [
     { id: d.buyer_owner_id || d.buyer_id, body: buyerCopy },
     { id: d.seller_owner_id || d.seller_id, body: sellerCopy }

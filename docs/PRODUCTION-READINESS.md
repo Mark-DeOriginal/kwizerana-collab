@@ -83,7 +83,7 @@ This is a launch gate, not a claim that the application is ready. P0 items block
 - Client-provided hashes are receipt/event verified when escrow is configured, but submitted and confirmed states are still collapsed and projections are not fully transactional.
 - Escrow simulation can advance application state.
 - The escrow candidate has deadline recovery and a verified Fuji deployment, but no configured multisig governance, fuzz/invariant analysis, or independent audit yet. Its current Fuji owner, arbitrator, and treasury are intentionally one disposable test EOA.
-- Dispute database resolution is not coupled to on-chain settlement.
+- Chain-backed dispute resolution now verifies the matching arbitration settlement event before committing a terminal database state or notifying participants. The wallet transaction and database projection are still separate operations, so durable retry/reconciliation and reorg-safe confirmation remain required.
 - Financial operations lack comprehensive database transactions/locking.
 - Rate limiting is in-memory and narrow.
 - Runtime schema initialization replaces migrations.
