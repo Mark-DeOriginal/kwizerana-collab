@@ -32,7 +32,7 @@ const expectedTokens = [requiredAddress("NEXT_PUBLIC_ESCROW_USDT_ADDRESS"), requ
 const expectedFeeBps = Number(process.env.ESCROW_FEE_BPS ?? 20);
 const artifactPath = path.join(root, "contracts", "artifacts", "contracts", "KwizeranaEscrow.sol", "KwizeranaEscrow.json");
 if (!fs.existsSync(artifactPath)) throw new Error("Missing contract artifact. Run npm run contract:compile first.");
-const { abi } = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+const { abi, deployedBytecode } = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
 const client = createPublicClient({
   chain: avalancheFuji,
   transport: http(process.env.NEXT_PUBLIC_AVALANCHE_RPC_URL?.trim() || avalancheFuji.rpcUrls.default.http[0])
@@ -40,6 +40,9 @@ const client = createPublicClient({
 
 const bytecode = await client.getCode({ address });
 if (!bytecode || bytecode === "0x") throw new Error(`No contract bytecode found at ${address}.`);
+if (bytecode.toLowerCase() !== deployedBytecode.toLowerCase()) {
+  throw new Error("Deployed runtime bytecode does not match the locally compiled escrow artifact.");
+}
 
 const [owner, arbitrator, feeRecipient, feeBps, gracePeriod, ...tokenAllowed] = await Promise.all([
   client.readContract({ address, abi, functionName: "owner" }),
@@ -62,4 +65,4 @@ const failures = checks.filter(([, passed]) => !passed).map(([label]) => label);
 if (failures.length) throw new Error(`Escrow configuration mismatch: ${failures.join(", ")}.`);
 
 console.log(`Verified Fuji escrow ${address}`);
-console.log("Owner, arbitrator, fee recipient, configured fee, 30-minute cancellation protection, and both test tokens match configuration.");
+console.log("Runtime bytecode, owner, arbitrator, fee recipient, configured fee, 30-minute cancellation protection, and both test tokens match configuration.");

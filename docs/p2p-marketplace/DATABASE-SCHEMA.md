@@ -209,6 +209,26 @@ CREATE TABLE IF NOT EXISTS p2p_escrow (
 );
 ```
 
+### `p2p_escrow_events` (confirmed chain-event journal)
+```sql
+CREATE TABLE IF NOT EXISTS p2p_escrow_events (
+  id BIGSERIAL PRIMARY KEY,
+  trade_id BIGINT NOT NULL REFERENCES p2p_trades(id) ON DELETE CASCADE,
+  chain_id INTEGER NOT NULL,
+  contract_address TEXT NOT NULL,
+  event_name TEXT NOT NULL,
+  transaction_hash TEXT NOT NULL,
+  block_number NUMERIC NOT NULL,
+  block_hash TEXT NOT NULL,
+  log_index INTEGER NOT NULL,
+  confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(chain_id, contract_address, transaction_hash, log_index)
+);
+```
+
+This append-only journal records the exact confirmed event used to advance an application projection. Its chain/contract/transaction/log identity makes retries idempotent. Reorg rollback and automatic historical backfill remain production requirements.
+
 ### `p2p_disputes`
 ```sql
 CREATE TABLE IF NOT EXISTS p2p_disputes (

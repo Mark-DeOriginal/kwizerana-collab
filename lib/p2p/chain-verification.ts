@@ -96,7 +96,14 @@ function sameAddress(a: string | null | undefined, b: string | null | undefined)
  * Verifies the minimum facts required to project a browser-submitted escrow
  * transaction into application state. A valid hash alone is never enough.
  */
-export async function verifyEscrowTransaction(input: VerificationInput): Promise<{ blockNumber: bigint; logIndex: number }> {
+export type EscrowChainProof = {
+  blockNumber: bigint;
+  blockHash: Hash;
+  logIndex: number;
+  transactionHash: Hash;
+};
+
+export async function verifyEscrowTransaction(input: VerificationInput): Promise<EscrowChainProof> {
   const requiredConfirmations = Math.max(1, Number(process.env.ESCROW_CONFIRMATIONS ?? 3));
   const receipt = await client.waitForTransactionReceipt({
     hash: input.txHash as Hash,
@@ -172,5 +179,10 @@ export async function verifyEscrowTransaction(input: VerificationInput): Promise
   if (matchedLogIndex === undefined || matchedLogIndex === null) {
     throw new Error("The escrow receipt does not match this trade.");
   }
-  return { blockNumber: receipt.blockNumber, logIndex: matchedLogIndex };
+  return {
+    blockNumber: receipt.blockNumber,
+    blockHash: receipt.blockHash,
+    logIndex: matchedLogIndex,
+    transactionHash: receipt.transactionHash
+  };
 }

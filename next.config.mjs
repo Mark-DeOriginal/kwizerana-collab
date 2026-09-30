@@ -1,5 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  turbopack: {
+    resolveAlias: {
+      "@react-native-async-storage/async-storage": "./lib/web3/async-storage-web-shim.ts"
+    }
+  },
+  webpack(config) {
+    config.resolve.alias["@react-native-async-storage/async-storage"] = false;
+    return config;
+  },
   images: {
     remotePatterns: [
       {

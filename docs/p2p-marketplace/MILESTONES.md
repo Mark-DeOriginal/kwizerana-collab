@@ -1,6 +1,6 @@
 # P2P Milestones and Current Status
 
-Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`. “Implemented” does not mean production-verified.
+Last reconciled with the repository: 2026-09-29. Status terms follow `AGENTS.md`. “Implemented” does not mean production-verified.
 
 ## Accounts and security
 
@@ -55,11 +55,11 @@ Last reconciled with the repository: 2026-09-16. Status terms follow `AGENTS.md`
 |---|---|---|
 | Avalanche wallet connection | Implemented | RainbowKit/wagmi |
 | Prototype ERC-20 contract | Implemented prototype | Lock/release/claim/refund only |
-| Production escrow | Implemented candidate, unsafe for production | Explicit cancellation recovery, buyer payment protection, fixed recipients, fee accounting, allowlist, liability protection, and governed arbitration pass nine local scenarios. The replacement is deployed on Fuji; independent audit and launch gates remain. |
+| Production escrow | Implemented candidate, unsafe for production | Explicit cancellation recovery, deadline-safe buyer payment protection, fixed recipients, fee accounting, allowlist, liability protection, and governed arbitration pass twelve local scenarios. Patched runtime bytecode is deployed and configuration-verified on Fuji; independent audit and launch gates remain. |
 | Receipt/event verification | Partial, P0 | Immediate receipt and expected-event verification exists for escrow mutations; durable confirmation/reorg processing remains required before real funds. |
 | Confirmation/reorg policy | Planned, P0 | Required before real funds |
-| Event reconciliation | Partial, P0 | Immediate verification, request-time checks, manual admin recheck, and an authenticated webhook route exist; provider delivery/retries and reorg handling remain |
-| Contract tests/testnet/audit | Partial, P0 | Nine local security scenarios pass and the replacement deployment transaction is confirmed on Fuji; configuration reads, end-to-end trade evidence, fuzz/invariants, static analysis, fork tests, multisig governance, and independent audit remain. |
+| Event reconciliation | Partial, P0 | Immediate verification, request-time checks, manual admin recheck, authenticated webhook processing, and an immutable idempotent confirmed-event journal exist. Automatic historical backfill, provider retries, submitted/confirmed separation, and reorg handling remain. |
+| Contract tests/testnet/audit | Partial, P0 | Twelve local scenarios, varied amount/fee invariants, Solhint static rules, a documented internal review, and exact Fuji runtime-bytecode/configuration verification pass. Deep fuzz/formal work, stablecoin fork tests, multisig governance, end-to-end evidence, and an independent audit remain. |
 
 ## Disputes
 

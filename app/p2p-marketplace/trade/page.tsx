@@ -659,11 +659,13 @@ function OrderForm({
         <SummaryRow label="Rate" value={`1 ${offer.crypto_currency} = ${formatNumber(price)} ${offer.fiat_currency}`} />
         <SummaryRow label="You pay" value={`${formatNumber(payNum)} ${payCurrency}`} />
         <SummaryRow label="You receive" value={`${formatNumber(receiveNum, receiveDecimals)} ${receiveCurrency}`} />
-        <SummaryRow
-          label="Fee"
-          value={`${formatNumber(receiveNum * (offer.takerFeeRate / 100), receiveDecimals)} ${receiveCurrency}`}
-          note={`${offer.takerFeeRate}% taker fee`}
-        />
+        {offer.takerFeeRate > 0 && (
+          <SummaryRow
+            label="Fee"
+            value={`${formatNumber(receiveNum * (offer.takerFeeRate / 100), receiveDecimals)} ${receiveCurrency}`}
+            note={`${offer.takerFeeRate}% trading fee`}
+          />
+        )}
       </div>
 
       {error && <p className="text-sm font-semibold text-coral">{error}</p>}

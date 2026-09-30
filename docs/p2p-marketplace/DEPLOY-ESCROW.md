@@ -2,18 +2,19 @@
 
 ## Current Fuji deployment
 
-Deployed on 2026-09-16; application configuration verification is required before the next test trade:
+Deployed on 2026-09-29 and verified against the freshly compiled runtime bytecode:
 
-- Escrow: `0xebfe5f4ef7731104d6ca94d892e984b1f6a8c4cf`
-- Deployment transaction: `0xfdbcbc589e9cc82f1b4f337007ad23ce48c2e0162908a9a260cb0da936356cff`
+- Escrow: `0x50a8559d42d52c3B85B1FEc00355B993070ad848`
+- Deployment transaction: `0x48c378146045e6c996382ac1ac49c9aab2eb6e6c8a9344bea912350fd3e4e51a`
+- Deployment block: `58855826`
 - kUSDT: `0x1acb3be977eb8b963ad07f9baf0c07149f9d34fb`
 - kUSDC: `0xef0ff265290aac8e0f5c496b20fc45e662f5d05a`
 - Owner, arbitrator, and fee recipient: `0x616cd62d4AB4aC00629Bd60298C7caB83863CC8a`
 - Settlement fee: `20` basis points (`0.20%`)
 - Lifecycle: explicit cancellation request with a 30-minute buyer-protection window; no automatic trade expiry.
-- Verification evidence: `npm run verify:escrow` confirmed deployed bytecode, owner, arbitrator, fee recipient, configured fee, cancellation period, and both allowlisted test tokens.
+- Verification evidence: `npm run verify:escrow` confirmed an exact runtime-bytecode match plus owner, arbitrator, fee recipient, configured fee, cancellation period, and both allowlisted test tokens.
 
-The previous escrow at `0xd5e08925ad720f187e1e7c26f33b0c83488bc30f` remains immutable and is retained only to recover pre-migration test trades. Never project one contract's events as if they came from the other address.
+The previous escrows at `0xebfe5f4ef7731104d6ca94d892e984b1f6a8c4cf` and `0xd5e08925ad720f187e1e7c26f33b0c83488bc30f` remain immutable and are retained only for recovery of their own test trades. Never project one contract's events as if they came from another address.
 
 This is a valueless testnet deployment. It is not approved for mainnet or real assets.
 
@@ -48,7 +49,7 @@ npm run contract:compile
 npm run contract:test
 ```
 
-Expected evidence is eight passing tests. This compiles only Solidity and runs a local EVM; it does not build the Next.js application.
+Expected evidence is twelve passing tests. This compiles only Solidity and runs a local EVM; it does not build the Next.js application.
 
 To create valueless six-decimal test tokens, temporarily set only the test deployer key and Fuji RPC, then run:
 

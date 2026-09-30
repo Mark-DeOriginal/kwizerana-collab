@@ -2,7 +2,7 @@
 
 ## Current status
 
-`contracts/KwizeranaEscrow.sol` is a hardened, non-upgradeable escrow candidate with a local automated test suite. It is ready for controlled Avalanche Fuji testing with valueless test tokens. It is **not approved for mainnet or real user funds** until independent review, verified testnet deployment, application event-reconciliation exercises, and the remaining P0 production gates are complete.
+`contracts/KwizeranaEscrow.sol` is a hardened, non-upgradeable escrow candidate with local property/invariant coverage, static linting, an internal review, and a bytecode-verified Fuji deployment. It is ready for controlled Avalanche Fuji testing with valueless test tokens. It is **not approved for mainnet or real user funds** until independent review, application event-reconciliation exercises, and the remaining P0 production gates are complete.
 
 ## Trust model
 
@@ -67,7 +67,7 @@ These controls materially reduce stuck-fund risk; they do not constitute a guara
 
 ## Verified local tests
 
-Run `npm run contract:test`. The current suite covers:
+Run `npm run contract:audit`. The current suite and static rules cover:
 
 - fund, on-chain payment marking, seller release, permissionless finalization, exact buyer payment, 0.20% fee accrual, and protected withdrawal;
 - unauthorized release/arbitration and double-settlement attempts;
@@ -77,14 +77,16 @@ Run `npm run contract:test`. The current suite covers:
 - unapproved and fee-on-transfer token rejection;
 - new-lock pause while existing settlement remains available;
 - surplus recovery without withdrawing active liabilities.
+- the cancellation deadline boundary, preventing a late payment mark from blocking a valid refund;
+- varied principals and fee rates while preserving contract-balance, liability, accrued-fee, and single-settlement invariants.
 
-Still required before mainnet: property/invariant fuzzing, static analysis, fork tests against exact supported stablecoin implementations, RPC/reorg tests, full application-to-chain reconciliation tests, and an independent audit.
+Still required before mainnet: deeper dedicated fuzzing/formal analysis, fork tests against exact supported stablecoin implementations, RPC/reorg tests, full application-to-chain reconciliation tests, and an independent audit. See `INTERNAL-ESCROW-REVIEW-2026-09-29.md` for the first-party review and its limitations.
 
 ## Application invariants
 
 - A browser transaction hash is never settlement proof by itself.
 - Server verification must match chain ID, contract, sender policy, trade ID, participant, token, amount, event, receipt success, and confirmation depth.
-- The database must represent submitted, confirmed, and reconciled states separately before mainnet.
+- Confirmed events are stored in an immutable, idempotent event journal; the database must still represent submitted, confirmed, and reconciled states separately before mainnet.
 - Contract fee amount and cancellation events must be persisted from confirmed events.
 - Demo settlement must remain unavailable in production.
 - UI must show network, contract, token, principal, fee, cancellation state, destination, confirmations, and explorer evidence.

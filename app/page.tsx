@@ -136,7 +136,8 @@ export default function Home() {
     let cancelled = false;
     const ids = Array.from(favoriteIds);
 
-    fetch(`/api/archive?ids=${ids.join(",")}`, { cache: "no-store" })
+    const controller = new AbortController();
+    fetch(`/api/archive?ids=${ids.join(",")}`, { cache: "no-store", signal: controller.signal })
       .then((response) => readJson(response))
       .then((payload) => {
         if (!cancelled && payload) setFavoriteInfluencers((payload as { data?: { influencers?: Influencer[] } }).data?.influencers ?? []);
@@ -145,6 +146,7 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [favoriteIds]);
 
@@ -477,7 +479,12 @@ function ArchiveView({
         </div>
 
         <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:h-fit">
-          <ProfilePanel influencer={selectedInfluencer} isFavorited={selectedInfluencer ? favoriteIds.has(selectedInfluencer.id) : false} onAddFavorite={selectedInfluencer ? () => addFavorite(selectedInfluencer.id) : undefined} />
+          <ProfilePanel
+            influencer={selectedInfluencer}
+            isLoading={isLoading}
+            isFavorited={selectedInfluencer ? favoriteIds.has(selectedInfluencer.id) : false}
+            onAddFavorite={selectedInfluencer ? () => addFavorite(selectedInfluencer.id) : undefined}
+          />
           <FavoritesPanel favorites={favoriteInfluencers} onRemove={removeFavorite} />
         </div>
       </section>
@@ -665,7 +672,19 @@ function InfluencerCard({ influencer, active, onSelect }: { influencer: Influenc
   );
 }
 
-function ProfilePanel({ influencer, isFavorited, onAddFavorite }: { influencer: Influencer | null; isFavorited?: boolean; onAddFavorite?: () => void }) {
+function ProfilePanel({
+  influencer,
+  isLoading,
+  isFavorited,
+  onAddFavorite
+}: {
+  influencer: Influencer | null;
+  isLoading: boolean;
+  isFavorited?: boolean;
+  onAddFavorite?: () => void;
+}) {
+  if (isLoading && !influencer) return <ProfilePanelSkeleton />;
+
   if (!influencer) {
     return (
       <aside className="h-fit border border-line bg-white/95 p-6 shadow-tight backdrop-blur">
@@ -744,6 +763,40 @@ function ProfilePanel({ influencer, isFavorited, onAddFavorite }: { influencer: 
   );
 }
 
+function ProfilePanelSkeleton() {
+  return (
+    <aside
+      className="h-fit border border-line bg-white/95 shadow-tight backdrop-blur"
+      aria-label="Loading selected profile"
+      aria-busy="true"
+    >
+      <div className="border-b border-line p-4">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 shrink-0 animate-pulse rounded-full bg-panel" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="h-4 w-2/3 animate-pulse bg-panel" />
+            <div className="h-3 w-2/5 animate-pulse bg-panel" />
+          </div>
+        </div>
+        <div className="mt-5 space-y-2">
+          <div className="h-3 w-full animate-pulse bg-panel" />
+          <div className="h-3 w-5/6 animate-pulse bg-panel" />
+          <div className="h-3 w-3/5 animate-pulse bg-panel" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 p-4">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="border border-line p-3">
+            <div className="h-2.5 w-1/2 animate-pulse bg-panel" />
+            <div className="mt-3 h-4 w-3/4 animate-pulse bg-panel" />
+          </div>
+        ))}
+      </div>
+      <span className="sr-only">Loading profile details.</span>
+    </aside>
+  );
+}
+
 function FavoritesPanel({ favorites, onRemove }: { favorites: Influencer[]; onRemove: (id: number) => void }) {
   if (favorites.length === 0) return null;
 
@@ -780,7 +833,7 @@ function Avatar({ influencer, size = "md" }: { influencer: Influencer; size?: "s
   return (
     <div className={`relative shrink-0 overflow-hidden rounded-full text-sm font-bold text-white ${classes}`} style={{ backgroundColor: influencer.avatarColor }}>
       {influencer.profileImageUrl ? (
-        <Image src={influencer.profileImageUrl} alt="" fill className="object-cover" sizes="48px" />
+        <Image src={influencer.profileImageUrl} alt="" fill unoptimized className="object-cover" sizes="48px" />
       ) : (
         influencer.name
           .split(" ")
@@ -947,7 +1000,7 @@ function RankRow({ entry, rank }: { entry: RankingBoardWithEntries["entries"][nu
           }`}
         >
           {entry.influencer.profile_image_url ? (
-            <Image src={entry.influencer.profile_image_url} alt="" fill className="object-cover" sizes="48px" />
+            <Image src={entry.influencer.profile_image_url} alt="" fill unoptimized className="object-cover" sizes="48px" />
           ) : (
             entry.influencer.name
               .split(" ")

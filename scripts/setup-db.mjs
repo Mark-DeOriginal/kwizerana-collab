@@ -239,6 +239,20 @@ const statements = [
     release_to TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
+  `CREATE TABLE IF NOT EXISTS p2p_escrow_events (
+    id BIGSERIAL PRIMARY KEY,
+    trade_id BIGINT NOT NULL REFERENCES p2p_trades(id) ON DELETE CASCADE,
+    chain_id INTEGER NOT NULL,
+    contract_address TEXT NOT NULL,
+    event_name TEXT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    block_number NUMERIC NOT NULL,
+    block_hash TEXT NOT NULL,
+    log_index INTEGER NOT NULL,
+    confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(chain_id, contract_address, transaction_hash, log_index)
+  )`,
   `CREATE TABLE IF NOT EXISTS p2p_disputes (
     id BIGSERIAL PRIMARY KEY,
     trade_id BIGINT NOT NULL REFERENCES p2p_trades(id),
@@ -352,6 +366,7 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS p2p_trades_created_idx ON p2p_trades(created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS p2p_chat_trade_idx ON p2p_chat_messages(trade_id)`,
   `CREATE INDEX IF NOT EXISTS p2p_escrow_trade_idx ON p2p_escrow(trade_id)`,
+  `CREATE INDEX IF NOT EXISTS p2p_escrow_events_trade_block_idx ON p2p_escrow_events(trade_id, block_number, log_index)`,
   `CREATE INDEX IF NOT EXISTS p2p_disputes_trade_idx ON p2p_disputes(trade_id)`,
   `CREATE INDEX IF NOT EXISTS p2p_disputes_status_idx ON p2p_disputes(status)`,
   `CREATE INDEX IF NOT EXISTS p2p_reviews_reviewee_idx ON p2p_reviews(reviewee_id)`,
@@ -362,7 +377,12 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS p2p_advertiser_applications_user_idx ON p2p_advertiser_applications(user_id)`,
   `CREATE INDEX IF NOT EXISTS p2p_currency_rates_pair_idx ON p2p_currency_rates(crypto_currency, fiat_currency)`,
   `CREATE INDEX IF NOT EXISTS p2p_verification_tokens_hash_idx ON p2p_verification_tokens(token_hash)`,
-  `CREATE INDEX IF NOT EXISTS p2p_auth_tickets_hash_idx ON p2p_auth_tickets(ticket_hash)`
+  `CREATE INDEX IF NOT EXISTS p2p_auth_tickets_hash_idx ON p2p_auth_tickets(ticket_hash)`,
+  `CREATE TABLE IF NOT EXISTS app_schema_versions (
+    version INTEGER PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `INSERT INTO app_schema_versions (version) VALUES (4) ON CONFLICT (version) DO NOTHING`
 ];
 
 for (const statement of statements) {

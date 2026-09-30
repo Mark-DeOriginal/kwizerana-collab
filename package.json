@@ -6,14 +6,16 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit && eslint .",
     "format": "bunx biome format --write",
     "db:setup": "node scripts/setup-db.mjs",
     "contract:compile": "hardhat compile",
+    "contract:lint": "solhint contracts/**/*.sol",
     "contract:test": "hardhat test",
+    "contract:audit": "npm run contract:lint && npm run contract:test",
     "deploy:fuji-tokens": "node scripts/deploy-fuji-test-tokens.mjs",
     "deploy:escrow": "node scripts/deploy-escrow.mjs",
     "verify:escrow": "node scripts/verify-escrow-deployment.mjs"
@@ -52,6 +54,7 @@
     "hardhat": "^2.26.3",
     "postcss": "^8.4.39",
     "solc": "^0.8.28",
+    "solhint": "^6.2.4",
     "tailwindcss": "^3.4.4",
     "tsx": "^4.23.12",
     "typescript": "^5.5.3"

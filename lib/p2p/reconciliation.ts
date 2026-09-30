@@ -1,5 +1,40 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
-import { verifyEscrowTransaction, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
+import { verifyEscrowTransaction, type EscrowChainProof, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
+import { getEscrowAddress } from "@/lib/web3/escrow";
+
+const EVENT_BY_ACTION: Record<EscrowVerificationAction, string> = {
+  accept: "Locked",
+  mark_paid: "PaymentMarked",
+  release: "Released",
+  claim: "Claimed",
+  refund: "Refunded",
+  resolve_buyer: "Claimed",
+  resolve_seller: "Refunded"
+};
+
+/** Persists an immutable, idempotent record of the confirmed event used by a projection. */
+export async function recordConfirmedEscrowEvent(
+  tradeId: string,
+  action: EscrowVerificationAction,
+  proof: EscrowChainProof
+): Promise<void> {
+  await dbQuery(
+    `INSERT INTO p2p_escrow_events
+       (trade_id, chain_id, contract_address, event_name, transaction_hash, block_number, block_hash, log_index)
+     VALUES ($1, $2, LOWER($3), $4, LOWER($5), $6::NUMERIC, LOWER($7), $8)
+     ON CONFLICT (chain_id, contract_address, transaction_hash, log_index) DO NOTHING`,
+    [
+      tradeId,
+      Number(process.env.NEXT_PUBLIC_ESCROW_CHAIN_ID ?? 43114),
+      getEscrowAddress(),
+      EVENT_BY_ACTION[action],
+      proof.transactionHash,
+      proof.blockNumber.toString(),
+      proof.blockHash,
+      proof.logIndex
+    ]
+  );
+}
 
 type ReconciliationRow = {
   trade_id: string;
@@ -65,6 +100,7 @@ async function reconcileRows(rows: ReconciliationRow[]): Promise<{ checked: numb
         sellerWalletAddress: row.seller_wallet_address,
         destinationAddress: row.escrow_status === "claimed" ? undefined : row.seller_wallet_address ?? undefined
       });
+      await recordConfirmedEscrowEvent(row.trade_id, action, proof);
       await dbQuery(
         `UPDATE p2p_escrow SET chain_block_number = $2, chain_log_index = $3,
            chain_verified_at = NOW(), chain_verifier_version = 'escrow-events-v1'
@@ -75,7 +111,7 @@ async function reconcileRows(rows: ReconciliationRow[]): Promise<{ checked: numb
     } catch (error) {
       failed += 1;
       await dbQuery(
-        `UPDATE p2p_trades SET status = 'reconciliation_required', updated_at = NOW() WHERE id = $1 AND status NOT IN ('completed', 'refunded')`,
+        `UPDATE p2p_trades SET status = 'reconciliation_required', updated_at = NOW() WHERE id = $1`,
         [row.trade_id]
       );
       console.error("Escrow reconciliation failed", { tradeId: row.trade_id, error: error instanceof Error ? error.message : "unknown" });

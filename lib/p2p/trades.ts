@@ -5,8 +5,8 @@ import { getFees } from "@/lib/p2p/fees";
 import { getLiveRate } from "@/lib/p2p/price-feed";
 import { isAddress } from "viem";
 import { getEscrowAddress, isEscrowDeployed } from "@/lib/web3/escrow";
-import { verifyEscrowTransaction, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
-import { reconcileEscrowTrade } from "@/lib/p2p/reconciliation";
+import { verifyEscrowTransaction, type EscrowChainProof, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
+import { reconcileEscrowTrade, recordConfirmedEscrowEvent } from "@/lib/p2p/reconciliation";
 
 function fmtCryptoAmount(n: number): string {
   if (!Number.isFinite(n)) return "0";
@@ -537,7 +537,7 @@ export async function applyTradeAction(
   const status = row.status;
   const escrowFunded = row.escrow_status === "funded";
 
-  let chainVerification: { blockNumber: bigint; logIndex: number } | null = null;
+  let chainVerification: EscrowChainProof | null = null;
   if (isEscrowDeployed() && ESCROW_ACTIONS.has(action)) {
     if (action === "accept" && !row.buyer_wallet_address) {
       throw new Error("The buyer must set a receive wallet before the crypto can be secured.");
@@ -552,6 +552,7 @@ export async function applyTradeAction(
       sellerWalletAddress: action === "accept" ? input.walletAddress ?? null : row.seller_wallet_address,
       destinationAddress: input.destAddress
     });
+    await recordConfirmedEscrowEvent(tradeId, action as EscrowVerificationAction, chainVerification);
   }
 
   let newStatus = status;

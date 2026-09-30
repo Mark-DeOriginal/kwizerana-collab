@@ -1,7 +1,8 @@
 import { dbQuery, ensureDatabase } from "@/lib/db";
 import { randomUUID } from "crypto";
 import { createNotification, notifyByEmail } from "@/lib/p2p/notifications";
-import { verifyEscrowTransaction } from "@/lib/p2p/chain-verification";
+import { verifyEscrowTransaction, type EscrowChainProof } from "@/lib/p2p/chain-verification";
+import { recordConfirmedEscrowEvent } from "@/lib/p2p/reconciliation";
 import { getEscrowAddress, isEscrowDeployed } from "@/lib/web3/escrow";
 
 export type Dispute = {
@@ -303,7 +304,7 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
     throw new Error("This trade belongs to a different escrow deployment and cannot be resolved with the configured contract.");
   }
 
-  let proof: { blockNumber: bigint; logIndex: number } | null = null;
+  let proof: EscrowChainProof | null = null;
   if (chainBacked || isEscrowDeployed()) {
     if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) throw new Error("A valid arbitration transaction is required.");
     proof = await verifyEscrowTransaction({
@@ -316,6 +317,7 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
       sellerWalletAddress: d.seller_wallet_address,
       destinationAddress: resolution === "release_buyer" ? d.buyer_wallet_address ?? undefined : undefined
     });
+    await recordConfirmedEscrowEvent(d.trade_id, resolution === "release_buyer" ? "resolve_buyer" : "resolve_seller", proof);
   }
 
   const tradeStatus = resolution === "refund_seller" ? "cancelled" : "completed";

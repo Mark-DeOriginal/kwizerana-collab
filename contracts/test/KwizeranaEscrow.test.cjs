@@ -152,6 +152,89 @@ describe("KwizeranaEscrow", function () {
     expect(await token.balanceOf(await escrow.getAddress())).to.equal(0n);
   });
 
+  it("does not let the buyer block a refund after the protection window", async function () {
+    const { seller, buyer, outsider, token, escrow } = await deployFixture();
+    const tradeId = ethers.id("trade-payment-window-boundary");
+    await escrow.connect(seller).lock(tradeId, buyer.address, await token.getAddress(), amount, 20);
+    await escrow.connect(seller).requestCancellation(tradeId);
+    const availableAt = (await escrow.trades(tradeId)).cancellationAvailableAt;
+
+    await network.provider.send("evm_setNextBlockTimestamp", [Number(availableAt)]);
+    await network.provider.send("evm_mine");
+    await expectRevert(escrow.connect(buyer).markPaymentSent(tradeId));
+    await escrow.connect(outsider).refund(tradeId);
+
+    expect((await escrow.trades(tradeId)).status).to.equal(5n);
+    expect(await escrow.liabilities(await token.getAddress())).to.equal(0n);
+  });
+
+  it("lets the buyer protect a payment before the cancellation deadline", async function () {
+    const { arbitrator, seller, buyer, token, escrow } = await deployFixture();
+    const tradeId = ethers.id("trade-payment-before-deadline");
+    await escrow.connect(seller).lock(tradeId, buyer.address, await token.getAddress(), amount, 20);
+    await escrow.connect(seller).requestCancellation(tradeId);
+    const availableAt = (await escrow.trades(tradeId)).cancellationAvailableAt;
+
+    await network.provider.send("evm_setNextBlockTimestamp", [Number(availableAt) - 1]);
+    await escrow.connect(buyer).markPaymentSent(tradeId);
+    await escrow.connect(arbitrator).resolveToBuyer(tradeId);
+
+    expect((await escrow.trades(tradeId)).status).to.equal(4n);
+    expect(await token.balanceOf(buyer.address)).to.equal(amount);
+  });
+
+  it("preserves solvency and terminal-state invariants across varied amounts and fees", async function () {
+    const { owner, arbitrator, treasury, seller, buyer, outsider, token, escrow } = await deployFixture();
+    const tokenAddress = await token.getAddress();
+    const escrowAddress = await escrow.getAddress();
+    await token.mint(seller.address, 10_000_000_000_000n);
+    await token.connect(seller).approve(escrowAddress, ethers.MaxUint256);
+
+    let expectedFees = 0n;
+    for (let i = 0; i < 24; i += 1) {
+      const feeBps = (i * 37) % 101;
+      const principal = BigInt(1 + ((i * 7919) % 1_000_000_000));
+      const tradeId = ethers.id(`property-trade-${i}`);
+      await escrow.connect(owner).setFeeConfiguration(feeBps, treasury.address);
+      const [quotedFee, quotedTotal] = await escrow.quoteFee(principal);
+      const expectedFee = (principal * BigInt(feeBps) + 9_999n) / 10_000n;
+      expect(quotedFee).to.equal(expectedFee);
+      expect(quotedTotal).to.equal(principal + expectedFee);
+
+      await escrow.connect(seller).lock(tradeId, buyer.address, tokenAddress, principal, feeBps);
+      const reservedAfterLock = (await escrow.liabilities(tokenAddress)) + (await escrow.accruedFees(tokenAddress));
+      expect((await token.balanceOf(escrowAddress)) >= reservedAfterLock).to.equal(true);
+
+      if (i % 3 === 0) {
+        await escrow.connect(seller).requestCancellation(tradeId);
+        await escrow.connect(buyer).approveCancellation(tradeId);
+        expect((await escrow.trades(tradeId)).status).to.equal(5n);
+      } else {
+        await escrow.connect(buyer).markPaymentSent(tradeId);
+        if (i % 3 === 1) {
+          await escrow.connect(seller).release(tradeId);
+          await escrow.connect(outsider).claim(tradeId);
+        } else {
+          await escrow.connect(arbitrator).resolveToBuyer(tradeId);
+        }
+        expectedFees += expectedFee;
+        expect((await escrow.trades(tradeId)).status).to.equal(4n);
+        await expectRevert(escrow.connect(arbitrator).resolveToSeller(tradeId));
+      }
+
+      const liabilities = await escrow.liabilities(tokenAddress);
+      const accrued = await escrow.accruedFees(tokenAddress);
+      const balance = await token.balanceOf(escrowAddress);
+      expect(balance).to.equal(liabilities + accrued);
+      expect(accrued).to.equal(expectedFees);
+    }
+
+    expect(await escrow.liabilities(tokenAddress)).to.equal(0n);
+    await escrow.connect(owner).withdrawFees(tokenAddress, expectedFees);
+    expect(await token.balanceOf(escrowAddress)).to.equal(0n);
+    expect(await token.balanceOf(treasury.address)).to.equal(expectedFees);
+  });
+
   it("lets the buyer approve a requested cancellation immediately", async function () {
     const { seller, buyer, token, escrow } = await deployFixture();
     const tradeId = ethers.id("trade-12");

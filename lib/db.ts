@@ -436,6 +436,21 @@ const schemaStatements = [
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_claim_tx_unique ON p2p_escrow(claim_tx_hash) WHERE claim_tx_hash IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_payment_tx_unique ON p2p_escrow(payment_tx_hash) WHERE payment_tx_hash IS NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS p2p_escrow_refund_tx_unique ON p2p_escrow(refund_tx_hash) WHERE refund_tx_hash IS NOT NULL`,
+  `CREATE TABLE IF NOT EXISTS p2p_escrow_events (
+    id BIGSERIAL PRIMARY KEY,
+    trade_id BIGINT NOT NULL REFERENCES p2p_trades(id) ON DELETE CASCADE,
+    chain_id INTEGER NOT NULL,
+    contract_address TEXT NOT NULL,
+    event_name TEXT NOT NULL,
+    transaction_hash TEXT NOT NULL,
+    block_number NUMERIC NOT NULL,
+    block_hash TEXT NOT NULL,
+    log_index INTEGER NOT NULL,
+    confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(chain_id, contract_address, transaction_hash, log_index)
+  )`,
+  `CREATE INDEX IF NOT EXISTS p2p_escrow_events_trade_block_idx ON p2p_escrow_events(trade_id, block_number, log_index)`,
   `CREATE INDEX IF NOT EXISTS p2p_trades_buyer_updated_idx ON p2p_trades(buyer_id, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS p2p_trades_seller_updated_idx ON p2p_trades(seller_id, updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS p2p_notifications_user_created_idx ON p2p_notifications(user_id, created_at DESC)`,
@@ -453,7 +468,7 @@ const schemaStatements = [
     version INTEGER PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  `INSERT INTO app_schema_versions (version) VALUES (3) ON CONFLICT (version) DO NOTHING`
+  `INSERT INTO app_schema_versions (version) VALUES (4) ON CONFLICT (version) DO NOTHING`
 ];
 
 export function getDatabaseUrl() {
@@ -480,7 +495,27 @@ export async function dbQuery<T>(query: string, params: unknown[] = []) {
 }
 
 const SCHEMA_ADVISORY_LOCK_KEY = 7480001;
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
+
+function isTransientDatabaseError(error: unknown): boolean {
+  const message = error instanceof Error ? `${error.name} ${error.message}`.toLowerCase() : String(error).toLowerCase();
+  return message.includes("fetch failed") ||
+    message.includes("error connecting to database") ||
+    message.includes("network") ||
+    message.includes("timeout") ||
+    message.includes("econnreset") ||
+    message.includes("socket");
+}
+
+async function retryDatabaseRead<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isTransientDatabaseError(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return operation();
+  }
+}
 
 export async function ensureDatabase() {
   if (!global.__kwizeranaDbInit || global.__kwizeranaDbInitVersion !== CURRENT_SCHEMA_VERSION) {
@@ -490,10 +525,12 @@ export async function ensureDatabase() {
       // Serverless instances still need a readiness check, but a healthy,
       // migrated database should cost only these small reads—not hundreds of
       // CREATE/ALTER statements on the first request handled by every instance.
-      const registry = await sql.query("SELECT to_regclass('public.app_schema_versions')::TEXT AS name");
-      if (registry[0]?.name) {
-        const versions = await sql.query("SELECT COALESCE(MAX(version), 0)::INTEGER AS version FROM app_schema_versions");
+      try {
+        const versions = await retryDatabaseRead(() => sql.query("SELECT COALESCE(MAX(version), 0)::INTEGER AS version FROM app_schema_versions"));
         if (Number(versions[0]?.version ?? 0) >= CURRENT_SCHEMA_VERSION) return;
+      } catch (error) {
+        const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+        if (code !== "42P01") throw error;
       }
       // Run the whole schema in a single transaction under a Postgres
       // advisory lock so concurrent cold starts / prerenders never race

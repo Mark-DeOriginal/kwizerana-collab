@@ -82,9 +82,9 @@ This is a launch gate, not a claim that the application is ready. P0 items block
 - Protected pages now have consistent session enforcement, but API authorization policies still need consolidation and automated route coverage.
 - Client-provided hashes are receipt/event verified when escrow is configured, but submitted and confirmed states are still collapsed and projections are not fully transactional.
 - Escrow simulation can advance application state.
-- The escrow candidate has deadline recovery and a verified Fuji deployment, but no configured multisig governance, fuzz/invariant analysis, or independent audit yet. Its current Fuji owner, arbitrator, and treasury are intentionally one disposable test EOA.
+- The escrow candidate has deadline recovery, varied amount/fee invariant coverage, static linting, a documented internal review, and an exact-bytecode verified Fuji deployment. It still has no configured multisig governance, deep dedicated fuzz/formal analysis, stablecoin-fork coverage, or independent audit. Its current Fuji owner, arbitrator, and treasury are intentionally one disposable test EOA.
 - Chain-backed dispute resolution now verifies the matching arbitration settlement event before committing a terminal database state or notifying participants. The wallet transaction and database projection are still separate operations, so durable retry/reconciliation and reorg-safe confirmation remain required.
 - Financial operations lack comprehensive database transactions/locking.
 - Rate limiting is in-memory and narrow.
 - Runtime schema initialization replaces migrations.
-- An eight-scenario local escrow test suite exists; application, integration, fuzz/invariant, static-analysis, and CI coverage remain missing.
+- A twelve-scenario local escrow suite plus Solhint static rules exists; application integration, deeper fuzz/formal, stablecoin-fork, and CI coverage remain missing.

@@ -70,6 +70,7 @@ contract KwizeranaEscrow is Ownable2Step, ReentrancyGuard {
     error InvalidStatus();
     error CancellationNotRequested();
     error CancellationNotAvailable();
+    error PaymentProtectionExpired();
     error NewLocksArePaused();
     error InsufficientExcess();
     error InsufficientFees();
@@ -134,6 +135,9 @@ contract KwizeranaEscrow is Ownable2Step, ReentrancyGuard {
         Trade storage trade = trades[tradeId];
         if (trade.status != Status.Funded) revert InvalidStatus();
         if (msg.sender != trade.buyer) revert Unauthorized();
+        if (trade.cancellationAvailableAt != 0 && block.timestamp >= trade.cancellationAvailableAt) {
+            revert PaymentProtectionExpired();
+        }
         trade.status = Status.PaymentMarked;
         emit PaymentMarked(tradeId, trade.buyer);
     }

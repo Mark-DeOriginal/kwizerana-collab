@@ -156,12 +156,61 @@ export async function searchInfluencers(query: string, limit = 8) {
 
 export async function listPublicRankings(): Promise<RankingBoardWithEntries[]> {
   await ensureDatabase();
-  const boards = await listBoards();
+  const rows = await dbQuery<{
+    board_id: string;
+    niche: string;
+    sub_niche: string;
+    created_at: string;
+    updated_at: string;
+    entry_count: number;
+    position: number;
+    influencer_id: number;
+    handle: string;
+    name: string;
+    bio: string;
+    followers: number;
+    verified: boolean;
+    profile_image_url: string | null;
+    profile_url: string;
+  }>(
+    `SELECT b.id AS board_id, b.niche, b.sub_niche, b.created_at, b.updated_at,
+            COUNT(*) OVER (PARTITION BY b.id)::INTEGER AS entry_count,
+            r.position, i.id AS influencer_id, i.handle, i.name, i.bio, i.followers,
+            i.verified, i.profile_image_url, i.profile_url
+     FROM ranking_boards b
+     JOIN rankings r ON r.board_id = b.id
+     JOIN influencers i ON i.id = r.influencer_id AND i.status = 'active'
+     ORDER BY b.updated_at DESC, r.position ASC`
+  );
 
-  const result: RankingBoardWithEntries[] = [];
-  for (const board of boards) {
-    const full = await getBoard(board.id);
-    if (full && full.entries.length > 0) result.push(full);
+  const boards = new Map<string, RankingBoardWithEntries>();
+  for (const row of rows) {
+    let board = boards.get(row.board_id);
+    if (!board) {
+      board = {
+        id: row.board_id,
+        niche: row.niche,
+        sub_niche: row.sub_niche,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        entry_count: Number(row.entry_count),
+        entries: []
+      };
+      boards.set(row.board_id, board);
+    }
+    board.entries.push({
+      position: Number(row.position),
+      influencer: {
+        id: Number(row.influencer_id),
+        handle: row.handle,
+        name: row.name,
+        bio: row.bio,
+        followers: Number(row.followers),
+        verified: row.verified,
+        profile_image_url: row.profile_image_url,
+        profile_url: row.profile_url
+      }
+    });
   }
-  return result;
+  return Array.from(boards.values());
 }

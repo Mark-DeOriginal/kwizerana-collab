@@ -5,6 +5,7 @@ node/
 # next.js
 .next/
 .next-stale-*/
+/.next-*-stale-*/
 out/
 
 
@@ -41,5 +42,6 @@ Thumbs.db
 .eslintcache
 .turbo/
 coverage/
+/tmp/
 contracts/artifacts/
 contracts/cache/

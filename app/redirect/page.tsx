@@ -12,9 +12,10 @@ export const metadata = {
 export default async function SignInRequiredPage({
   searchParams
 }: {
-  searchParams?: { next?: string };
+  searchParams?: Promise<{ next?: string }>;
 }) {
-  const returnTo = safeReturnPath(searchParams?.next);
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const returnTo = safeReturnPath(resolvedSearchParams?.next);
   const session = await getServerSession(authOptions);
 
   if (session?.user) redirect(returnTo);

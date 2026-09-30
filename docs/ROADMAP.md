@@ -36,11 +36,11 @@ Exit: database state cannot be advanced by a fabricated hash or invalid actor, a
 
 ## Phase 2: Escrow v2
 
-Status: **implementation candidate; testnet validation and audit pending**
+Status: **implementation candidate; testnet validation and independent audit pending**
 
 - Confirm trust and decentralization model.
 - Implemented replacement candidate: explicit cancellation with a 30-minute buyer-protection window, permissionless recovery after that window, fixed settlement recipients, token controls, safe transfers, 0.20% successful-trade fee, multisig-ready roles, and new-lock pause without blocking exits. Automatic expiry no longer prevents a buyer from recording payment.
-- Nine local scenarios pass, and the replacement is deployed on Avalanche Fuji; complete the recorded on-chain configuration check and end-to-end application drill, then add integration, fuzz, invariant, stablecoin-fork, and static-analysis coverage.
+- Twelve local scenarios, varied amount/fee invariants, static lint rules, and an internal review pass. The patched replacement is deployed on Avalanche Fuji with exact runtime-bytecode and configuration verification; complete the end-to-end application/reconciliation drill, deeper fuzz/formal work, and stablecoin-fork coverage.
 - Integrate verified contract events with the server.
 - Deploy and exercise on Avalanche testnet.
 - Obtain independent audit before mainnet.
