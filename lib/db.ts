@@ -427,6 +427,9 @@ const schemaStatements = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS vendor_sell_fee_percent NUMERIC`,
   `UPDATE users SET vendor_buy_fee_percent = vendor_fee_percent, vendor_sell_fee_percent = vendor_fee_percent WHERE vendor_buy_fee_percent IS NULL`,
   `ALTER TABLE p2p_reviews ADD COLUMN IF NOT EXISTS star_rating INTEGER`,
+  `ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS inventory_reserved_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS inventory_restored_at TIMESTAMPTZ`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS chain_block_number NUMERIC`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS chain_log_index INTEGER`,
   `ALTER TABLE p2p_escrow ADD COLUMN IF NOT EXISTS chain_verified_at TIMESTAMPTZ`,
@@ -468,7 +471,7 @@ const schemaStatements = [
     version INTEGER PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  `INSERT INTO app_schema_versions (version) VALUES (4) ON CONFLICT (version) DO NOTHING`
+  `INSERT INTO app_schema_versions (version) VALUES (5) ON CONFLICT (version) DO NOTHING`
 ];
 
 export function getDatabaseUrl() {
@@ -495,7 +498,7 @@ export async function dbQuery<T>(query: string, params: unknown[] = []) {
 }
 
 const SCHEMA_ADVISORY_LOCK_KEY = 7480001;
-const CURRENT_SCHEMA_VERSION = 4;
+const CURRENT_SCHEMA_VERSION = 5;
 
 function isTransientDatabaseError(error: unknown): boolean {
   const message = error instanceof Error ? `${error.name} ${error.message}`.toLowerCase() : String(error).toLowerCase();

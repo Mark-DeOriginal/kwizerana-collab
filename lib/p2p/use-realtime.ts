@@ -26,26 +26,44 @@ export function usePoll(
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
+    let running = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const loop = async () => {
-      if (cancelled) return;
-      if (document.visibilityState === "visible") {
-        try {
-          await fnRef.current();
-        } catch {
-          // Silent — polling must never surface errors to the UI.
-        }
-      }
-      if (cancelled) return;
+    const schedule = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
       timer = setTimeout(() => void loop(), intervalMs);
     };
 
-    if (immediate) void loop();
-    else timer = setTimeout(() => void loop(), intervalMs);
+    const loop = async () => {
+      if (cancelled || running || document.visibilityState !== "visible") return;
+      running = true;
+      try {
+        await fnRef.current();
+      } catch {
+        // Silent — polling must never surface errors to the UI.
+      } finally {
+        running = false;
+      }
+      schedule();
+    };
+
+    const onVisibilityChange = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      if (document.visibilityState === "visible") void loop();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    if (document.visibilityState === "visible") {
+      if (immediate) void loop();
+      else schedule();
+    }
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [enabled, immediate, intervalMs]);
 }

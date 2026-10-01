@@ -356,6 +356,9 @@ const statements = [
   // P2P Marketplace: indexes
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS receipt TEXT`,
   `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS buyer_closed_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_payment_methods ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS inventory_reserved_at TIMESTAMPTZ`,
+  `ALTER TABLE p2p_trades ADD COLUMN IF NOT EXISTS inventory_restored_at TIMESTAMPTZ`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_crypto_idx ON p2p_ads(crypto_currency)`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_fiat_idx ON p2p_ads(fiat_currency)`,
   `CREATE INDEX IF NOT EXISTS p2p_ads_status_idx ON p2p_ads(status)`,
@@ -382,7 +385,7 @@ const statements = [
     version INTEGER PRIMARY KEY,
     applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
-  `INSERT INTO app_schema_versions (version) VALUES (4) ON CONFLICT (version) DO NOTHING`
+  `INSERT INTO app_schema_versions (version) VALUES (5) ON CONFLICT (version) DO NOTHING`
 ];
 
 for (const statement of statements) {

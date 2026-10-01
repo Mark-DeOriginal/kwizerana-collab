@@ -87,6 +87,7 @@ Terminal states are `completed`, `refunded`, `declined_unfunded`, `cancelled_unf
 - `completed` requires a confirmed claim/transfer outcome to the authorized buyer destination.
 - `refunded` requires a confirmed refund to the snapshotted seller.
 - Exactly one terminal financial outcome is possible.
+- Advertising-vendor inventory is reserved once when its crypto lock is confirmed. Buyer settlement consumes that reservation; a verified seller refund restores it exactly once. Customer-initiated Sell orders do not consume the fiat-paying vendor's crypto inventory.
 - Every transition records actor, source, timestamp, request/idempotency key, prior state, new state, and relevant chain facts.
 - Notifications and emails are effects of a committed transition and must be safely retryable.
 

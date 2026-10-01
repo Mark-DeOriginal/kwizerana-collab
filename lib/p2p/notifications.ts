@@ -9,12 +9,13 @@ export type P2PNotification = {
   is_read: boolean;
   created_at: string;
   updated_at: string | null;
+  data: Record<string, unknown>;
 };
 
 export async function listNotifications(userId: string, limit = 10, offset = 0): Promise<P2PNotification[]> {
   await ensureDatabase();
   return dbQuery<P2PNotification>(
-    `SELECT id, notification_type, title, body, is_read, created_at, updated_at
+    `SELECT id, notification_type, title, body, is_read, created_at, updated_at, data
      FROM p2p_notifications
      WHERE user_id = $1
      ORDER BY COALESCE(updated_at, created_at) DESC

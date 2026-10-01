@@ -47,16 +47,23 @@ export async function createDispute(
   }
 
   const inserted = await dbQuery<Dispute>(
-    `INSERT INTO p2p_disputes (trade_id, raised_by, reason, status)
-     VALUES ($1, $2, $3, 'open')
-     RETURNING id::TEXT AS id, trade_id::TEXT AS trade_id, raised_by, reason, status, created_at`,
-    [input.tradeId, userId, input.reason]
+    `WITH locked_trade AS (
+       UPDATE p2p_trades SET status = 'disputed', updated_at = NOW()
+       WHERE id = $1 AND status = $4
+       RETURNING id
+     ), new_dispute AS (
+       INSERT INTO p2p_disputes (trade_id, raised_by, reason, status)
+       SELECT id, $2, $3, 'open' FROM locked_trade
+       RETURNING id, trade_id, raised_by, reason, status, created_at
+     ), linked_trade AS (
+       UPDATE p2p_trades SET dispute_id = new_dispute.id
+       FROM new_dispute WHERE p2p_trades.id = new_dispute.trade_id
+     )
+     SELECT id::TEXT AS id, trade_id::TEXT AS trade_id, raised_by, reason, status, created_at
+     FROM new_dispute`,
+    [input.tradeId, userId, input.reason, trade.status]
   );
-
-  await dbQuery(
-    `UPDATE p2p_trades SET status = 'disputed', dispute_id = $2, updated_at = NOW() WHERE id = $1`,
-    [input.tradeId, inserted[0].id]
-  );
+  if (!inserted[0]) throw new Error("This trade changed while the dispute was being submitted. Refresh and try again.");
 
   const counterpartyId = isBuyer
     ? trade.seller_owner_id || trade.seller_id
@@ -75,7 +82,8 @@ export async function createDispute(
       data: { tradeId: input.tradeId, disputeId: inserted[0].id }
     })
   ]);
-  await notifyByEmail(counterpartyId, "A trade was disputed", "A dispute was opened on one of your trades. Our support team will review it and contact you with the outcome.");
+  void notifyByEmail(counterpartyId, "A trade was disputed", "A dispute was opened on one of your trades. Our support team will review it and contact you with the outcome.")
+    .catch((error) => console.error("Dispute email delivery failed", error instanceof Error ? error.message : error));
 
   return inserted[0];
 }
@@ -332,11 +340,25 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
        SET status = 'resolved', resolution = $2, resolved_by = $3, resolved_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND status = 'open'
        RETURNING trade_id
-     ), updated_trade AS (
+     ), inventory_decision AS (
+       SELECT t.id,
+              ($4 = 'completed' AND $13::BOOLEAN AND t.inventory_reserved_at IS NULL) AS should_deduct,
+              ($4 = 'cancelled' AND $13::BOOLEAN AND t.inventory_reserved_at IS NOT NULL AND t.inventory_restored_at IS NULL) AS should_restore
+       FROM p2p_trades t
+       WHERE t.id IN (SELECT trade_id FROM resolved_dispute)
+     ), projected_trade AS (
        UPDATE p2p_trades
        SET status = $4,
            claimed_at = CASE WHEN $4 = 'completed' THEN NOW() ELSE claimed_at END,
            cancelled_at = CASE WHEN $4 = 'cancelled' THEN NOW() ELSE cancelled_at END,
+           inventory_reserved_at = CASE
+             WHEN EXISTS (SELECT 1 FROM inventory_decision WHERE should_deduct) THEN NOW()
+             ELSE inventory_reserved_at
+           END,
+           inventory_restored_at = CASE
+             WHEN EXISTS (SELECT 1 FROM inventory_decision WHERE should_restore) THEN NOW()
+             ELSE inventory_restored_at
+           END,
            updated_at = NOW()
        WHERE id IN (SELECT trade_id FROM resolved_dispute)
        RETURNING id
@@ -366,9 +388,17 @@ export async function resolveDispute(adminUserId: string, disputeId: string, res
        RETURNING id
      ), updated_inventory AS (
        UPDATE p2p_vendor_inventory
-       SET declared_balance = GREATEST(declared_balance - $12::NUMERIC, 0), updated_at = NOW()
-       WHERE $4 = 'completed' AND $13::BOOLEAN
+       SET declared_balance = CASE
+             WHEN EXISTS (SELECT 1 FROM inventory_decision WHERE should_deduct)
+               THEN GREATEST(declared_balance - $12::NUMERIC, 0)
+             WHEN EXISTS (SELECT 1 FROM inventory_decision WHERE should_restore)
+               THEN declared_balance + $12::NUMERIC
+             ELSE declared_balance
+           END,
+           updated_at = NOW()
+       WHERE $13::BOOLEAN
          AND EXISTS (SELECT 1 FROM resolved_dispute)
+         AND EXISTS (SELECT 1 FROM inventory_decision WHERE should_deduct OR should_restore)
          AND crypto_currency = $14
          AND user_id = COALESCE(
            (SELECT owner_user_id FROM users WHERE id = $11),

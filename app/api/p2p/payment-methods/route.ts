@@ -41,6 +41,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error }, { status: 400 });
   }
 
-  const method = await createPaymentMethod(userId, input);
-  return NextResponse.json({ method }, { status: 201 });
+  try {
+    const method = await createPaymentMethod(userId, input, body.owner_user_id ? String(body.owner_user_id) : null);
+    return NextResponse.json({ method }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to add this payment method." }, { status: 403 });
+  }
 }

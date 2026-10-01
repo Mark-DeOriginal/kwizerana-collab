@@ -140,7 +140,7 @@ export async function listOffers({ side, asset, fiat }: OfferFilters, viewerId?:
     const pmRows = await dbQuery<OfferPaymentMethod & { user_id: string }>(
       `SELECT id::TEXT AS id, user_id, method_type, method_name
        FROM p2p_payment_methods
-       WHERE user_id = ANY($1)
+       WHERE user_id = ANY($1) AND is_active = TRUE
        ORDER BY id ASC`,
       [vendorIds]
     );

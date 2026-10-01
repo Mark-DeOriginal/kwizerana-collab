@@ -295,20 +295,25 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
     if (!disputeReason.trim()) return;
     setDisputeBusy(true);
     setError("");
-    const res = await fetch(`/api/p2p/trades/${trade.id}/dispute`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason: disputeReason.trim() })
-    });
-    const data = await readJson<{ error?: string }>(res);
-    setDisputeBusy(false);
-    if (!res.ok) {
-      setError(data?.error ?? "Unable to submit dispute.");
-      return;
+    try {
+      const res = await fetch(`/api/p2p/trades/${trade.id}/dispute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: disputeReason.trim() })
+      });
+      const data = await readJson<{ error?: string }>(res);
+      if (!res.ok) {
+        setError(data?.error ?? "Unable to submit dispute.");
+        return;
+      }
+      setShowDispute(false);
+      setDisputeReason("");
+      onRefresh();
+    } catch (disputeError) {
+      setError(disputeError instanceof Error ? disputeError.message : "Unable to submit dispute. Check your connection and try again.");
+    } finally {
+      setDisputeBusy(false);
     }
-    setShowDispute(false);
-    setDisputeReason("");
-    onRefresh();
   };
 
   const protectCancelledPaymentAndDispute = async (txHash?: string) => {
@@ -440,7 +445,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
         <div>
           <p className="text-xs text-muted">Order {trade.trade_ref}</p>
           <p className="mt-0.5 font-semibold">
-            {isBuyer ? "Buying" : "Selling"} {fn(trade.crypto_amount, 6)} {trade.crypto_currency}{" "}
+            {isBuyer ? "You're buying" : "You're selling"} {fn(trade.crypto_amount, 6)} {trade.crypto_currency}{" "}
             {isBuyer ? "from" : "to"} <span className="text-ocean">{counterparty}</span>
           </p>
         </div>

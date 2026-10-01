@@ -30,9 +30,11 @@ Last reconciled with the repository: 2026-09-29. Status terms follow `AGENTS.md`
 |---|---|---|
 | Vendor profile, application, admin review | Implemented | Vendor/admin routes and UI |
 | Voluntary vendor closure | Implemented | Ordinary vendors can stop vendor activity from the dashboard only after active trades, funded escrow, and open disputes are cleared. Listings are deactivated while account history, ratings, payment methods, and reapplication remain available; admin/default/managed vendors are blocked in UI and API. |
+| Managed vendor payment methods | Implemented | The owner dashboard can select each managed country storefront and add, edit, or deactivate its receiving methods. Server authorization limits this to the owner relationship; inactive methods disappear from offers while historical trades retain their snapshot. |
+| Vendor inventory settlement | Implemented, needs testnet evidence | Advertising-vendor inventory is reserved idempotently when crypto funding is confirmed, consumed on buyer settlement, and restored once after a verified normal or arbitrated seller refund. Pre-reservation trades use a completion compatibility path. |
 | Tier eligibility/enforcement | Partial | Data/services exist; full policy enforcement needs verification |
 | Vendor fee configuration | Implemented | Buy/sell fee fields and interfaces |
-| Reviews and rating summaries | Implemented | The dashboard trade modal remains open after buyer claim so the completed-state vendor rating panel is shown; anti-gaming remains. |
+| Reviews and rating summaries | Implemented | The dashboard trade modal remains open after buyer claim so the completed-state vendor rating panel is shown. Trade-linked activity entries reopen the same modal, including completed trades, so an unrated customer can return to the rating step; anti-gaming remains. |
 | Completion statistics | Partial | Dashboard, vendor profiles, and offer cards now derive owner-scoped completed trades, true rolling 30-day completion/USDT+USDC volume, distinct customers, release time, and combined ratings from trade/review records. Production still requires event-derived settlement projections and indexed rollups at scale. |
 | Fraud/wash-trade detection | Planned | No robust implementation found |
 

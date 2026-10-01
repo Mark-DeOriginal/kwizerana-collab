@@ -6,7 +6,8 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev",
+    "dev:webpack": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit && eslint .",

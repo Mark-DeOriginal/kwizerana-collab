@@ -839,7 +839,7 @@ type AdminDispute = {
 function DisputesTab() {
   const [disputes, setDisputes] = useState<AdminDispute[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionId, setActionId] = useState<string | null>(null);
+  const [actionKey, setActionKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [pendingHashes, setPendingHashes] = useState<Record<string, string>>({});
   const [connectPrompt, setConnectPrompt] = useState<{ disputeId: string; resolution: "release_buyer" | "refund_seller" } | null>(null);
@@ -891,6 +891,7 @@ function DisputesTab() {
 
   async function resolve(dispute: AdminDispute, resolution: "release_buyer" | "refund_seller") {
     const id = dispute.id;
+    const currentActionKey = `${id}:${resolution}`;
     if (realEscrow && !address) {
       if (connectPrompt?.disputeId === id && connectPrompt.resolution === resolution) {
         openConnectModal?.();
@@ -899,7 +900,7 @@ function DisputesTab() {
       }
       return;
     }
-    setActionId(id);
+    setActionKey(currentActionKey);
     setError("");
     try {
       let txHash = pendingHashes[`${id}:${resolution}`];
@@ -932,7 +933,7 @@ function DisputesTab() {
     } catch (err: unknown) {
       setError(friendlyError(err, "Something went wrong."));
     } finally {
-      setActionId(null);
+      setActionKey((current) => current === currentActionKey ? null : current);
     }
   }
 
@@ -996,11 +997,12 @@ function DisputesTab() {
                 </div>
                 {d.status === "open" ? (
                   <div className="flex shrink-0 flex-col gap-1.5">
-                    <button onClick={() => void resolve(d, "release_buyer")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ink bg-ink px-3 text-xs font-bold text-white transition-colors hover:bg-black disabled:opacity-60">
-                      {actionId === d.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                    <button onClick={() => void resolve(d, "release_buyer")} disabled={actionKey?.startsWith(`${d.id}:`) ?? false} className="flex h-8 items-center justify-center gap-1 border border-ink bg-ink px-3 text-xs font-bold text-white transition-colors hover:bg-black disabled:opacity-60">
+                      {actionKey === `${d.id}:release_buyer` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                       {connectPrompt?.disputeId === d.id && connectPrompt.resolution === "release_buyer" && !address ? "Connect wallet" : "Release to buyer"}
                     </button>
-                    <button onClick={() => void resolve(d, "refund_seller")} disabled={actionId === d.id} className="flex h-8 items-center justify-center gap-1 border border-ink bg-transparent px-3 text-xs font-bold text-ink transition-colors hover:bg-panel disabled:opacity-60">
+                    <button onClick={() => void resolve(d, "refund_seller")} disabled={actionKey?.startsWith(`${d.id}:`) ?? false} className="flex h-8 items-center justify-center gap-1 border border-ink bg-transparent px-3 text-xs font-bold text-ink transition-colors hover:bg-panel disabled:opacity-60">
+                      {actionKey === `${d.id}:refund_seller` && <Loader2 className="h-3 w-3 animate-spin" />}
                       {connectPrompt?.disputeId === d.id && connectPrompt.resolution === "refund_seller" && !address ? "Connect wallet" : "Refund seller"}
                     </button>
                   </div>

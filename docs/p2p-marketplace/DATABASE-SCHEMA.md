@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS p2p_payment_methods (
   details JSONB NOT NULL DEFAULT '{}',
   account_holder_name TEXT,
   is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -89,6 +90,13 @@ and `iban`/`bic` or `accountNumber`/`swiftCode` for international bank
 transfers. `accountIdentifier` is a legacy read-compatibility key only; new
 writes use the explicit field names. The API validates required fields against
 the selected method before persisting them.
+
+Managed storefront methods remain owned by their individual vendor profile so
+country-specific receiving details do not leak across markets. The owning
+administrator can manage each storefront from the dashboard. Removal is a
+soft deactivation so historical trades retain their snapshotted method.
+When an account owns managed storefronts, the dashboard selector lists only
+those storefronts and does not treat the owner as an additional vendor.
 
 Managed vendor profiles with `users.owner_user_id` share the owner account's
 inventory rows and directional fee values. Offer discovery, trade pricing,

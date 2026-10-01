@@ -180,7 +180,7 @@ export function isActiveTrade(trade: Pick<Trade, "status" | "escrow_status" | "m
 export const TRADE_STATUS_LABELS: Record<string, string> = {
   created: "Awaiting approval",
   approved: "Accepted — deposit crypto",
-  escrow_locked: "Crypto secured — pay now",
+  escrow_locked: "Escrow funded",
   payment_sent: "Payment sent",
   released: "Ready to receive",
   completed: "Completed",
@@ -366,6 +366,17 @@ export async function createTrade(
 
   const fees = await getFees(ad.crypto_currency, ad.fiat_currency);
   const feeRate = fees.takerFee;
+
+  if (input.paymentMethodId) {
+    const expectedPaymentOwner = ad.ad_type === "sell" ? ad.user_id : userId;
+    const paymentRows = await dbQuery<{ id: string }>(
+      `SELECT id::TEXT AS id FROM p2p_payment_methods
+       WHERE id = $1 AND user_id = $2 AND is_active = TRUE
+       LIMIT 1`,
+      [input.paymentMethodId, expectedPaymentOwner]
+    );
+    if (!paymentRows[0]) throw new Error("The selected payment method is no longer available.");
+  }
 
   // Buy offer (ad_type 'sell') → vendor is the seller, initiator is the buyer.
   const buyerId = ad.ad_type === "sell" ? userId : ad.user_id;
@@ -732,6 +743,51 @@ export async function applyTradeAction(
     );
   }
 
+  // Reserve a managed/advertising vendor's inventory when its crypto is
+  // actually locked. This prevents concurrent orders from selling the same
+  // declared balance and gives refunds one explicit, idempotent amount to
+  // restore.
+  if (escrowStatus === "funded" && row.seller_id !== row.initiator_id) {
+    const reservation = await dbQuery<{ applied: boolean }>(
+      `WITH marked_trade AS (
+         UPDATE p2p_trades SET inventory_reserved_at = NOW(), updated_at = NOW()
+         WHERE id = $4 AND inventory_reserved_at IS NULL
+         RETURNING id
+       ), updated_inventory AS (
+         UPDATE p2p_vendor_inventory
+         SET declared_balance = GREATEST(declared_balance - $3::NUMERIC, 0), updated_at = NOW()
+         WHERE user_id = COALESCE((SELECT owner_user_id FROM users WHERE id = $1), $1)
+           AND crypto_currency = $2
+           AND EXISTS (SELECT 1 FROM marked_trade)
+         RETURNING user_id
+       )
+       SELECT EXISTS (SELECT 1 FROM updated_inventory) AS applied`,
+      [row.seller_id, row.crypto_currency, toNumber(row.crypto_amount), tradeId]
+    );
+    if (!reservation[0]?.applied) {
+      console.error("Vendor inventory reservation needs reconciliation", { tradeId, sellerId: row.seller_id });
+    }
+  }
+
+  if (escrowStatus === "refunded") {
+    await dbQuery(
+      `WITH marked_trade AS (
+         UPDATE p2p_trades SET inventory_restored_at = NOW(), updated_at = NOW()
+         WHERE id = $4 AND inventory_reserved_at IS NOT NULL AND inventory_restored_at IS NULL
+         RETURNING id
+       ), updated_inventory AS (
+         UPDATE p2p_vendor_inventory
+         SET declared_balance = declared_balance + $3::NUMERIC, updated_at = NOW()
+         WHERE user_id = COALESCE((SELECT owner_user_id FROM users WHERE id = $1), $1)
+           AND crypto_currency = $2
+           AND EXISTS (SELECT 1 FROM marked_trade)
+         RETURNING user_id
+       )
+       SELECT EXISTS (SELECT 1 FROM updated_inventory)`,
+      [row.seller_id, row.crypto_currency, toNumber(row.crypto_amount), tradeId]
+    );
+  }
+
   if (newStatus === "completed") {
     await dbQuery(
       `UPDATE users
@@ -745,22 +801,25 @@ export async function applyTradeAction(
     );
   }
 
-  // Auto-decrement the seller's declared inventory when a trade completes.
+  // Compatibility for trades funded before inventory reservations were
+  // introduced. New trades were already deducted at funding; only an
+  // unreserved completed vendor sale is deducted here.
   if (newStatus === "completed" && row.seller_id !== row.initiator_id) {
     await dbQuery(
-      `UPDATE p2p_vendor_inventory
-       SET declared_balance = GREATEST(declared_balance - $3::numeric, 0),
-           updated_at = NOW()
-       WHERE user_id = COALESCE(
-         (SELECT u.owner_user_id
-          FROM users u
-          JOIN p2p_vendor_inventory shared
-            ON shared.user_id = u.owner_user_id AND shared.crypto_currency = $2
-          WHERE u.id = $1),
-         $1
+      `WITH marked_trade AS (
+         UPDATE p2p_trades SET inventory_reserved_at = NOW(), updated_at = NOW()
+         WHERE id = $4 AND inventory_reserved_at IS NULL
+         RETURNING id
+       ), updated_inventory AS (
+         UPDATE p2p_vendor_inventory
+         SET declared_balance = GREATEST(declared_balance - $3::NUMERIC, 0), updated_at = NOW()
+         WHERE user_id = COALESCE((SELECT owner_user_id FROM users WHERE id = $1), $1)
+           AND crypto_currency = $2
+           AND EXISTS (SELECT 1 FROM marked_trade)
+         RETURNING user_id
        )
-         AND crypto_currency = $2`,
-      [row.seller_id, row.crypto_currency, toNumber(row.crypto_amount)]
+       SELECT EXISTS (SELECT 1 FROM updated_inventory)`,
+      [row.seller_id, row.crypto_currency, toNumber(row.crypto_amount), tradeId]
     );
   }
 

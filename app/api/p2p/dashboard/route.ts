@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUserId } from "@/lib/p2p/server-auth";
 import { getP2PStats, getSecuritySummary } from "@/lib/p2p/stats";
 import { listWallets } from "@/lib/p2p/wallets";
-import { listUserPaymentMethods } from "@/lib/p2p/payment-methods";
+import { listPaymentMethodAccounts } from "@/lib/p2p/payment-methods";
 import { listNotifications, getUnreadNotificationCount } from "@/lib/p2p/notifications";
 import { getVendorStatus } from "@/lib/p2p/vendor";
 import { listTrades } from "@/lib/p2p/trades";
@@ -49,7 +49,7 @@ export async function GET() {
     getP2PStats(userId),
     getSecuritySummary(userId),
     listWallets(userId),
-    listUserPaymentMethods(userId),
+    listPaymentMethodAccounts(userId),
     listNotifications(userId, 8),
     getVendorStatus(userId),
     listTrades(userId, isSuperAdmin),
@@ -75,7 +75,8 @@ export async function GET() {
   const stats = value<Awaited<ReturnType<typeof getP2PStats>>>(0);
   const security = value<Awaited<ReturnType<typeof getSecuritySummary>>>(1);
   const wallets = value<Awaited<ReturnType<typeof listWallets>>>(2);
-  const paymentMethods = value<Awaited<ReturnType<typeof listUserPaymentMethods>>>(3);
+  const paymentMethodAccounts = value<Awaited<ReturnType<typeof listPaymentMethodAccounts>>>(3);
+  const paymentMethods = paymentMethodAccounts.find((account) => account.id === userId)?.methods ?? [];
   const notifications = value<Awaited<ReturnType<typeof listNotifications>>>(4);
   const vendor = value<Awaited<ReturnType<typeof getVendorStatus>>>(5);
   const trades = value<Awaited<ReturnType<typeof listTrades>>>(6);
@@ -88,6 +89,7 @@ export async function GET() {
     security,
     wallets,
     paymentMethods,
+    paymentMethodAccounts,
     notifications,
     vendor,
     trades,

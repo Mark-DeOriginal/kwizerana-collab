@@ -123,8 +123,8 @@ async function seedDefaultVendors(): Promise<void> {
       );
     }
 
-    const pmRows = await dbQuery<{ id: string; method_type: string; method_name: string; details: string }>(
-      `SELECT id::TEXT AS id, method_type, method_name, details::TEXT AS details
+    const pmRows = await dbQuery<{ id: string; method_type: string; method_name: string; details: string; is_active: boolean }>(
+      `SELECT id::TEXT AS id, method_type, method_name, details::TEXT AS details, is_active
        FROM p2p_payment_methods WHERE user_id = $1 ORDER BY id ASC`,
       [vendorId]
     );
@@ -137,7 +137,7 @@ async function seedDefaultVendors(): Promise<void> {
            RETURNING id::TEXT AS id`,
           [vendorId, m.category, m.name, JSON.stringify({ accountIdentifier: seedAccountIdentifier(m.category, code) }), vendorName]
         );
-        pmRows.push({ id: inserted[0].id, method_type: m.category, method_name: m.name, details: "" });
+        pmRows.push({ id: inserted[0].id, method_type: m.category, method_name: m.name, details: "", is_active: true });
       }
     } else {
       for (const row of pmRows) {
@@ -150,7 +150,7 @@ async function seedDefaultVendors(): Promise<void> {
       }
     }
 
-    const pmIds = pmRows.map((r) => r.id);
+    const pmIds = pmRows.filter((row) => row.is_active).map((row) => row.id);
 
     const existingAds = await dbQuery<{ count: string }>(
       `SELECT COUNT(*)::TEXT AS count

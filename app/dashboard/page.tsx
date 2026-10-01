@@ -37,6 +37,7 @@ import { ConnectedWalletSync, ConnectWalletButton } from "@/components/p2p/Conne
 import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
 import type { UserWallet } from "@/lib/p2p/wallets";
 import { getPaymentMethodFields, paymentDetailValue, type UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
+import type { PaymentMethodAccount } from "@/lib/p2p/payment-methods";
 import type { P2PNotification } from "@/lib/p2p/notifications";
 import type { VendorStatus } from "@/lib/p2p/vendor";
 import type { Review } from "@/lib/p2p/reviews";
@@ -55,6 +56,7 @@ type DashboardData = {
   security: SecuritySummary;
   wallets: UserWallet[];
   paymentMethods: UserPaymentMethod[];
+  paymentMethodAccounts: PaymentMethodAccount[];
   notifications: P2PNotification[];
   vendor: VendorStatus;
   trades: Trade[];
@@ -150,29 +152,39 @@ function DashboardPageContent() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const loadInFlightRef = useRef<Promise<void> | null>(null);
 
 const load = useCallback(async (opts: { silent?: boolean } = {}) => {
+    if (loadInFlightRef.current) return loadInFlightRef.current;
     let succeeded = false;
     if (!opts.silent) {
       setLoading(true);
       setError("");
     }
-    try {
-      const dashRes = await fetch("/api/p2p/dashboard", { cache: "no-store" });
-      const dash = await readJson<DashboardData & { error?: string }>(dashRes);
+    const request = (async () => {
+      try {
+        const dashRes = await fetch("/api/p2p/dashboard", { cache: "no-store" });
+        const dash = await readJson<DashboardData & { error?: string }>(dashRes);
 
-      if (!dashRes.ok || !dash) {
-        if (!opts.silent) throw new Error(dash?.error ?? "Unable to load dashboard.");
-        return;
+        if (!dashRes.ok || !dash) {
+          if (!opts.silent) throw new Error(dash?.error ?? "Unable to load dashboard.");
+          return;
+        }
+        setData(dash as DashboardData);
+        setError("");
+        succeeded = true;
+      } catch {
+        if (!opts.silent) setError("Some dashboard information didn’t load. Retrying automatically…");
+      } finally {
+        if (!opts.silent) setLoading(!succeeded);
       }
-      setData(dash as DashboardData);
-      setError("");
-      succeeded = true;
-    } catch {
-      if (!opts.silent) setError("Some dashboard information didn’t load. Retrying automatically…");
-    } finally {
-      if (!opts.silent) setLoading(!succeeded);
-    }
+    })();
+    loadInFlightRef.current = request;
+    void request.finally(() => {
+      if (loadInFlightRef.current === request) loadInFlightRef.current = null;
+    });
+    return request;
   }, []);
 
   useEffect(() => {
@@ -288,15 +300,15 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         {/* Active trades + activity */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <Card id="active-trades" title="Active trades" subtitle="Trades in progress" icon={<Clock className="h-4 w-4" />} className="scroll-mt-24" >
-            <ActiveTradesPanel trades={data?.trades ?? []} loading={loading && !data} onChanged={load} />
+            <ActiveTradesPanel trades={data?.trades ?? []} loading={loading && !data} onChanged={load} selectedId={selectedTradeId} onSelect={setSelectedTradeId} />
           </Card>
-          <ActivityPanel notifications={data?.notifications ?? []} loading={loading && !data} />
+          <ActivityPanel notifications={data?.notifications ?? []} loading={loading && !data} onTradeOpen={setSelectedTradeId} />
         </div>
 
         {/* Security + payment methods */}
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <SecurityPanel security={data?.security} loading={loading && !data} />
-          <PaymentMethodsPanel methods={data?.paymentMethods ?? []} loading={loading && !data} onChanged={load} />
+          <PaymentMethodsPanel accounts={data?.paymentMethodAccounts ?? []} loading={loading && !data} onChanged={load} />
         </div>
 
         {/* Trade history — full width table */}
@@ -619,7 +631,7 @@ function StatsPanel({ stats, loading }: { stats?: P2PStats; loading?: boolean })
   );
 }
 
-function ActivityPanel({ notifications, loading }: { notifications: P2PNotification[]; loading?: boolean }) {
+function ActivityPanel({ notifications, loading, onTradeOpen }: { notifications: P2PNotification[]; loading?: boolean; onTradeOpen: (tradeId: string) => void }) {
   if (loading) {
     return (
       <Card title="Activity" icon={<Bell className="h-4 w-4" />} subtitle="Latest updates and notices">
@@ -637,16 +649,31 @@ function ActivityPanel({ notifications, loading }: { notifications: P2PNotificat
         <EmptyState icon={<MessageSquare className="h-5 w-5" />} title="No activity yet" subtitle="Trade updates, messages, and notices will show up here." />
       ) : (
         <ul className="space-y-2">
-          {notifications.map((n) => (
-            <li key={n.id} className="flex items-start gap-2 rounded-md border border-line bg-panel px-3 py-2">
-              {!n.is_read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-ocean" />}
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold">{n.title}</p>
-                <p className="text-sm text-muted">{n.body}</p>
-              </div>
-              <span className="shrink-0 text-xs text-muted">{timeAgo(n.updated_at ?? n.created_at)}</span>
-            </li>
-          ))}
+          {notifications.map((n) => {
+            const tradeId = typeof n.data?.tradeId === "string" ? n.data.tradeId : null;
+            const content = (
+              <>
+                {!n.is_read && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-ocean" />}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{n.title}</p>
+                  <p className="text-sm text-muted">{n.body}</p>
+                </div>
+                <span className="shrink-0 text-xs text-muted">{timeAgo(n.updated_at ?? n.created_at)}</span>
+                {tradeId && <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-ocean" />}
+              </>
+            );
+            return (
+              <li key={n.id}>
+                {tradeId ? (
+                  <button type="button" onClick={() => onTradeOpen(tradeId)} className="group flex w-full items-start gap-2 rounded-md border border-line bg-panel px-3 py-2 text-left transition-colors hover:border-ocean hover:bg-white focus-visible:border-ocean" aria-label={`Open trade: ${n.title}`}>
+                    {content}
+                  </button>
+                ) : (
+                  <div className="flex items-start gap-2 rounded-md border border-line bg-panel px-3 py-2">{content}</div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
     </Card>
@@ -711,7 +738,8 @@ function SecurityPanel({ security, loading }: { security?: SecuritySummary; load
   );
 }
 
-function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPaymentMethod[]; loading?: boolean; onChanged: () => void }) {
+function PaymentMethodsPanel({ accounts, loading, onChanged }: { accounts: PaymentMethodAccount[]; loading?: boolean; onChanged: () => void }) {
+  const [selectedAccountId, setSelectedAccountId] = useState("");
   const [adding, setAdding] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState("");
@@ -729,6 +757,13 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ accountHolderName: "", details: {} as Record<string, string>, note: "" });
+  const selectedAccount = accounts.find((account) => account.id === selectedAccountId) ?? accounts[0];
+  const methods = selectedAccount?.methods ?? [];
+
+  useEffect(() => {
+    if (!accounts.length) return;
+    if (!accounts.some((account) => account.id === selectedAccountId)) setSelectedAccountId(accounts[0].id);
+  }, [accounts, selectedAccountId]);
   const selectedCountry = COUNTRIES.find((country) => country.code === addForm.countryCode);
   const selectedOption = selectedCountry?.methods.find((method) => method.name === addForm.methodName);
   const addMethodName = addForm.customBank ? addForm.customBankName : addForm.methodName;
@@ -758,6 +793,7 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        owner_user_id: selectedAccount?.id,
         method_type: addMethodType,
         method_name: addMethodName.trim(),
         account_holder_name: addForm.accountHolderName || null,
@@ -864,6 +900,27 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
         </button>
       }
     >
+      {accounts.length > 1 && (
+        <div className="mb-4">
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Manage payment methods for</label>
+          <CustomSelect
+            value={selectedAccount?.id ?? ""}
+            onChange={(value) => {
+              setSelectedAccountId(value);
+              setAdding(false);
+              setEditingId(null);
+              setConfirmingId(null);
+            }}
+            groups={[{ options: accounts.map((account) => ({
+              value: account.id,
+              label: `${account.name}${account.fiatCurrency ? ` · ${account.fiatCurrency}` : ""}`
+            })) }]}
+            placeholder="Select a vendor"
+            triggerClassName="h-10 bg-white"
+          />
+          {selectedAccount?.isManaged && <p className="mt-1.5 text-xs text-muted">These receiving details are used only by this managed storefront.</p>}
+        </div>
+      )}
       {adding && (
         <form onSubmit={(event) => void addPaymentMethod(event)} className="mb-3 space-y-3 border border-line bg-panel p-4">
           <div>
@@ -941,7 +998,7 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
         <EmptyState icon={<Banknote className="h-5 w-5" />} title="No payment methods" subtitle="Add bank, mobile-money, or digital-wallet details to start trading." cta={<button type="button" onClick={toggleAdd} className="text-sm font-semibold text-ocean hover:underline">Add a method</button>} />
       ) : methods.length > 0 ? (
         <ul className="space-y-2">
-          {methods.slice(0, 4).map((m) => {
+          {methods.map((m) => {
             const details = m.details as Record<string, unknown>;
             const summary = getPaymentMethodFields(m.method_name, m.method_type)
               .map((field) => paymentDetailValue(details, field, m.account_holder_name))
@@ -1006,13 +1063,6 @@ function PaymentMethodsPanel({ methods, loading, onChanged }: { methods: UserPay
               </li>
             );
           })}
-          {methods.length > 4 && (
-            <li className="text-center">
-              <Link href="/account/payment-methods" className="text-xs font-semibold text-ocean hover:underline">
-                View all {methods.length} methods
-              </Link>
-            </li>
-          )}
         </ul>
       ) : null}
     </Card>
@@ -1367,16 +1417,11 @@ function StopVendorPanel({ onChanged }: { onChanged: () => void }) {
   );
 }
 
-function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; loading?: boolean; onChanged: () => void }) {
+function ActiveTradesPanel({ trades, loading, onChanged, selectedId, onSelect }: { trades: Trade[]; loading?: boolean; onChanged: () => void; selectedId: string | null; onSelect: (tradeId: string | null) => void }) {
   const active = trades.filter(isActiveTrade);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   // Keep the selected trade available when an action moves it from active to
   // completed. The modal needs to remain open so the buyer can rate the vendor.
   const selected = trades.find((t) => t.id === selectedId) ?? null;
-
-  useEffect(() => {
-    if (selectedId && selected && !isActiveTrade(selected)) setSelectedId(null);
-  }, [selected, selectedId]);
 
   if (loading) {
     return (
@@ -1402,12 +1447,12 @@ function ActiveTradesPanel({ trades, loading, onChanged }: { trades: Trade[]; lo
     <div className="space-y-2">
       <ul className="space-y-2">
         {active.map((t) => (
-          <TradeOrderCard key={t.id} trade={t} onOpen={() => setSelectedId(t.id)} />
+          <TradeOrderCard key={t.id} trade={t} onOpen={() => onSelect(t.id)} />
         ))}
       </ul>
 
       {selected && (
-        <Modal open onClose={() => setSelectedId(null)} title={`Trade ${selected.trade_ref}`} maxWidth="max-w-xl">
+        <Modal open onClose={() => onSelect(null)} title={`Trade ${selected.trade_ref}`} maxWidth="max-w-xl">
           <LiveTradeModal trade={selected} onChanged={onChanged} />
         </Modal>
       )}
