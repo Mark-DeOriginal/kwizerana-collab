@@ -514,7 +514,7 @@ export default function AdminReviewPage() {
 
           <div className="grid gap-3 p-4">
             {errorMessage && (
-              <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-ink">{errorMessage}</div>
+              <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-coral" role="alert">{errorMessage}</div>
             )}
             {isLoading && (
               <div className="flex items-center gap-3 border border-line bg-panel p-4 text-sm text-muted">

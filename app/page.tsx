@@ -451,7 +451,7 @@ function ArchiveView({
 
           <div className="thin-scrollbar flex flex-1 flex-col gap-3 overflow-auto p-4">
             {error && (
-              <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-ink">{error}</div>
+              <div className="border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-coral" role="alert">{error}</div>
             )}
             {isLoading && (
               <div className="flex items-center gap-3 border border-line bg-panel p-6 text-sm text-muted">
@@ -899,7 +899,7 @@ function TopicLeaders({
       </div>
 
       <div className="border border-t-0 border-line bg-white/95 backdrop-blur">
-        {error && <div className="border-b border-line bg-coral/10 p-4 text-sm font-medium text-ink">{error}</div>}
+        {error && <div className="border-b border-coral/30 bg-coral/10 p-4 text-sm font-medium text-coral" role="alert">{error}</div>}
 
         {!error && niches.length === 0 && (
           <div className="p-10 text-center">

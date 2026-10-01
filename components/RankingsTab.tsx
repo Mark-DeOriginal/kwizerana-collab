@@ -257,7 +257,7 @@ export function RankingsTab() {
   return (
     <div>
       {error && (
-        <div className="mb-4 border border-coral/40 bg-coral/10 p-3 text-sm font-medium text-ink">{error}</div>
+        <div className="mb-4 border border-coral/40 bg-coral/10 p-3 text-sm font-medium text-coral" role="alert">{error}</div>
       )}
 
       <div className="mb-5 flex items-center justify-between gap-3">

@@ -206,16 +206,18 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
   const buyAddrOk = !real || Boolean(trade.buyer_wallet_address);
   const buyerAddr = (trade.buyer_wallet_address as `0x${string}`) ?? "0x0000000000000000000000000000000000000000";
 
-  const [phase, setPhase] = useState<"idle" | "tx" | "working">("idle");
+  const [phase, setPhase] = useState<"idle" | "tx" | "done">("idle");
   const [simDone, setSimDone] = useState(false);
 
   async function run() {
+    if (phase !== "idle") return;
     const tradeId = tradeRefToBytes32(trade.trade_ref);
     if (!real) {
       setPhase("tx");
       setSimDone(false);
       setTimeout(() => {
         setSimDone(true);
+        setPhase("done");
         onCompleted(demoHash(trade.trade_ref, "ESCROW"));
       }, 1000);
       return;
@@ -243,6 +245,7 @@ export function FundEscrowButton({ trade, onCompleted, onError }: EscrowButtonPr
         functionName: "lock",
         args: [tradeId, buyerAddr, token, amount, feeBps]
       });
+      setPhase("done");
       onCompleted(lockHash);
     } catch (e) {
       onError(escrowWalletError(e, "Transaction failed. Check your wallet and try again."));
@@ -288,13 +291,14 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
   const ensureEscrowChain = useEscrowChainGuard();
-  const [phase, setPhase] = useState<"idle" | "tx">("idle");
+  const [phase, setPhase] = useState<"idle" | "tx" | "done">("idle");
 
   async function run() {
+    if (phase !== "idle") return;
     if (!real) {
       setPhase("tx");
       setTimeout(() => {
-        setPhase("idle");
+        setPhase("done");
         onCompleted(demoHash(trade.trade_ref, "PAYMENT"));
       }, 900);
       return;
@@ -312,7 +316,7 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
         functionName: "markPaymentSent",
         args: [tradeRefToBytes32(trade.trade_ref)]
       });
-      setPhase("idle");
+      setPhase("done");
       onCompleted(hash);
     } catch (error) {
       onError(escrowWalletError(error, "Unable to record the payment on-chain. Check your wallet and try again."));
@@ -325,6 +329,7 @@ export function MarkPaymentSentButton({ trade, onCompleted, onError }: EscrowBut
   return (
     <EscrowButtonShell
       busy={phase === "tx"}
+      disabled={phase === "done"}
       busyLabel={real ? "Recording payment status …" : "Submitting receipt …"}
       onClick={() => void run()}
       label={real ? "Submit receipt" : "Submit payment receipt"}
@@ -341,14 +346,29 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
   const { writeContractAsync } = useWriteContract();
   const ensureEscrowChain = useEscrowChainGuard();
   const [phase, setPhase] = useState<"idle" | "tx" | "done">("idle");
+  const { refetch: refetchChainTrade } = useReadContract({
+    address: escrow,
+    abi: ESCROW_ABI,
+    functionName: "trades",
+    args: [tradeRefToBytes32(trade.trade_ref)],
+    chainId: escrowChain.id,
+    query: { enabled: real }
+  });
 
   async function run() {
+    if (phase !== "idle") return;
     if (!real) {
       setPhase("tx");
       setTimeout(() => {
         setPhase("done");
         onCompleted(demoHash(trade.trade_ref, "RELEASE"));
       }, 900);
+      return;
+    }
+    const chainTrade = await refetchChainTrade();
+    if (chainTrade.data && Number(chainTrade.data[6]) === 3) {
+      setPhase("done");
+      onCompleted();
       return;
     }
     if (address && trade.seller_wallet_address && !sameWallet(address, trade.seller_wallet_address)) {
@@ -377,6 +397,7 @@ export function ConfirmReleaseButton({ trade, onCompleted, onError }: EscrowButt
   return (
     <EscrowButtonShell
       busy={phase === "tx"}
+      disabled={phase === "done"}
       busyLabel={real ? "Confirming on-chain …" : "Confirming …"}
       onClick={() => void run()}
       label={real ? "Payment confirmed" : "Confirm payment received"}
@@ -392,13 +413,14 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
   const escrow = getEscrowAddress();
   const { writeContractAsync } = useWriteContract();
   const ensureEscrowChain = useEscrowChainGuard();
-  const [phase, setPhase] = useState<"idle" | "tx">("idle");
+  const [phase, setPhase] = useState<"idle" | "tx" | "done">("idle");
 
   async function run() {
+    if (phase !== "idle") return;
     if (!real) {
       setPhase("tx");
       setTimeout(() => {
-        setPhase("idle");
+        setPhase("done");
         onCompleted(demoHash(trade.trade_ref, "CLAIM"), { destAddress: trade.buyer_wallet_address ?? address });
       }, 900);
       return;
@@ -412,7 +434,7 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
         functionName: "claim",
         args: [tradeRefToBytes32(trade.trade_ref)]
       });
-      setPhase("idle");
+      setPhase("done");
       onCompleted(hash, { destAddress: trade.buyer_wallet_address ?? address });
     } catch (e) {
       onError(escrowWalletError(e, "Transaction failed. Try again."));
@@ -431,6 +453,7 @@ export function ReceiveCryptoButton({ trade, onCompleted, onError }: EscrowButto
       )}
       <EscrowButtonShell
         busy={phase === "tx"}
+        disabled={phase === "done"}
         busyLabel={real ? "Finalizing on-chain …" : "Simulating receipt …"}
         onClick={() => void run()}
         label={real ? `Receive ${trade.crypto_currency}` : `Receive ${trade.crypto_currency} (simulate)`}
@@ -449,7 +472,7 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
   const { writeContractAsync } = useWriteContract();
   const ensureEscrowChain = useEscrowChainGuard();
   const publicClient = usePublicClient({ chainId: escrowChain.id });
-  const [phase, setPhase] = useState<"idle" | "tx">("idle");
+  const [phase, setPhase] = useState<"idle" | "tx" | "done">("idle");
   const [requestRecorded, setRequestRecorded] = useState(false);
   const [nowSeconds, setNowSeconds] = useState(() => Math.floor(Date.now() / 1000));
   const tradeId = tradeRefToBytes32(trade.trade_ref);
@@ -476,10 +499,11 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
   }, [cancellationReady, cancellationRequested]);
 
   async function run() {
+    if (phase !== "idle") return;
     if (!real) {
       setPhase("tx");
       setTimeout(() => {
-        setPhase("idle");
+        setPhase("done");
         onCompleted(demoHash(trade.trade_ref, "REFUND"));
       }, 900);
       return;
@@ -505,7 +529,7 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
         return;
       }
       const hash = await writeContractAsync({ address: escrow, abi: ESCROW_ABI, functionName: "refund", args: [tradeId] });
-      setPhase("idle");
+      setPhase("done");
       onCompleted(hash);
     } catch (e) {
       onError(escrowWalletError(e, "Transaction failed. Try again."));
@@ -521,7 +545,7 @@ export function RefundEscrowButton({ trade, onCompleted, onError }: EscrowButton
         busy={phase === "tx"}
         busyLabel={cancellationRequested ? "Refunding..." : "Requesting refund..."}
         onClick={() => void run()}
-        disabled={Boolean(real && cancellationRequested && !cancellationReady)}
+        disabled={phase === "done" || Boolean(real && cancellationRequested && !cancellationReady)}
         label={real
           ? cancellationRequested
             ? cancellationReady ? "Receive refund" : `Refund available in ${refundWaitLabel}`

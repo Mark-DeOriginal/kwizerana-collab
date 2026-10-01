@@ -87,4 +87,4 @@ This is a launch gate, not a claim that the application is ready. P0 items block
 - Financial operations lack comprehensive database transactions/locking.
 - Rate limiting is in-memory and narrow.
 - Runtime schema initialization replaces migrations.
-- A twelve-scenario local escrow suite plus Solhint static rules exists; application integration, deeper fuzz/formal, stablecoin-fork, and CI coverage remain missing.
+- A thirteen-scenario local escrow suite plus Solhint static rules exists; application integration, deeper fuzz/formal, stablecoin-fork, and CI coverage remain missing.

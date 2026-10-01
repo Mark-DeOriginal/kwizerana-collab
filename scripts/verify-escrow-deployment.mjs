@@ -29,7 +29,7 @@ const expectedOwner = requiredAddress("ESCROW_OWNER_ADDRESS");
 const expectedArbitrator = requiredAddress("ESCROW_ARBITRATOR_ADDRESS");
 const expectedFeeRecipient = requiredAddress("ESCROW_FEE_RECIPIENT_ADDRESS");
 const expectedTokens = [requiredAddress("NEXT_PUBLIC_ESCROW_USDT_ADDRESS"), requiredAddress("NEXT_PUBLIC_ESCROW_USDC_ADDRESS")];
-const expectedFeeBps = Number(process.env.ESCROW_FEE_BPS ?? 20);
+const expectedFeeBps = Number(process.env.ESCROW_FEE_BPS ?? 100);
 const artifactPath = path.join(root, "contracts", "artifacts", "contracts", "KwizeranaEscrow.sol", "KwizeranaEscrow.json");
 if (!fs.existsSync(artifactPath)) throw new Error("Missing contract artifact. Run npm run contract:compile first.");
 const { abi, deployedBytecode } = JSON.parse(fs.readFileSync(artifactPath, "utf8"));

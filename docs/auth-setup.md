@@ -6,6 +6,7 @@
 - Central page-route protection in `middleware.ts` for account, dashboard, notification, personal P2P, submission, and administration surfaces.
 - Signed-out visits to protected pages are redirected to `/redirect`; a validated internal `next` path carries the intended destination through sign-in, registration, and Google OAuth.
 - Optional Google OAuth.
+- Google OAuth accounts treat the provider-asserted email as verified and are not sent through the local password-account email-verification prompt.
 - Email/password registration with bcrypt hashing.
 - Email verification through signed tokens and Resend.
 - Ticket-backed credentials sign-in.

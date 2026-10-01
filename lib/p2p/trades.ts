@@ -5,7 +5,7 @@ import { getFees } from "@/lib/p2p/fees";
 import { getLiveRate } from "@/lib/p2p/price-feed";
 import { isAddress } from "viem";
 import { getEscrowAddress, isEscrowDeployed } from "@/lib/web3/escrow";
-import { verifyEscrowTransaction, type EscrowChainProof, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
+import { findEscrowReleaseTransaction, verifyEscrowTransaction, type EscrowChainProof, type EscrowVerificationAction } from "@/lib/p2p/chain-verification";
 import { reconcileEscrowTrade, recordConfirmedEscrowEvent } from "@/lib/p2p/reconciliation";
 
 function fmtCryptoAmount(n: number): string {
@@ -532,7 +532,6 @@ export async function applyTradeAction(
   await ensureDatabase();
   await applySavedBuyerWallets(tradeId);
   if (isEscrowDeployed()) await reconcileEscrowTrade(tradeId);
-  assertEscrowMutationInput(action, input);
   const ownedVendorIds = await getOwnedVendorIds(userId);
   const allIds = [userId, ...Array.from(ownedVendorIds)];
   const rows = await dbQuery<TradeRow>(
@@ -547,6 +546,14 @@ export async function applyTradeAction(
   const isInitiator = isUserOrOwned(userId, row.initiator_id, ownedVendorIds);
   const status = row.status;
   const escrowFunded = row.escrow_status === "funded";
+
+  // A wallet can mine the release successfully while the subsequent browser
+  // request is interrupted. Recover the matching on-chain event instead of
+  // asking the seller to submit an impossible second release transaction.
+  if (isEscrowDeployed() && action === "release" && !input.txHash && row.escrow_debit_tx) {
+    input.txHash = await findEscrowReleaseTransaction(row.trade_ref, row.escrow_debit_tx) ?? undefined;
+  }
+  assertEscrowMutationInput(action, input);
 
   let chainVerification: EscrowChainProof | null = null;
   if (isEscrowDeployed() && ESCROW_ACTIONS.has(action)) {

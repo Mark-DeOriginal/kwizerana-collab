@@ -277,7 +277,7 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
         </div>
 
         {error && (
-          <div className="mt-6 border border-coral/40 bg-coral/10 p-4 text-sm font-medium" role="alert">
+          <div className="mt-6 border border-coral/40 bg-coral/10 p-4 text-sm font-medium text-coral" role="alert">
             {error}
             <button onClick={() => void load()} className="ml-3 font-semibold underline underline-offset-2">
               Retry
@@ -354,7 +354,9 @@ function DashboardAttention({ data, loading }: { data: DashboardData | null; loa
   );
   const reconciliationTrades = activeTrades.filter((trade) => trade.status === "reconciliation_required");
   const openDisputes = (data?.disputes ?? []).filter((dispute) => dispute.status === "open");
-  const securityNeedsAttention = Boolean(data?.security && (!data.security.emailVerified || !data.security.twoFactorEnabled));
+  const needsEmailVerification = Boolean(data?.security?.hasPassword && !data.security.emailVerified);
+  const needsTwoFactor = Boolean(data?.security && !data.security.twoFactorEnabled);
+  const securityNeedsAttention = needsEmailVerification || needsTwoFactor;
 
   let title = "You’re ready to trade";
   let message = "Browse the market when you’re ready, or connect a wallet to make your first order.";
@@ -383,7 +385,11 @@ function DashboardAttention({ data, loading }: { data: DashboardData | null; loa
     action = "View active trades";
   } else if (securityNeedsAttention) {
     title = "Secure your account before trading";
-    message = "Verify your email and enable two-factor authentication for stronger protection.";
+    message = needsEmailVerification && needsTwoFactor
+      ? "Verify your email and enable two-factor authentication for stronger protection."
+      : needsEmailVerification
+        ? "Verify your email address to finish securing your account."
+        : "Enable two-factor authentication for stronger account protection.";
     href = "/account/security";
     action = "Review security";
   }
@@ -1789,9 +1795,21 @@ type InventoryEntry = {
 const INVENTORY_TOKENS = ["USDT", "USDC"];
 
 function InventoryEditor({ onChanged, managed }: { onChanged: () => void; managed?: boolean }) {
-  const [busy, setBusy] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState("");
   const [balances, setBalances] = useState<Record<string, string>>({ USDT: "", USDC: "" });
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const busy = saveState === "saving";
+
+  useEffect(() => () => {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
 
   const applyInventory = (list: InventoryEntry[]) => {
     setBalances((prev) => {
@@ -1832,7 +1850,8 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
       setError("Enter an amount for at least one token.");
       return;
     }
-    setBusy(true);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    setSaveState("saving");
     setError("");
     try {
       const res = await fetch("/api/p2p/vendor/inventory", {
@@ -1847,8 +1866,15 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
       }
       if (data?.inventory) applyInventory(data.inventory);
       onChanged();
+      setSaveState("saved");
+      savedTimer.current = setTimeout(() => {
+        setSaveState("idle");
+        savedTimer.current = null;
+      }, 1000);
+    } catch {
+      setError("Unable to update inventory. Please try again.");
     } finally {
-      setBusy(false);
+      setSaveState((current) => current === "saving" ? "idle" : current);
     }
   };
 
@@ -1867,7 +1893,10 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
             <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">{code}</span>
             <NumInput
               value={balances[code] ?? ""}
-              onValueChange={(raw) => setBalances((prev) => ({ ...prev, [code]: raw }))}
+              onValueChange={(raw) => {
+                setSaveState("idle");
+                setBalances((prev) => ({ ...prev, [code]: raw }));
+              }}
               min="0"
               placeholder="0"
               className="h-10 w-full border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
@@ -1881,7 +1910,8 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
         disabled={busy}
         className="mt-3 flex h-10 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
       >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save inventory"}
+        {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : saveState === "saved" ? <Check className="h-4 w-4" /> : null}
+        {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save inventory"}
       </button>
       {error && <p className="mt-2 text-xs font-semibold text-coral">{error}</p>}
     </div>
@@ -1891,9 +1921,20 @@ function InventoryEditor({ onChanged, managed }: { onChanged: () => void; manage
 function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; managed?: boolean }) {
   const [buyFeePercent, setBuyFeePercent] = useState("");
   const [sellFeePercent, setSellFeePercent] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const busy = saveState === "saving";
+
+  useEffect(() => () => {
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
 
   const loadFee = useCallback(async () => {
     const res = await fetch("/api/p2p/vendor/fee");
@@ -1919,9 +1960,9 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
       setError("Sell fee must be between 0% and 50%.");
       return;
     }
-    setBusy(true);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    setSaveState("saving");
     setError("");
-    setSuccess("");
     try {
       const res = await fetch("/api/p2p/vendor/fee", {
         method: "POST",
@@ -1935,11 +1976,16 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
       }
       if (data?.vendor_buy_fee_percent !== undefined) setBuyFeePercent(String(data.vendor_buy_fee_percent));
       if (data?.vendor_sell_fee_percent !== undefined) setSellFeePercent(String(data.vendor_sell_fee_percent));
-      setSuccess("Fees updated.");
-      setTimeout(() => setSuccess(""), 6000);
       onChanged();
+      setSaveState("saved");
+      savedTimer.current = setTimeout(() => {
+        setSaveState("idle");
+        savedTimer.current = null;
+      }, 1000);
+    } catch {
+      setError("Unable to update fees. Please try again.");
     } finally {
-      setBusy(false);
+      setSaveState((current) => current === "saving" ? "idle" : current);
     }
   }
 
@@ -1960,7 +2006,7 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
           <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Sell fee (%)</span>
           <NumInput
             value={sellFeePercent}
-            onValueChange={(raw) => setSellFeePercent(raw)}
+            onValueChange={(raw) => { setSaveState("idle"); setSellFeePercent(raw); }}
             min="0"
             max="50"
             placeholder="0"
@@ -1971,7 +2017,7 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
           <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted">Buy fee (%)</span>
           <NumInput
             value={buyFeePercent}
-            onValueChange={(raw) => setBuyFeePercent(raw)}
+            onValueChange={(raw) => { setSaveState("idle"); setBuyFeePercent(raw); }}
             min="0"
             max="50"
             placeholder="0"
@@ -1991,10 +2037,10 @@ function VendorFeeEditor({ onChanged, managed }: { onChanged: () => void; manage
         disabled={busy}
         className="mt-3 flex h-10 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
       >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save fees"}
+        {saveState === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : saveState === "saved" ? <Check className="h-4 w-4" /> : null}
+        {saveState === "saving" ? "Saving…" : saveState === "saved" ? "Saved" : "Save fees"}
       </button>
       {error && <p className="mt-2 text-xs font-semibold text-coral">{error}</p>}
-      {success && <p className="mt-2 text-xs font-semibold text-moss">{success}</p>}
     </div>
   );
 }

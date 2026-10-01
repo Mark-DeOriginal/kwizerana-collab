@@ -165,6 +165,18 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   const [ratingBusy, setRatingBusy] = useState(false);
   const [ratingError, setRatingError] = useState("");
 
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
+
+  useEffect(() => {
+    if (!ratingError) return;
+    const timer = window.setTimeout(() => setRatingError(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [ratingError]);
+
   const allowRoleSwitch = trade.can_act_as_buyer && trade.can_act_as_seller;
   const [viewRole, setViewRole] = useState<"buyer" | "seller">(trade.my_role === "buyer" ? "buyer" : "seller");
   useEffect(() => {
@@ -494,34 +506,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
 
       <TradeChat tradeId={trade.id} />
 
-      {/* Post-completion inventory confirm */}
-      {showConfirm && confirmEligible && (
-        <div className="border border-mint/40 bg-mint/10 p-4 text-sm">
-          <p className="flex items-center gap-1.5 font-semibold">
-            <Check className="h-4 w-4 text-moss" /> Confirm remaining inventory
-          </p>
-          <p className="mt-1 text-muted">
-            This trade sold {fn(trade.crypto_amount, 6)} {trade.crypto_currency}. Confirm how much {trade.crypto_currency} you still have for sale.
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <NumInput
-              value={confirmBalance}
-              onValueChange={setConfirmBalance}
-              min="0"
-              placeholder={`Remaining ${trade.crypto_currency} for sale`}
-              className="h-9 w-40 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
-            />
-            <button
-              onClick={() => void doConfirmInventory(confirmBalance)}
-              disabled={inventoryBusy || confirmBalance === ""}
-              className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
-            >
-              {inventoryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Order summary */}
       <div className="space-y-2 border border-line bg-white p-4 text-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">Order summary</p>
@@ -715,16 +699,11 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
                 </label>
               )}
               {receiptPreview && (
-                <>
-                  <div className="border border-line bg-panel p-3 text-xs leading-5 text-muted">
-                    Your wallet confirmation records that you have marked the fiat payment as sent. It does not release the escrowed crypto—the seller must verify that the money arrived before releasing it.
-                  </div>
-                  <MarkPaymentSentButton
-                    trade={trade}
-                    onCompleted={(txHash) => void doAction("mark_paid", { receipt_image: receiptPreview, tx_hash: txHash })}
-                    onError={setError}
-                  />
-                </>
+                <MarkPaymentSentButton
+                  trade={trade}
+                  onCompleted={(txHash) => void doAction("mark_paid", { receipt_image: receiptPreview, tx_hash: txHash })}
+                  onError={setError}
+                />
               )}
             </div>
           ) : (
@@ -785,6 +764,32 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
           <div className="flex items-start gap-2 border border-mint bg-mint/40 p-3 text-sm font-semibold text-moss">
             <Check className="mt-0.5 h-4 w-4 shrink-0" />
             Trade completed successfully
+          </div>
+        )}
+
+        {/* Keep the vendor's final inventory task beside the completion state. */}
+        {showConfirm && confirmEligible && (
+          <div className="border border-mint/40 bg-mint/10 p-4 text-sm">
+            <p className="font-semibold">Confirm remaining inventory</p>
+            <p className="mt-1 text-muted">
+              This trade sold {fn(trade.crypto_amount, 6)} {trade.crypto_currency}. Confirm how much {trade.crypto_currency} you still have for sale.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <NumInput
+                value={confirmBalance}
+                onValueChange={setConfirmBalance}
+                min="0"
+                placeholder={`Remaining ${trade.crypto_currency} for sale`}
+                className="h-9 w-40 border border-line bg-white px-3 text-sm outline-none focus:border-ocean"
+              />
+              <button
+                onClick={() => void doConfirmInventory(confirmBalance)}
+                disabled={inventoryBusy || confirmBalance === ""}
+                className="flex h-9 items-center gap-1.5 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:opacity-60"
+              >
+                {inventoryBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Confirm"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -1070,23 +1075,42 @@ function CancelTradeButton({ busy, onClick }: { busy: boolean; onClick: () => vo
 
   if (count > 0) {
     return (
-      <button
-        disabled
-        className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 border border-coral/40 bg-coral/5 text-sm font-semibold text-coral"
-      >
-        {count} · Yes, cancel trade
-      </button>
+      <div className="grid w-full gap-2 sm:grid-cols-2">
+        <button
+          disabled
+          className="flex h-10 w-full cursor-not-allowed items-center justify-center gap-2 border border-coral/40 bg-coral/5 text-sm font-semibold text-coral"
+        >
+          {count} · Yes, cancel trade
+        </button>
+        <button
+          type="button"
+          onClick={() => { setArmed(false); setCount(6); }}
+          className="flex h-10 w-full items-center justify-center border border-line bg-white text-sm font-semibold text-ink transition-colors hover:border-ink"
+        >
+          Continue trade
+        </button>
+      </div>
     );
   }
 
   return (
-    <button
-      onClick={onClick}
-      disabled={busy}
-      className="flex h-10 w-full items-center justify-center gap-2 bg-coral text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60"
-    >
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Yes, cancel trade"}
-    </button>
+    <div className="grid w-full gap-2 sm:grid-cols-2">
+      <button
+        onClick={onClick}
+        disabled={busy}
+        className="flex h-10 w-full items-center justify-center gap-2 bg-coral text-sm font-semibold text-white transition-colors hover:bg-coral/80 disabled:opacity-60"
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Yes, cancel trade"}
+      </button>
+      <button
+        type="button"
+        onClick={() => { setArmed(false); setCount(6); }}
+        disabled={busy}
+        className="flex h-10 w-full items-center justify-center border border-line bg-white text-sm font-semibold text-ink transition-colors hover:border-ink disabled:opacity-60"
+      >
+        Continue trade
+      </button>
+    </div>
   );
 }
 

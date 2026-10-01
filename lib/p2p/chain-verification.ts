@@ -103,6 +103,28 @@ export type EscrowChainProof = {
   transactionHash: Hash;
 };
 
+/**
+ * Finds the confirmed release transaction for a trade when the wallet
+ * succeeded but the browser failed before persisting its hash. The funding
+ * receipt provides a bounded, trade-specific starting block for the lookup.
+ */
+export async function findEscrowReleaseTransaction(
+  tradeRef: string,
+  fundingTxHash: string
+): Promise<Hash | null> {
+  if (!/^0x[a-fA-F0-9]{64}$/.test(fundingTxHash)) return null;
+  const fundingReceipt = await client.getTransactionReceipt({ hash: fundingTxHash as Hash });
+  const event = ESCROW_EVENTS.find((item) => item.name === "Released")!;
+  const logs = await client.getLogs({
+    address: getEscrowAddress(),
+    event,
+    args: { tradeId: tradeRefToBytes32(tradeRef) },
+    fromBlock: fundingReceipt.blockNumber,
+    toBlock: "latest"
+  });
+  return logs.at(-1)?.transactionHash ?? null;
+}
+
 export async function verifyEscrowTransaction(input: VerificationInput): Promise<EscrowChainProof> {
   const requiredConfirmations = Math.max(1, Number(process.env.ESCROW_CONFIRMATIONS ?? 3));
   const receipt = await client.waitForTransactionReceipt({

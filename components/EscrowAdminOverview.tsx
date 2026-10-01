@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
-import { formatUnits } from "viem";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Activity, AlertTriangle, ArrowUpRight, Check, CheckCircle2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { formatUnits, parseUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { friendlyError, readJson } from "@/lib/client-request";
 import { AVALANCHE_TOKENS, ESCROW_ABI, explorerAddressUrl, getEscrowAddress, isEscrowDeployed } from "@/lib/web3/escrow";
 import { escrowChain } from "@/lib/web3/config";
 import { escrowWalletError, useEscrowChainGuard } from "@/lib/web3/use-escrow-chain";
+import { NumInput } from "@/components/p2p/custom-ui";
 
 type Metrics = {
   summary: { totalTrades: number; completedTrades: number; verifiedTrades: number; activeTrades: number; openDisputes: number };
@@ -28,24 +29,52 @@ function TokenTreasuryCard({ symbol, token, owner }: { symbol: string; token: `0
   const { writeContractAsync } = useWriteContract();
   const ensureEscrowChain = useEscrowChainGuard();
   const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"error" | "success">("success");
   const { data: accrued = BigInt(0), refetch: refetchAccrued } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "accruedFees", args: [token], chainId: escrowChain.id });
-  const { data: liability = BigInt(0), refetch: refetchLiability } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "liabilities", args: [token], chainId: escrowChain.id });
   const { data: totalAccrued = BigInt(0), refetch: refetchTotalAccrued } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "totalFeesAccrued", args: [token], chainId: escrowChain.id });
   const { data: totalWithdrawn = BigInt(0), refetch: refetchTotalWithdrawn } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "totalFeesWithdrawn", args: [token], chainId: escrowChain.id });
   const canWithdraw = Boolean(address && owner && address.toLowerCase() === owner.toLowerCase() && accrued > BigInt(0));
 
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
   async function withdraw() {
     if (!canWithdraw || !publicClient) return;
+    let amount: bigint;
+    try {
+      amount = parseUnits(withdrawAmount.trim(), 6);
+    } catch {
+      setMessageTone("error");
+      setMessage(`Enter a valid ${symbol} amount with no more than 6 decimal places.`);
+      return;
+    }
+    if (amount <= BigInt(0)) {
+      setMessageTone("error");
+      setMessage("Enter an amount greater than zero.");
+      return;
+    }
+    if (amount > accrued) {
+      setMessageTone("error");
+      setMessage(`The withdrawal amount cannot exceed the available ${symbol} fees.`);
+      return;
+    }
     setWithdrawing(true);
     setMessage("");
     try {
       await ensureEscrowChain();
-      const hash = await writeContractAsync({ address: escrow, abi: ESCROW_ABI, functionName: "withdrawFees", args: [token, accrued] });
+      const hash = await writeContractAsync({ address: escrow, abi: ESCROW_ABI, functionName: "withdrawFees", args: [token, amount], chainId: escrowChain.id });
       await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
-      await Promise.all([refetchAccrued(), refetchLiability(), refetchTotalAccrued(), refetchTotalWithdrawn()]);
+      await Promise.all([refetchAccrued(), refetchTotalAccrued(), refetchTotalWithdrawn()]);
+      setWithdrawAmount("");
+      setMessageTone("success");
       setMessage("Fees withdrawn to the configured treasury.");
     } catch (error) {
+      setMessageTone("error");
       setMessage(escrowWalletError(error, "Withdrawal failed. Confirm that the connected wallet is the escrow owner."));
     } finally {
       setWithdrawing(false);
@@ -54,31 +83,42 @@ function TokenTreasuryCard({ symbol, token, owner }: { symbol: string; token: `0
 
   return (
     <div className="border border-line bg-white p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{symbol} treasury</p>
-          <p className="mt-2 text-2xl font-bold tracking-tight">{number(Number(formatUnits(accrued, 6)), 6)} {symbol}</p>
-          <p className="mt-1 text-xs text-muted">Available fees</p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm font-semibold">{number(Number(formatUnits(liability, 6)), 6)} {symbol}</p>
-          <p className="text-xs text-muted">Active liability</p>
-        </div>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{symbol} treasury</p>
+        <p className="mt-2 text-2xl font-bold tracking-tight">{number(Number(formatUnits(accrued, 6)), 6)} {symbol}</p>
+        <p className="mt-1 text-xs text-muted">Available fees</p>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4 text-sm">
         <div><p className="text-xs text-muted">Total fees accrued</p><p className="mt-1 font-semibold">{number(Number(formatUnits(totalAccrued, 6)), 6)} {symbol}</p></div>
         <div><p className="text-xs text-muted">Total withdrawn</p><p className="mt-1 font-semibold">{number(Number(formatUnits(totalWithdrawn, 6)), 6)} {symbol}</p></div>
       </div>
-      <button
-        type="button"
-        onClick={() => void withdraw()}
-        disabled={!canWithdraw || withdrawing}
-        className="mt-5 flex h-10 w-full items-center justify-center gap-2 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-45"
-      >
-        {withdrawing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}
-        {withdrawing ? "Confirming withdrawal…" : accrued > BigInt(0) ? `Withdraw all ${symbol} fees` : "No fees available"}
-      </button>
-      {message && <p className="mt-2 text-xs text-muted" role="status">{message}</p>}
+      <div className="mt-5 flex items-stretch gap-2">
+        <div className="flex h-10 min-w-0 flex-1 items-center border border-line bg-white focus-within:border-ink">
+          <NumInput
+            value={withdrawAmount}
+            onValueChange={(value) => { setWithdrawAmount(value); setMessage(""); }}
+            min="0"
+            placeholder="0.00"
+            aria-label={`${symbol} fee withdrawal amount`}
+            className="h-full min-w-0 flex-1 bg-transparent px-3 text-sm font-semibold outline-none"
+          />
+          <span className="pr-3 text-xs font-semibold text-muted">{symbol}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => void withdraw()}
+          disabled={!canWithdraw || withdrawing || !withdrawAmount.trim()}
+          className="flex h-10 shrink-0 items-center justify-center gap-2 bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {withdrawing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpRight className="h-4 w-4" />}
+          {withdrawing ? "Withdrawing…" : `Withdraw ${symbol} fees`}
+        </button>
+      </div>
+      {message && (
+        <p className={`mt-2 text-xs font-semibold ${messageTone === "error" ? "text-coral" : "text-moss"}`} role={messageTone === "error" ? "alert" : "status"}>
+          {message}
+        </p>
+      )}
     </div>
   );
 }
@@ -90,9 +130,78 @@ export function EscrowAdminOverview() {
   const escrow = getEscrowAddress();
   const deployed = isEscrowDeployed();
   const chainId = Number(process.env.NEXT_PUBLIC_ESCROW_CHAIN_ID ?? 43114);
+  const { address } = useAccount();
+  const publicClient = usePublicClient({ chainId: escrowChain.id });
+  const { writeContractAsync } = useWriteContract();
+  const ensureEscrowChain = useEscrowChainGuard();
+  const [feePercent, setFeePercent] = useState("");
+  const [feeBusy, setFeeBusy] = useState(false);
+  const [feeSaved, setFeeSaved] = useState(false);
+  const [feeMessage, setFeeMessage] = useState("");
+  const [feeMessageTone, setFeeMessageTone] = useState<"error" | "success">("success");
+  const feeSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data: owner } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "owner", chainId: escrowChain.id, query: { enabled: deployed } });
   const { data: treasury } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "feeRecipient", chainId: escrowChain.id, query: { enabled: deployed } });
-  const { data: feeBps } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "feeBps", chainId: escrowChain.id, query: { enabled: deployed } });
+  const { data: feeBps, refetch: refetchFeeBps } = useReadContract({ address: escrow, abi: ESCROW_ABI, functionName: "feeBps", chainId: escrowChain.id, query: { enabled: deployed } });
+
+  useEffect(() => {
+    if (feeBps !== undefined) setFeePercent(String(Number(feeBps) / 100));
+  }, [feeBps]);
+
+  useEffect(() => () => {
+    if (feeSavedTimer.current) clearTimeout(feeSavedTimer.current);
+  }, []);
+
+  useEffect(() => {
+    if (!feeMessage) return;
+    const timer = window.setTimeout(() => setFeeMessage(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [feeMessage]);
+
+  async function updateFee() {
+    const percent = Number(feePercent);
+    const nextFeeBps = Math.round(percent * 100);
+    if (!Number.isFinite(percent) || percent < 0 || percent > 100 || Math.abs(nextFeeBps / 100 - percent) > 0.000001) {
+      setFeeMessageTone("error");
+      setFeeMessage("Enter a percentage from 0% to 100%, using no more than two decimal places.");
+      return;
+    }
+    if (!address || !owner || address.toLowerCase() !== owner.toLowerCase()) {
+      setFeeMessageTone("error");
+      setFeeMessage("Connect the escrow owner wallet to update the fee.");
+      return;
+    }
+    if (!treasury || !publicClient) return;
+    if (feeSavedTimer.current) clearTimeout(feeSavedTimer.current);
+    setFeeBusy(true);
+    setFeeSaved(false);
+    setFeeMessage("");
+    try {
+      await ensureEscrowChain();
+      const hash = await writeContractAsync({
+        address: escrow,
+        abi: ESCROW_ABI,
+        functionName: "setFeeConfiguration",
+        args: [nextFeeBps, treasury],
+        chainId: escrowChain.id
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({ hash, confirmations: 1 });
+      if (receipt.status !== "success") throw new Error("Fee update transaction failed.");
+      await refetchFeeBps();
+      setFeeMessageTone("success");
+      setFeeMessage(`Escrow fee updated to ${nextFeeBps / 100}%.`);
+      setFeeSaved(true);
+      feeSavedTimer.current = setTimeout(() => {
+        setFeeSaved(false);
+        feeSavedTimer.current = null;
+      }, 1000);
+    } catch (updateError) {
+      setFeeMessageTone("error");
+      setFeeMessage(escrowWalletError(updateError, "Unable to update the escrow fee."));
+    } finally {
+      setFeeBusy(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -160,7 +269,37 @@ export function EscrowAdminOverview() {
               {AVALANCHE_TOKENS.USDT && <TokenTreasuryCard symbol="USDT" token={AVALANCHE_TOKENS.USDT as `0x${string}`} owner={owner} />}
               {AVALANCHE_TOKENS.USDC && <TokenTreasuryCard symbol="USDC" token={AVALANCHE_TOKENS.USDC as `0x${string}`} owner={owner} />}
             </div>
-            <p className="mt-3 text-xs leading-5 text-muted">Withdrawals require the connected escrow-owner wallet. In production this should be a multi-admin Safe; website admin permissions alone cannot move funds.</p>
+            <div className="mt-4 border border-line bg-white p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <label htmlFor="escrow-fee-percent" className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">Escrow fee</label>
+                  <div className="mt-2 flex h-10 w-full max-w-[220px] items-center border border-line bg-white focus-within:border-ink">
+                    <input
+                      id="escrow-fee-percent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={feePercent}
+                      onChange={(event) => { setFeePercent(event.target.value); setFeeSaved(false); setFeeMessage(""); }}
+                      className="h-full min-w-0 flex-1 px-3 text-sm font-semibold outline-none"
+                      aria-describedby="escrow-fee-help"
+                    />
+                    <span className="pr-3 text-sm font-semibold text-muted">%</span>
+                  </div>
+                  <p id="escrow-fee-help" className="mt-1.5 text-xs text-muted">Applies to new escrow deposits.</p>
+                </div>
+                <button type="button" onClick={() => void updateFee()} disabled={feeBusy || feeSaved || feeBps === undefined} className="flex h-10 items-center justify-center gap-2 bg-ink px-5 text-sm font-semibold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-45">
+                  {feeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : feeSaved ? <Check className="h-4 w-4" /> : null}
+                  {feeBusy ? "Saving…" : feeSaved ? "Saved" : "Update fee"}
+                </button>
+              </div>
+              {feeMessage && (
+                <p className={`mt-2 text-xs font-semibold ${feeMessageTone === "error" ? "text-coral" : "text-moss"}`} role={feeMessageTone === "error" ? "alert" : "status"}>
+                  {feeMessage}
+                </p>
+              )}
+            </div>
           </>
         )}
       </section>

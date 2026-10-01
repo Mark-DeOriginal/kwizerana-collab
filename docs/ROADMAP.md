@@ -39,8 +39,8 @@ Exit: database state cannot be advanced by a fabricated hash or invalid actor, a
 Status: **implementation candidate; testnet validation and independent audit pending**
 
 - Confirm trust and decentralization model.
-- Implemented replacement candidate: explicit cancellation with a 30-minute buyer-protection window, permissionless recovery after that window, fixed settlement recipients, token controls, safe transfers, 0.20% successful-trade fee, multisig-ready roles, and new-lock pause without blocking exits. Automatic expiry no longer prevents a buyer from recording payment.
-- Twelve local scenarios, varied amount/fee invariants, static lint rules, and an internal review pass. The patched replacement is deployed on Avalanche Fuji with exact runtime-bytecode and configuration verification; complete the end-to-end application/reconciliation drill, deeper fuzz/formal work, and stablecoin-fork coverage.
+- Implemented replacement candidate: explicit cancellation with a 30-minute buyer-protection window, permissionless recovery after that window, fixed settlement recipients, token controls, safe transfers, an owner-configurable successful-trade fee from 0% to 100% (currently 1% on Fuji), multisig-ready roles, and new-lock pause without blocking exits. Automatic expiry no longer prevents a buyer from recording payment.
+- Thirteen local scenarios, varied amount/fee invariants, static lint rules, and an internal review pass. The patched replacement is deployed on Avalanche Fuji with exact runtime-bytecode and configuration verification; complete the end-to-end application/reconciliation drill, deeper fuzz/formal work, and stablecoin-fork coverage.
 - Integrate verified contract events with the server.
 - Deploy and exercise on Avalanche testnet.
 - Obtain independent audit before mainnet.
@@ -84,6 +84,7 @@ Exit: realistic end-to-end buy and sell journeys pass happy-path and failure-pat
 Status: **planned on top of partially implemented features**
 
 - Split ads, inventory, pricing, orders, availability, analytics, and tier progress into focused routes.
+- Continue standardizing independent pending/success/error feedback across vendor mutations; inventory and shared fee saves now use explicit saving and saved states.
 - Replace declared inventory trust with clear verification/proof semantics.
 - Enforce advertiser eligibility and risk rules.
 - Add queue prioritization and operational alerts.

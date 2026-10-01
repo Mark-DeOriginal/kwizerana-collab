@@ -116,6 +116,16 @@ export const ESCROW_ABI = [
   },
   {
     inputs: [
+      { internalType: "uint16", name: "newFeeBps", type: "uint16" },
+      { internalType: "address", name: "newFeeRecipient", type: "address" }
+    ],
+    name: "setFeeConfiguration",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function"
+  },
+  {
+    inputs: [
       { internalType: "address", name: "token", type: "address" },
       { internalType: "uint256", name: "amount", type: "uint256" }
     ],

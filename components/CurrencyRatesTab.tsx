@@ -151,11 +151,11 @@ export function CurrencyRatesTab() {
           </button>
           <button
             onClick={() => void saveRates()}
-            disabled={saving}
+            disabled={saving || ratesSaved}
             className="flex h-9 items-center gap-2 bg-ink px-4 text-xs font-bold text-white transition-colors hover:bg-ocean disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.97]"
           >
-            {ratesSaved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
-            {ratesSaved ? "Saved" : "Save changes"}
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : ratesSaved ? <Check className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+            {saving ? "Saving…" : ratesSaved ? "Saved" : "Save changes"}
           </button>
         </div>
       </div>

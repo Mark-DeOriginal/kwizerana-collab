@@ -1,11 +1,66 @@
 "use client";
 
-import { useEffect, useRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type InputHTMLAttributes, type ReactNode, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, MoreHorizontal } from "lucide-react";
 import { formatThousandsInput, sanitizeDecimalInput } from "@/lib/p2p/number-format";
 
 export type SelectOption = { value: string; label: string };
 export type SelectGroup = { label?: string; options: SelectOption[] };
+
+function useDropdownPosition({
+  open,
+  triggerRef,
+  align,
+  width
+}: {
+  open: boolean;
+  triggerRef: RefObject<HTMLElement | null>;
+  align: "left" | "right";
+  width?: number;
+}) {
+  const [style, setStyle] = useState<CSSProperties>();
+
+  const updatePosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const menuWidth = width ?? rect.width;
+    const viewportPadding = 8;
+    const left = align === "right" ? rect.right - menuWidth : rect.left;
+    const roomBelow = window.innerHeight - rect.bottom - 12;
+    const roomAbove = rect.top - 12;
+    const openAbove = roomBelow < 160 && roomAbove > roomBelow;
+
+    setStyle({
+      position: "fixed",
+      top: openAbove ? undefined : rect.bottom + 4,
+      bottom: openAbove ? window.innerHeight - rect.top + 4 : undefined,
+      left: Math.min(Math.max(viewportPadding, left), window.innerWidth - menuWidth - viewportPadding),
+      width: menuWidth,
+      maxHeight: Math.max(80, openAbove ? roomAbove : roomBelow),
+      zIndex: 10000
+    });
+  }, [align, triggerRef, width]);
+
+  useEffect(() => {
+    if (!open) {
+      setStyle(undefined);
+      return;
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open, updatePosition]);
+
+  return style;
+}
 
 export function CustomSelect({
   value,
@@ -28,13 +83,27 @@ export function CustomSelect({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuStyle = useDropdownPosition({ open, triggerRef, align });
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!ref.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   const options = groups.flatMap((g) => g.options);
@@ -43,6 +112,7 @@ export function CustomSelect({
   return (
     <div ref={ref} className={`relative ${wrapperClassName ?? ""}`}>
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
@@ -56,11 +126,12 @@ export function CustomSelect({
         <ChevronDown className={`h-4 w-4 shrink-0 text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {open && (
+      {open && menuStyle && createPortal(
         <div
-          className={`absolute top-full z-40 mt-1 max-h-64 min-w-full overflow-auto rounded-md border border-line bg-white p-1 shadow-tight ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
+          ref={menuRef}
+          role="listbox"
+          style={menuStyle}
+          className="overflow-auto rounded-md border border-line bg-white p-1 shadow-tight"
         >
           {groups.map((group, gi) => (
             <div key={group.label ?? gi}>
@@ -88,7 +159,8 @@ export function CustomSelect({
               })}
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -103,18 +175,33 @@ export function OptionsMenu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuStyle = useDropdownPosition({ open, triggerRef, align, width: 208 });
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!ref.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="More options"
@@ -127,11 +214,12 @@ export function OptionsMenu({
         <MoreHorizontal className="h-3.5 w-3.5" />
       </button>
 
-      {open && (
+      {open && menuStyle && createPortal(
         <div
-          className={`absolute top-full z-50 mt-1 w-52 overflow-hidden rounded-md border border-line bg-white shadow-tight ${
-            align === "right" ? "right-0" : "left-0"
-          }`}
+          ref={menuRef}
+          role="menu"
+          style={menuStyle}
+          className="overflow-auto rounded-md border border-line bg-white shadow-tight"
         >
           <div className="p-1">
             {items.map((item, i) =>
@@ -160,7 +248,8 @@ export function OptionsMenu({
               )
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

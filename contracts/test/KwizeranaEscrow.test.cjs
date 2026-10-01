@@ -104,6 +104,13 @@ describe("KwizeranaEscrow", function () {
     await expectRevert(escrow.connect(seller).lock(tradeId, buyer.address, await token.getAddress(), amount, 25));
   });
 
+  it("allows owner fees through 100% and rejects values above the percentage range", async function () {
+    const { owner, treasury, escrow } = await deployFixture();
+    await escrow.connect(owner).setFeeConfiguration(10_000, treasury.address);
+    expect(await escrow.feeBps()).to.equal(10_000n);
+    await expectRevert(escrow.connect(owner).setFeeConfiguration(10_001, treasury.address));
+  });
+
   it("rejects unapproved and fee-on-transfer tokens", async function () {
     const { owner, seller, buyer, token, escrow } = await deployFixture();
     const TaxToken = await ethers.getContractFactory("TransferTaxToken");
@@ -192,7 +199,7 @@ describe("KwizeranaEscrow", function () {
 
     let expectedFees = 0n;
     for (let i = 0; i < 24; i += 1) {
-      const feeBps = (i * 37) % 101;
+      const feeBps = (i * 437) % 10_001;
       const principal = BigInt(1 + ((i * 7919) % 1_000_000_000));
       const tradeId = ethers.id(`property-trade-${i}`);
       await escrow.connect(owner).setFeeConfiguration(feeBps, treasury.address);

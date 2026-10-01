@@ -16,7 +16,7 @@ contract KwizeranaEscrow is Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint16 public constant BPS_DENOMINATOR = 10_000;
-    uint16 public constant MAX_FEE_BPS = 100; // hard cap: 1%
+    uint16 public constant MAX_FEE_BPS = 10_000; // hard cap: 100%
     uint64 public constant CANCELLATION_GRACE_PERIOD = 30 minutes;
 
     enum Status { None, Funded, PaymentMarked, Released, Claimed, Refunded }

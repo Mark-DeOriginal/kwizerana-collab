@@ -116,6 +116,12 @@ function NewPaymentMethodForm({ country, onSaved }: { country: Country; onSaved:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
+
   const grouped = categoryOrder
     .map((category) => ({ category, options: country.methods.filter((m) => m.category === category) }))
     .filter((group) => group.options.length > 0);
@@ -518,6 +524,12 @@ function OrderForm({
   const [paymentMethodId, setPaymentMethodId] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!error) return;
+    const timer = window.setTimeout(() => setError(""), 10000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
 
   const countriesForFiat = useMemo(() => COUNTRIES.filter((c) => c.currency === offer.fiat_currency), [offer.fiat_currency]);
   const selectedCountry = countriesForFiat[0] ?? null;

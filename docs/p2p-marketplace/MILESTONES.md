@@ -34,6 +34,7 @@ Last reconciled with the repository: 2026-09-29. Status terms follow `AGENTS.md`
 | Vendor inventory settlement | Implemented, needs testnet evidence | Advertising-vendor inventory is reserved idempotently when crypto funding is confirmed, consumed on buyer settlement, and restored once after a verified normal or arbitrated seller refund. Pre-reservation trades use a completion compatibility path. |
 | Tier eligibility/enforcement | Partial | Data/services exist; full policy enforcement needs verification |
 | Vendor fee configuration | Implemented | Buy/sell fee fields and interfaces |
+| Escrow fee configuration | Implemented/testnet | The admin treasury reads the live contract fee and lets the connected escrow owner update future deposits from 0% to 100%. Wallet writes request the configured Avalanche network. |
 | Reviews and rating summaries | Implemented | The dashboard trade modal remains open after buyer claim so the completed-state vendor rating panel is shown. Trade-linked activity entries reopen the same modal, including completed trades, so an unrated customer can return to the rating step; anti-gaming remains. |
 | Completion statistics | Partial | Dashboard, vendor profiles, and offer cards now derive owner-scoped completed trades, true rolling 30-day completion/USDT+USDC volume, distinct customers, release time, and combined ratings from trade/review records. Production still requires event-derived settlement projections and indexed rollups at scale. |
 | Fraud/wash-trade detection | Planned | No robust implementation found |
@@ -57,11 +58,11 @@ Last reconciled with the repository: 2026-09-29. Status terms follow `AGENTS.md`
 |---|---|---|
 | Avalanche wallet connection | Implemented | RainbowKit/wagmi |
 | Prototype ERC-20 contract | Implemented prototype | Lock/release/claim/refund only |
-| Production escrow | Implemented candidate, unsafe for production | Explicit cancellation recovery, deadline-safe buyer payment protection, fixed recipients, fee accounting, allowlist, liability protection, and governed arbitration pass twelve local scenarios. Patched runtime bytecode is deployed and configuration-verified on Fuji; independent audit and launch gates remain. |
+| Production escrow | Implemented candidate, unsafe for production | Explicit cancellation recovery, deadline-safe buyer payment protection, fixed recipients, fee accounting, allowlist, liability protection, and governed arbitration pass thirteen local scenarios. Patched runtime bytecode is deployed and configuration-verified on Fuji; independent audit and launch gates remain. |
 | Receipt/event verification | Partial, P0 | Immediate receipt and expected-event verification exists for escrow mutations; durable confirmation/reorg processing remains required before real funds. |
 | Confirmation/reorg policy | Planned, P0 | Required before real funds |
-| Event reconciliation | Partial, P0 | Immediate verification, request-time checks, manual admin recheck, authenticated webhook processing, and an immutable idempotent confirmed-event journal exist. Automatic historical backfill, provider retries, submitted/confirmed separation, and reorg handling remain. |
-| Contract tests/testnet/audit | Partial, P0 | Twelve local scenarios, varied amount/fee invariants, Solhint static rules, a documented internal review, and exact Fuji runtime-bytecode/configuration verification pass. Deep fuzz/formal work, stablecoin fork tests, multisig governance, end-to-end evidence, and an independent audit remain. |
+| Event reconciliation | Partial, P0 | Immediate verification, request-time checks, recovery of a mined release when the browser loses its transaction hash, manual admin recheck, authenticated webhook processing, and an immutable idempotent confirmed-event journal exist. Automatic historical backfill, provider retries, submitted/confirmed separation, and reorg handling remain. |
+| Contract tests/testnet/audit | Partial, P0 | Thirteen local scenarios, varied amount/fee invariants, Solhint static rules, a documented internal review, and exact Fuji runtime-bytecode/configuration verification pass. Deep fuzz/formal work, stablecoin fork tests, multisig governance, end-to-end evidence, and an independent audit remain. |
 
 ## Disputes
 
@@ -87,7 +88,7 @@ Last reconciled with the repository: 2026-09-29. Status terms follow `AGENTS.md`
 
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
-| Shared visual identity | Partial | Existing palette; incomplete system and inconsistent pages |
+| Shared visual identity | Partial | Existing palette; shared P2P select and action menus now render above clipped workflow containers, and core dashboard save actions expose independent saving/saved states. Broader system consistency work remains. |
 | Responsive/accessibility | Partial | Core flows need keyboard, focus, screen-reader, zoom validation |
 | Request performance | Partial | Trade-page duplicate startup requests and redundant dashboard SSE/poll loops are removed; polling pauses in hidden tabs, background offer refreshes do not replace visible content with loading UI, and schema readiness has a versioned fast path. Production request tracing and load testing remain. |
 | Automated tests and CI | Planned | None found during audit |

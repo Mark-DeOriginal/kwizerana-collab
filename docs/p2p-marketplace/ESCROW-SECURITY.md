@@ -19,8 +19,8 @@ For testnet, owner and arbitrator may be clearly identified test wallets. Before
 
 ## Fee model
 
-- Initial testnet fee: **20 basis points (0.20%)**.
-- Permanent contract cap: **100 basis points (1%)**.
+- Current Fuji testnet fee: **100 basis points (1%)** on the replacement deployment.
+- Contract-enforced percentage range: **0 to 10,000 basis points (0% to 100%)**.
 - The seller deposits the advertised crypto amount plus the fee.
 - The buyer receives the exact advertised crypto amount.
 - The fee accrues separately in the contract only when the buyer is paid.

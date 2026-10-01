@@ -155,6 +155,8 @@ export async function getSecuritySummary(userId: string): Promise<SecuritySummar
     twoFactorEnabled: Boolean(r?.totp_enabled),
     antiPhishingSet: Boolean(r?.anti_phishing_code),
     hasPassword: Boolean(r?.password_hash),
-    emailVerified: Boolean(r?.email_verified)
+    // OAuth-only accounts have already had their email asserted by the
+    // identity provider and do not have a local password to verify.
+    emailVerified: Boolean(r?.email_verified || (r && !r.password_hash))
   };
 }

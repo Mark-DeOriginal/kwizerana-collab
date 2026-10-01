@@ -224,9 +224,9 @@ export default function SubmitProfilePage() {
             </div>
 
             {submissionMessage && (
-              <p className={`mt-4 border p-3 text-sm font-semibold text-ink ${
-                submissionType === "success" ? "border-moss/40 bg-mint" : "border-coral/40 bg-coral/10"
-              }`}>{submissionMessage}</p>
+              <p className={`mt-4 border p-3 text-sm font-semibold ${
+                submissionType === "success" ? "border-moss/40 bg-mint text-moss" : "border-coral/40 bg-coral/10 text-coral"
+              }`} role={submissionType === "success" ? "status" : "alert"}>{submissionMessage}</p>
             )}
           </form>
 
@@ -242,9 +242,9 @@ export default function SubmitProfilePage() {
               </div>
             )}
             {!isPreviewLoading && previewError && (
-              <div className="mt-4 border border-coral/40 bg-coral/10 p-4 text-sm text-ink">
+              <div className="mt-4 border border-coral/40 bg-coral/10 p-4 text-sm text-coral" role="alert">
                 <p className="font-semibold">{previewError}</p>
-                {previewDetail && <p className="mt-1 text-xs text-muted">{previewDetail}</p>}
+                {previewDetail && <p className="mt-1 text-xs text-coral/80">{previewDetail}</p>}
               </div>
             )}
             {preview && (

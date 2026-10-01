@@ -19,6 +19,7 @@
     "contract:audit": "npm run contract:lint && npm run contract:test",
     "deploy:fuji-tokens": "node scripts/deploy-fuji-test-tokens.mjs",
     "deploy:escrow": "node scripts/deploy-escrow.mjs",
+    "escrow:set-fee": "node scripts/set-escrow-fee.mjs",
     "verify:escrow": "node scripts/verify-escrow-deployment.mjs"
   },
   "dependencies": {

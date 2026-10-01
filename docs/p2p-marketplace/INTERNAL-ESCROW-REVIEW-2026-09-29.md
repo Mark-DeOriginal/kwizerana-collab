@@ -10,7 +10,7 @@ Reviewed revision: `52c384d` plus the working-tree changes described here. Compi
 
 - Manual review of authorization, lifecycle, cancellation, arbitration, fee, token-transfer, reentrancy, liability, and recovery paths.
 - Solhint recommended static rules: no errors after excluding documentation-only and optional gas-style rules.
-- Twelve Hardhat scenarios, including varied amount/fee property cases and balance/liability invariants: all passing.
+- Thirteen Hardhat scenarios, including the 0%–100% owner fee range, varied amount/fee property cases, and balance/liability invariants: all passing.
 - TypeScript source validation: `npx tsc --noEmit` passed after isolating corrupt generated `.next` cache files.
 - Fuji runtime bytecode and constructor configuration verified against the local artifact.
 

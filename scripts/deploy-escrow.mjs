@@ -35,8 +35,8 @@ const owner = requiredAddress("ESCROW_OWNER_ADDRESS");
 const arbitrator = requiredAddress("ESCROW_ARBITRATOR_ADDRESS");
 const feeRecipient = requiredAddress("ESCROW_FEE_RECIPIENT_ADDRESS");
 const allowedTokens = [requiredAddress("NEXT_PUBLIC_ESCROW_USDT_ADDRESS"), requiredAddress("NEXT_PUBLIC_ESCROW_USDC_ADDRESS")];
-const feeBps = Number(process.env.ESCROW_FEE_BPS ?? 20);
-if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 100) throw new Error("ESCROW_FEE_BPS must be an integer from 0 to 100.");
+const feeBps = Number(process.env.ESCROW_FEE_BPS ?? 100);
+if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 10_000) throw new Error("ESCROW_FEE_BPS must be an integer from 0 to 10000.");
 
 const publicClient = createPublicClient({ chain: avalancheFuji, transport: http(rpcUrl) });
 const actualChainId = await publicClient.getChainId();
