@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { RankingBoard, RankingBoardWithEntries } from "@/lib/rankings";
 import { formatFollowers } from "@/lib/format";
+import { AdminTabSkeleton } from "@/components/AdminTabSkeleton";
 import { friendlyError, readJson } from "@/lib/client-request";
 
 type SearchResult = {
@@ -262,7 +263,7 @@ export function RankingsTab() {
 
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">Influencer rankings</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Influencer rankings</h2>
           <p className="text-sm text-muted">Build topic leaderboards shown on the landing page.</p>
         </div>
       </div>
@@ -354,12 +355,7 @@ export function RankingsTab() {
         </button>
       </div>
 
-      {loading && boards.length === 0 && (
-        <div className="mb-4 flex items-center gap-2 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading boards…
-        </div>
-      )}
+      {loading && boards.length === 0 && <AdminTabSkeleton variant="rankings" />}
 
       {!loading && boards.length === 0 && (
         <div className="mb-4 border border-dashed border-line bg-white p-6 text-center">
@@ -369,7 +365,7 @@ export function RankingsTab() {
         </div>
       )}
 
-      <div>
+      {!loading && boards.length > 0 && <div>
           {!selectedBoardId || !board ? (
             <div className="grid min-h-[320px] place-items-center border border-dashed border-line bg-white p-8 text-center">
               <div>
@@ -543,7 +539,7 @@ export function RankingsTab() {
               </div>
             </div>
           )}
-      </div>
+      </div>}
     </div>
   );
 }

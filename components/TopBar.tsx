@@ -5,8 +5,11 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, FileCheck2, LayoutDashboard, LogIn, LogOut, Menu, Settings, ShieldCheck, User, X } from "lucide-react";
+import { ChevronDown, FileCheck2, LayoutDashboard, LogIn, LogOut, Menu, Settings, ShieldCheck, User, Wallet, X } from "lucide-react";
+import { useAccount, useDisconnect } from "wagmi";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
+import { ConnectedWalletSync } from "@/components/p2p/ConnectWalletButton";
 
 const navItems = [
   { href: "/", label: "Home" },
@@ -51,6 +54,7 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-white/95 shadow-sm backdrop-blur">
+      <ConnectedWalletSync />
       <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         {/* Brand */}
         <Link href="/" className="flex shrink-0 items-center">
@@ -63,7 +67,7 @@ export function TopBar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex h-10 items-center gap-2 rounded-md px-3 text-sm font-semibold transition-colors ${
+              className={`flex h-10 items-center gap-2 rounded-md px-3 text-sm font-semibold transition-colors ${item.href === "/submit-profile" ? "max-[880px]:hidden" : ""} ${
                 isActive(item.href) ? "bg-panel text-ink" : "text-muted hover:bg-panel hover:text-ink"
               }`}
             >
@@ -112,6 +116,11 @@ export function TopBar() {
                     <DropdownLink href="/account/security" onClick={() => setUserDropdownOpen(false)} active={isActive("/account")} icon={<Settings className="h-4 w-4" />}>
                       Account settings
                     </DropdownLink>
+                    <div className="max-[880px]:block min-[881px]:hidden">
+                      <DropdownLink href="/submit-profile" onClick={() => setUserDropdownOpen(false)} active={isActive("/submit-profile")} icon={<User className="h-4 w-4" />}>
+                        Submit profile
+                      </DropdownLink>
+                    </div>
                     {canReview && (
                       <DropdownLink href="/review-profiles" onClick={() => setUserDropdownOpen(false)} active={isActive("/review-profiles")} icon={<FileCheck2 className="h-4 w-4" />}>
                         Review profiles
@@ -124,6 +133,7 @@ export function TopBar() {
                     )}
                   </div>
                   <div className="border-t border-line p-1">
+                    <WalletMenuControl className="mb-1 flex w-full" />
                     <button
                       onClick={() => {
                         setUserDropdownOpen(false);
@@ -221,6 +231,9 @@ export function TopBar() {
                     Admin dashboard
                   </MobileLink>
                 )}
+                <div className="px-3 py-1">
+                  <WalletMenuControl className="flex w-full" />
+                </div>
                 <button
                   onClick={() => {
                     setMenuOpen(false);
@@ -234,6 +247,7 @@ export function TopBar() {
               </>
             ) : (
               <div className="flex flex-col gap-2 px-3 pb-2">
+                <WalletMenuControl className="flex w-full" />
                 <Link
                   href="/auth/sign-in"
                   onClick={() => setMenuOpen(false)}
@@ -254,6 +268,40 @@ export function TopBar() {
         </div>
       )}
     </header>
+  );
+}
+
+function WalletMenuControl({ className = "" }: { className?: string }) {
+  const { address, isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
+  const { openConnectModal } = useConnectModal();
+  const shortAddress = address ? `${address.slice(0, 5)}…` : "";
+
+  if (isConnected && address) {
+    return (
+      <button
+        type="button"
+        onClick={() => disconnect()}
+        className={`h-10 items-center gap-2 rounded-md border border-line bg-white px-2.5 text-sm font-semibold text-ink transition-colors hover:border-coral/40 hover:bg-coral/5 ${className}`}
+        title={`Disconnect ${address}`}
+        aria-label={`Disconnect wallet ${address}`}
+      >
+        <Wallet className="h-4 w-4 text-ocean" aria-hidden="true" />
+        <span>Disconnect</span>
+        <span className="ml-auto rounded-sm border border-line bg-panel px-1.5 py-0.5 font-mono text-[11px] font-semibold text-muted">{shortAddress}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => openConnectModal?.()}
+      className={`h-10 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm font-semibold text-muted transition-colors hover:border-ocean hover:text-ink ${className}`}
+    >
+      <Wallet className="h-4 w-4" aria-hidden="true" />
+      Connect wallet
+    </button>
   );
 }
 

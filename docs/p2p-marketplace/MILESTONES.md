@@ -79,7 +79,7 @@ Last reconciled with the repository: 2026-09-29. Status terms follow `AGENTS.md`
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
 | Member/vendor dashboard | Implemented, needs redesign | Large multi-workflow page; see `../DASHBOARD-PLAN.md` |
-| Admin dashboard | Implemented, needs redesign | Exception queues and auditability needed |
+| Admin dashboard | Implemented, needs redesign | Permission dependencies now require dashboard access before admin management or dispute management can be granted or honored. A server-confirmed gate prevents revoked permissions from briefly rendering dashboard workspaces. Exception queues and auditability still needed. |
 | Escrow reconciliation queue | Planned, P0 | Required before real-value operation |
 | Immutable admin audit log | Planned, P0 | Required for financial/permission actions |
 | Provider/event health | Planned | Surface RPC, rate, email, and webhook delivery failures |
@@ -88,7 +88,7 @@ Last reconciled with the repository: 2026-09-29. Status terms follow `AGENTS.md`
 
 | Capability | Status | Evidence / remaining work |
 |---|---|---|
-| Shared visual identity | Partial | Existing palette; shared P2P select and action menus now render above clipped workflow containers, and core dashboard save actions expose independent saving/saved states. Broader system consistency work remains. |
+| Shared visual identity | Partial | Existing palette; shared P2P select and action menus now render above clipped workflow containers, core dashboard save actions expose independent saving/saved states, and admin workspaces preserve their layout with accessible skeleton loading states. Broader system consistency work remains. |
 | Responsive/accessibility | Partial | Core flows need keyboard, focus, screen-reader, zoom validation |
 | Request performance | Partial | Trade-page duplicate startup requests and redundant dashboard SSE/poll loops are removed; polling pauses in hidden tabs, background offer refreshes do not replace visible content with loading UI, and schema readiness has a versioned fast path. Production request tracing and load testing remain. |
 | Automated tests and CI | Planned | None found during audit |

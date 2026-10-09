@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useAccount } from "wagmi";
-import { WalletProviders } from "@/app/wallet-providers";
 import { ArrowLeft, ArrowRight, BadgeCheck, Clock, ImagePlus, Loader2, LogIn, Pin, Star, X } from "lucide-react";
 import { readJson } from "@/lib/client-request";
 import { CustomSelect, OptionsMenu } from "@/components/p2p/custom-ui";
@@ -935,17 +934,19 @@ function TradeClient() {
   return (
     <div className="px-4 py-8 text-ink sm:px-6 lg:px-8">
       <div className="mx-auto max-w-2xl">
-        <div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">P2P Marketplace</p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">
+        <div className={!activeTrade && !selectedOffer ? "mx-auto text-center" : ""}>
+            <h1 className="text-3xl font-medium tracking-[-0.035em] sm:text-4xl">
               {activeTrade
                 ? `${activeTrade.my_role === "buyer" ? "Buying" : "Selling"} ${activeTrade.crypto_currency}`
                 : selectedOffer
                   ? `${side === "buy" ? "Buy" : "Sell"} ${selectedOffer.crypto_currency}`
-                  : `${side === "buy" ? "Buy" : "Sell"} crypto`}
+                  : "Find an offer that works for you"}
             </h1>
-          </div>
+            {!activeTrade && !selectedOffer && (
+              <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-muted sm:text-lg sm:leading-8">
+                Browse available offers and trade with confidence using the payment method that suits you.
+              </p>
+            )}
         </div>
 
         <div className="mt-5 overflow-hidden border border-line bg-white">
@@ -1029,11 +1030,9 @@ function TradeClient() {
 
 export default function TradePage() {
   return (
-    <WalletProviders>
-      <Suspense fallback={<TradePageSkeleton />}>
-        <TradeClient />
-      </Suspense>
-    </WalletProviders>
+    <Suspense fallback={<TradePageSkeleton />}>
+      <TradeClient />
+    </Suspense>
   );
 }
 
@@ -1041,8 +1040,10 @@ function TradePageSkeleton() {
   return (
     <div className="px-4 py-8 text-ink sm:px-6 lg:px-8" aria-busy="true" aria-label="Loading P2P marketplace">
       <div className="mx-auto max-w-2xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-moss">P2P Marketplace</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Buy or sell crypto</h1>
+        <h1 className="text-center text-3xl font-medium tracking-[-0.035em] sm:text-4xl">Find an offer that works for you</h1>
+        <p className="mx-auto mt-4 max-w-xl text-center text-base leading-7 text-muted sm:text-lg sm:leading-8">
+          Browse available offers and trade with confidence using the payment method that suits you.
+        </p>
         <div className="mt-5 border border-line bg-white">
           <div className="flex h-12 border-b border-line bg-panel" />
           <div className="space-y-3 p-4 sm:p-5">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, AlertTriangle, ArrowUpRight, Check, CheckCircle2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, Check, CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 import { formatUnits, parseUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { friendlyError, readJson } from "@/lib/client-request";
@@ -220,7 +220,26 @@ export function EscrowAdminOverview() {
 
   useEffect(() => { void load(); }, [load]);
 
-  if (loading && !metrics) return <div className="flex items-center justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-muted" /></div>;
+  if (loading && !metrics) {
+    return (
+      <div className="space-y-6" aria-busy="true" aria-label="Loading settlement and treasury">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-2"><div className="h-7 w-60 animate-pulse bg-panel" /><div className="h-4 w-80 max-w-full animate-pulse bg-panel" /></div>
+          <div className="h-9 w-24 animate-pulse bg-panel" />
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {Array.from({ length: 3 }, (_, index) => <div key={index} className="border border-line bg-white p-5"><div className="h-4 w-28 animate-pulse bg-panel" /><div className="mt-4 h-9 w-16 animate-pulse bg-panel" /><div className="mt-2 h-3 w-36 animate-pulse bg-panel" /></div>)}
+        </div>
+        <section>
+          <div className="mb-3 h-4 w-32 animate-pulse bg-panel" />
+          <div className="grid gap-4 md:grid-cols-2">
+            {Array.from({ length: 2 }, (_, index) => <div key={index} className="border border-line bg-white p-5"><div className="h-3 w-20 animate-pulse bg-panel" /><div className="mt-3 h-8 w-28 animate-pulse bg-panel" /><div className="mt-6 h-10 w-full animate-pulse bg-panel" /></div>)}
+          </div>
+        </section>
+        <span className="sr-only">Loading settlement and treasury.</span>
+      </div>
+    );
+  }
   if (error && !metrics) return <div className="border border-coral/30 bg-coral/5 p-4 text-sm text-coral">{error}</div>;
 
   const summary = metrics?.summary;
@@ -234,13 +253,9 @@ export function EscrowAdminOverview() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ocean">P2P operations</p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight">Settlement and treasury</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Settlement and treasury</h2>
           <p className="mt-1 text-sm text-muted">Verified trading activity and contract-controlled balances.</p>
         </div>
-        <button onClick={() => void load()} disabled={loading} className="flex h-9 items-center justify-center gap-2 border border-line bg-white px-3 text-xs font-semibold text-muted hover:border-ocean hover:text-ink disabled:opacity-50">
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Refresh
-        </button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

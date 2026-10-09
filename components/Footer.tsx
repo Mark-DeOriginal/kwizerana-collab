@@ -35,7 +35,6 @@ export function Footer() {
 
         <div className="flex flex-col gap-4 pt-6 text-xs leading-5 text-[#667069] sm:flex-row sm:items-center sm:justify-between">
           <p>&copy; {new Date().getFullYear()} Kwizerana. All rights reserved.</p>
-          <p>Crypto transactions involve risk. Review every trade before sending funds.</p>
         </div>
       </div>
     </footer>

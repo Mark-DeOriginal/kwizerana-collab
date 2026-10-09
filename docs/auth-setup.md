@@ -12,7 +12,7 @@
 - Ticket-backed credentials sign-in.
 - TOTP 2FA with hashed single-use backup codes.
 - Anti-phishing code settings.
-- Admin roles and granular permissions stored on users/session tokens.
+- Admin roles and granular permissions are stored on users/session tokens. Dashboard access is required before `manage_admins` or `manage_disputes` can be granted or honored. The dashboard waits for a server-side access check before mounting protected workspaces, preventing stale client session data from briefly rendering a revoked dashboard.
 
 These flows still require security, recovery, rate-limit, session, and abuse testing before production approval.
 

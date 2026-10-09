@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Loader2, RefreshCw, Save } from "lucide-react";
 import { friendlyError, readJson } from "@/lib/client-request";
+import { AdminTabSkeleton } from "@/components/AdminTabSkeleton";
 
 type CurrencyRateRow = {
   crypto_currency: string;
@@ -135,7 +136,7 @@ export function CurrencyRatesTab() {
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold">Currency Rates</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Currency Rates</h2>
           <p className="mt-0.5 text-xs text-muted">
             Rates are quoted as fiat units per 1 USDT/USDC. Edit them manually or fetch the latest available rates.
           </p>
@@ -164,9 +165,7 @@ export function CurrencyRatesTab() {
         <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>
       )}
       {loading ? (
-        <div className="flex min-h-72 items-center justify-center border border-line bg-white" role="status" aria-label="Loading currency rates">
-          <Loader2 className="h-6 w-6 animate-spin text-ocean" aria-hidden="true" />
-        </div>
+        <AdminTabSkeleton variant="rates" />
       ) : (
       <div className="overflow-x-auto border border-line bg-white">
           <table className="w-full text-sm">

@@ -177,13 +177,7 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
     return () => window.clearTimeout(timer);
   }, [ratingError]);
 
-  const allowRoleSwitch = trade.can_act_as_buyer && trade.can_act_as_seller;
-  const [viewRole, setViewRole] = useState<"buyer" | "seller">(trade.my_role === "buyer" ? "buyer" : "seller");
-  useEffect(() => {
-    setViewRole(trade.my_role === "buyer" ? "buyer" : "seller");
-  }, [trade.id, trade.my_role]);
-
-  const isBuyer = viewRole === "buyer";
+  const isBuyer = trade.my_role === "buyer";
   const counterparty = isBuyer ? trade.seller_name : trade.buyer_name;
   const customerCanRate = trade.is_initiator && (trade.status === "completed" || (!isBuyer && trade.status === "released"));
   const paymentDetails = (trade.payment_details ?? {}) as Record<string, unknown>;
@@ -431,26 +425,6 @@ export function OrderDetailView({ trade, onBack, onRefresh }: { trade: Trade; on
   return (
     <div className="space-y-4">
       <EscrowModeNotice />
-
-      {allowRoleSwitch && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border border-ocean/30 bg-ocean/5 px-4 py-2.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-ocean">Testing — act as</p>
-          <div className="flex overflow-hidden border border-line">
-            <button
-              onClick={() => setViewRole("buyer")}
-              className={`px-3 py-1.5 text-xs font-semibold transition-colors ${isBuyer ? "bg-ink text-white" : "bg-white text-muted hover:text-ink"}`}
-            >
-              Crypto buyer · {trade.buyer_name}
-            </button>
-            <button
-              onClick={() => setViewRole("seller")}
-              className={`px-3 py-1.5 text-xs font-semibold transition-colors ${!isBuyer ? "bg-ink text-white" : "bg-white text-muted hover:text-ink"}`}
-            >
-              Crypto seller · {trade.seller_name}
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border border-line bg-white p-4">

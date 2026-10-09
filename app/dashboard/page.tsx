@@ -33,7 +33,7 @@ import { readJson } from "@/lib/client-request";
 import { CustomSelect, NumInput } from "@/components/p2p/custom-ui";
 import { PaymentDetailFields } from "@/components/p2p/payment-detail-fields";
 import { COUNTRIES, PAYMENT_METHOD_CATEGORY_LABELS } from "@/lib/p2p/countries-shared";
-import { ConnectedWalletSync, ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
+import { ConnectWalletButton } from "@/components/p2p/ConnectWalletButton";
 import type { P2PStats, SecuritySummary } from "@/lib/p2p/stats";
 import type { UserWallet } from "@/lib/p2p/wallets";
 import { getPaymentMethodFields, paymentDetailValue, type UserPaymentMethod } from "@/lib/p2p/payment-methods-shared";
@@ -48,7 +48,6 @@ import { Modal } from "@/components/p2p/modal";
 import { usePoll, useTradeSubscription, isTerminalTrade } from "@/lib/p2p/use-realtime";
 import { useAccount, useDisconnect, useReadContract } from "wagmi";
 import { formatUnits } from "viem";
-import { WalletProviders } from "@/app/wallet-providers";
 import { AVALANCHE_TOKENS, ERC20_ABI, explorerAddressUrl } from "@/lib/web3/escrow";
 
 type DashboardData = {
@@ -140,11 +139,7 @@ function EmptyState({ icon, title, subtitle, cta }: { icon: React.ReactNode; tit
 }
 
 export default function DashboardPage() {
-  return (
-    <WalletProviders>
-      <DashboardPageContent />
-    </WalletProviders>
-  );
+  return <DashboardPageContent />;
 }
 
 function DashboardPageContent() {
@@ -241,7 +236,6 @@ const load = useCallback(async (opts: { silent?: boolean } = {}) => {
 
   return (
     <div className="px-4 py-8 text-ink sm:px-6 lg:px-8">
-      <ConnectedWalletSync />
       <div className="mx-auto max-w-[1400px]">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { dbQuery } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
-import { ALL_PERMISSIONS, hasPermission, isAdminEmail, isSuperAdmin, type Permission } from "@/lib/roles";
+import { ALL_PERMISSIONS, hasPermission, isAdminEmail, isSuperAdmin, normalizeAdminPermissions, type Permission } from "@/lib/roles";
 import { updateUserRole } from "@/lib/users";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,9 +19,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const body = await request.json();
 
   if (body.action === "promote") {
-    const selectedPermissions: Permission[] = Array.isArray(body.permissions)
+    const requestedPermissions: Permission[] = Array.isArray(body.permissions)
       ? body.permissions.filter((p: string) => ALL_PERMISSIONS.includes(p as Permission))
       : [];
+    const selectedPermissions = normalizeAdminPermissions(requestedPermissions);
 
     const updated = await updateUserRole((await params).id, "admin", selectedPermissions);
     if (!updated) {

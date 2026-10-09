@@ -50,7 +50,7 @@ Next.js route handlers
 
 ### Web3
 
-- Wallet configuration: `lib/web3/config.ts`.
+- Wallet configuration: `lib/web3/config.ts`. The root application provider hosts one shared wagmi/RainbowKit context so the navigation and operational pages use the same connected-wallet state.
 - Contract ABI and token/address helpers: `lib/web3/escrow.ts`.
 - Prototype contract: `contracts/KwizeranaEscrow.sol`.
 - Current target: Avalanche C-Chain and native Avalanche USDT/USDC contracts.
@@ -111,4 +111,3 @@ Provider failures need timeouts, structured errors, retries where safe, caching,
 - Rate limiting is per-process memory only.
 - There is no automated test suite or CI workflow in the repository.
 - Documentation has historically described intentions rather than verified behavior.
-

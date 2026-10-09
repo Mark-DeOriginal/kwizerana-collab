@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { signOut, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   Shield,
   ShieldCheck,
@@ -25,13 +24,13 @@ import {
 } from "lucide-react";
 import { canAccessAdminReview } from "@/lib/admin-review-access";
 import { friendlyError, readJson } from "@/lib/client-request";
-import type { Permission } from "@/lib/roles";
+import { hasPermission, normalizeAdminPermissions, type Permission } from "@/lib/roles";
 import { RankingsTab } from "@/components/RankingsTab";
 import { CurrencyRatesTab } from "@/components/CurrencyRatesTab";
 import { EscrowAdminOverview } from "@/components/EscrowAdminOverview";
+import { AdminTabSkeleton } from "@/components/AdminTabSkeleton";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { WalletProviders } from "@/app/wallet-providers";
 import { ESCROW_ABI, getEscrowAddress, isEscrowDeployed, tradeRefToBytes32 } from "@/lib/web3/escrow";
 import { escrowChain } from "@/lib/web3/config";
 import { useEscrowChainGuard } from "@/lib/web3/use-escrow-chain";
@@ -40,7 +39,7 @@ import { usePoll } from "@/lib/p2p/use-realtime";
 const ALL_PERMISSIONS: { key: Permission; label: string; description: string }[] = [
   { key: "manage_admins", label: "Can manage admins", description: "Promote and demote other users" },
   { key: "remove_profiles", label: "Can remove profiles", description: "Delete profiles from the review page" },
-  { key: "view_dashboard", label: "Can view dashboard", description: "Access this admin dashboard" },
+  { key: "view_dashboard", label: "Can view admin dashboard", description: "Access this admin dashboard" },
   { key: "manage_disputes", label: "Can manage disputes", description: "Review and resolve P2P disputes" }
 ];
 
@@ -78,21 +77,18 @@ function relativeTime(dateStr: string) {
 }
 
 export default function AdminDashboardPage() {
-  return (
-    <WalletProviders>
-      <AdminDashboardContent />
-    </WalletProviders>
-  );
+  return <AdminDashboardContent />;
 }
 
 function AdminDashboardContent() {
   const { data: session, status, update } = useSession();
-  const router = useRouter();
   const [users, setUsers] = useState<DashboardUser[]>([]);
   const [stats, setStats] = useState<Stats>({ totalUsers: 0, totalAdmins: 0, totalProfiles: 0, pendingSubmissions: 0, pendingVendorApps: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [serverDenied, setServerDenied] = useState(false);
+  const [accessStatus, setAccessStatus] = useState<"checking" | "granted" | "denied" | "error">("checking");
+  const [accessError, setAccessError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [activeTab, setActiveTab] = useState<"p2p" | "users" | "rankings" | "vendors" | "disputes" | "verifications" | "rates">("p2p");
 
@@ -112,10 +108,32 @@ function AdminDashboardContent() {
     return () => clearInterval(interval);
   }, []);
 
-  const canManage = session?.user?.role === "admin" ||
-    (session?.user?.permissions ?? []).includes("manage_admins");
+  const canManage = hasPermission(session?.user?.role ?? "member", session?.user?.permissions ?? [], "manage_admins");
+  const canManageDisputes = hasPermission(session?.user?.role ?? "member", session?.user?.permissions ?? [], "manage_disputes");
 
   const canViewDashboard = canAccessAdminReview(session?.user?.role, session?.user?.permissions);
+
+  const checkAccess = useCallback(async () => {
+    setAccessStatus("checking");
+    setAccessError("");
+    try {
+      const res = await fetch("/api/admin/access", { cache: "no-store" });
+      if (res.status === 403) {
+        setServerDenied(true);
+        setAccessStatus("denied");
+        return;
+      }
+      const payload = (await readJson<{ allowed?: boolean }>(res)) ?? {};
+      if (!res.ok || !payload.allowed) {
+        throw new Error("Unable to confirm access to the admin dashboard.");
+      }
+      setServerDenied(false);
+      setAccessStatus("granted");
+    } catch (err: unknown) {
+      setAccessError(friendlyError(err, "Unable to confirm access to the admin dashboard."));
+      setAccessStatus("error");
+    }
+  }, []);
 
   const loadUsers = useCallback(async (showLoading = false, silent = false) => {
     if (showLoading) setIsLoading(true);
@@ -129,6 +147,7 @@ function AdminDashboardContent() {
       const res = await fetch(`/api/admin/users?${params.toString()}`);
       if (res.status === 403) {
         setServerDenied(true);
+        setAccessStatus("denied");
         return;
       }
       const payload = (await readJson<{
@@ -161,16 +180,16 @@ function AdminDashboardContent() {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (status === "authenticated") {
-      loadUsers(true);
+    if (status === "authenticated" && session?.user?.id) {
+      checkAccess();
     }
-  }, [status, loadUsers]);
+  }, [status, session?.user?.id, checkAccess]);
 
   useEffect(() => {
-    if (status === "authenticated" && !canAccessAdminReview(session?.user?.role, session?.user?.permissions)) {
-      router.replace("/");
+    if (accessStatus === "granted") {
+      loadUsers(true);
     }
-  }, [status, session?.user?.role, session?.user?.permissions, router]);
+  }, [accessStatus, loadUsers]);
 
   const usersTotalPages = Math.max(1, Math.ceil(totalUsers / usersPageSize));
   const safeUsersPage = Math.min(usersPage, usersTotalPages);
@@ -183,12 +202,12 @@ function AdminDashboardContent() {
 
   usePoll(
     () => fetch("/api/user/heartbeat", { method: "POST" }).then(() => undefined).catch(() => undefined),
-    { intervalMs: 60000, enabled: status === "authenticated", immediate: true }
+    { intervalMs: 60000, enabled: status === "authenticated" && accessStatus === "granted", immediate: true }
   );
 
   usePoll(
     () => loadUsers(false, true),
-    { intervalMs: 120000, enabled: status === "authenticated" }
+    { intervalMs: 120000, enabled: status === "authenticated" && accessStatus === "granted" }
   );
 
   if (status === "loading") {
@@ -207,26 +226,42 @@ function AdminDashboardContent() {
     );
   }
 
-  if (!canViewDashboard || serverDenied) {
+  if (!canViewDashboard || serverDenied || accessStatus === "denied") {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 px-4 text-center">
         <ShieldCheck className="h-10 w-10 text-muted" />
-        <p className="text-muted">You don&apos;t have access to this page.</p>
-        {serverDenied && (
-          <button
-            onClick={() => signOut({ callbackUrl: "/" })}
-            className="mt-2 flex h-9 items-center gap-2 border border-line bg-white px-4 text-sm font-semibold text-muted transition-colors hover:border-ocean hover:text-ink active:scale-[0.97]"
-          >
-            Sign out and sign back in
-          </button>
-        )}
+        <h1 className="text-xl font-semibold">Admin dashboard access required</h1>
+        <p className="max-w-md text-sm leading-6 text-muted">You do not have permission to access this page.</p>
+      </div>
+    );
+  }
+
+  if (accessStatus === "checking") {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center" aria-live="polite" aria-label="Checking admin dashboard access">
+        <Loader2 className="h-6 w-6 animate-spin text-muted" />
+      </div>
+    );
+  }
+
+  if (accessStatus === "error") {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="max-w-md text-sm leading-6 text-muted">{accessError || "Unable to confirm access to the admin dashboard."}</p>
+        <button
+          type="button"
+          onClick={checkAccess}
+          className="h-10 border border-ink bg-ink px-4 text-sm font-semibold text-white transition-colors hover:bg-ink/90"
+        >
+          Try again
+        </button>
       </div>
     );
   }
 
   function startPromote(userId: string, currentPermissions: Permission[]) {
     setPromotingId(userId);
-    setSelectedPermissions([...currentPermissions]);
+    setSelectedPermissions(normalizeAdminPermissions(currentPermissions));
   }
 
   function cancelPromote() {
@@ -235,9 +270,13 @@ function AdminDashboardContent() {
   }
 
   function togglePermission(perm: Permission) {
-    setSelectedPermissions((prev) =>
-      prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]
-    );
+    setSelectedPermissions((prev) => {
+      if (perm !== "view_dashboard" && !prev.includes("view_dashboard") && (perm === "manage_admins" || perm === "manage_disputes")) {
+        return prev;
+      }
+      const next = prev.includes(perm) ? prev.filter((permission) => permission !== perm) : [...prev, perm];
+      return normalizeAdminPermissions(next);
+    });
   }
 
   async function confirmPromote(userId: string) {
@@ -303,41 +342,41 @@ function AdminDashboardContent() {
         <p className="mt-1 text-sm text-muted">Manage users, roles, and permissions.</p>
       </div>
 
-      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5">
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-5" aria-busy={isLoading}>
         <div className="border border-line bg-white p-4">
           <div className="flex items-center gap-2 text-xs font-medium text-muted">
             <User className="h-3.5 w-3.5" />
             Total users
           </div>
-          <p className="mt-2 text-2xl font-bold">{stats.totalUsers}</p>
+          {isLoading ? <div className="mt-2 h-8 w-12 animate-pulse bg-panel" /> : <p className="mt-2 text-2xl font-bold">{stats.totalUsers}</p>}
         </div>
         <div className="border border-line bg-white p-4">
           <div className="flex items-center gap-2 text-xs font-medium text-muted">
             <Shield className="h-3.5 w-3.5" />
             Admins
           </div>
-          <p className="mt-2 text-2xl font-bold">{stats.totalAdmins}</p>
+          {isLoading ? <div className="mt-2 h-8 w-12 animate-pulse bg-panel" /> : <p className="mt-2 text-2xl font-bold">{stats.totalAdmins}</p>}
         </div>
         <div className="border border-line bg-white p-4">
           <div className="flex items-center gap-2 text-xs font-medium text-muted">
             <Database className="h-3.5 w-3.5" />
             Active profiles
           </div>
-          <p className="mt-2 text-2xl font-bold">{stats.totalProfiles}</p>
+          {isLoading ? <div className="mt-2 h-8 w-12 animate-pulse bg-panel" /> : <p className="mt-2 text-2xl font-bold">{stats.totalProfiles}</p>}
         </div>
         <div className="border border-line bg-white p-4">
           <div className="flex items-center gap-2 text-xs font-medium text-muted">
             <FileClock className="h-3.5 w-3.5" />
             Pending submissions
           </div>
-          <p className="mt-2 text-2xl font-bold">{stats.pendingSubmissions}</p>
+          {isLoading ? <div className="mt-2 h-8 w-12 animate-pulse bg-panel" /> : <p className="mt-2 text-2xl font-bold">{stats.pendingSubmissions}</p>}
         </div>
         <div className="border border-line bg-white p-4">
           <div className="flex items-center gap-2 text-xs font-medium text-muted">
             <Store className="h-3.5 w-3.5" />
             Pending vendor apps
           </div>
-          <p className="mt-2 text-2xl font-bold">{stats.pendingVendorApps}</p>
+          {isLoading ? <div className="mt-2 h-8 w-12 animate-pulse bg-panel" /> : <p className="mt-2 text-2xl font-bold">{stats.pendingVendorApps}</p>}
         </div>
       </div>
 
@@ -406,19 +445,21 @@ function AdminDashboardContent() {
           <Trophy className="h-4 w-4" />
           Rankings
         </button>
-        <button
-          onClick={() => setActiveTab("disputes")}
-          role="tab"
-          aria-selected={activeTab === "disputes"}
-          className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
-            activeTab === "disputes"
-              ? "border-ocean text-ink"
-              : "border-transparent text-muted hover:border-line hover:text-ink"
-          }`}
-        >
-          <Scale className="h-4 w-4" />
-          Disputes
-        </button>
+        {canManageDisputes && (
+          <button
+            onClick={() => setActiveTab("disputes")}
+            role="tab"
+            aria-selected={activeTab === "disputes"}
+            className={`flex h-11 items-center gap-2 border-b-2 px-4 text-sm font-bold transition-colors ${
+              activeTab === "disputes"
+                ? "border-ocean text-ink"
+                : "border-transparent text-muted hover:border-line hover:text-ink"
+            }`}
+          >
+            <Scale className="h-4 w-4" />
+            Disputes
+          </button>
+        )}
         <button
           onClick={() => setActiveTab("verifications")}
           role="tab"
@@ -462,7 +503,7 @@ function AdminDashboardContent() {
       ) : (
         <>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-bold">Users</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Users</h2>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
@@ -486,9 +527,7 @@ function AdminDashboardContent() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted" />
-        </div>
+        <AdminTabSkeleton variant="cards" count={6} />
       ) : (
         <>
           {pageUsers.length === 0 ? (
@@ -559,11 +598,16 @@ function AdminDashboardContent() {
                           <p className="mb-2 text-xs font-bold">Assign permissions:</p>
                           <div className="flex flex-col gap-2">
                             {ALL_PERMISSIONS.map((perm) => (
-                              <label key={perm.key} className="flex cursor-pointer items-center gap-2 text-xs">
+                              <label key={perm.key} className={`flex items-center gap-2 text-xs ${
+                                (perm.key === "manage_admins" || perm.key === "manage_disputes") && !selectedPermissions.includes("view_dashboard")
+                                  ? "cursor-not-allowed text-muted/60"
+                                  : "cursor-pointer"
+                              }`}>
                                 <input
                                   type="checkbox"
                                   checked={selectedPermissions.includes(perm.key)}
                                   onChange={() => togglePermission(perm.key)}
+                                  disabled={(perm.key === "manage_admins" || perm.key === "manage_disputes") && !selectedPermissions.includes("view_dashboard")}
                                   className="h-3.5 w-3.5 accent-ocean"
                                 />
                                 <span className="font-medium">{perm.label}</span>
@@ -735,8 +779,8 @@ function VendorApplicationsTab() {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-bold">Vendor Applications</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-2xl font-bold tracking-tight">Vendor Applications</h2>
         <div className="flex gap-1.5">
           {(["pending", "approved", "rejected"] as const).map((s) => (
             <button
@@ -757,9 +801,7 @@ function VendorApplicationsTab() {
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted" />
-        </div>
+        <AdminTabSkeleton variant="cards" count={3} />
       ) : applications.length === 0 ? (
         <div className="py-20 text-center text-sm text-muted">
           No {filter} applications.
@@ -939,13 +981,11 @@ function DisputesTab() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-bold">Disputes</h2>
+      <h2 className="mb-4 text-2xl font-bold tracking-tight">Disputes</h2>
       {error && <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted" />
-        </div>
+        <AdminTabSkeleton variant="list" />
       ) : disputes.length === 0 ? (
         <div className="py-20 text-center text-sm text-muted">No disputes.</div>
       ) : (
@@ -1098,13 +1138,11 @@ function VerificationsTab() {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-bold">Vendor verification</h2>
+      <h2 className="mb-4 text-2xl font-bold tracking-tight">Vendor verification</h2>
       {error && <div className="mb-4 border border-coral/30 bg-coral/5 px-4 py-3 text-sm text-coral">{error}</div>}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted" />
-        </div>
+        <AdminTabSkeleton variant="list" />
       ) : requests.length === 0 ? (
         <div className="py-20 text-center text-sm text-muted">No verification requests.</div>
       ) : (

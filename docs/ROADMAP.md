@@ -28,7 +28,7 @@ Status: **planned; highest priority**
 - Complete durable action idempotency across every trade mutation.
 - Remove production escrow simulation.
 - Harden authorization, validation, uploads, rate limiting, secrets, and audit logs.
-  - Partial evidence: protected application pages are centrally session-gated in `middleware.ts`, with safe post-auth return paths through `/redirect`; API authorization remains route-local.
+  - Partial evidence: protected application pages are centrally session-gated in `middleware.ts`, with safe post-auth return paths through `/redirect`; the admin dashboard now waits for a no-cache server permission check before mounting protected workspaces, and API authorization remains route-local.
   - Rate integrity fix: runtime P2P seeding now inserts only missing currency pairs and preserves persisted admin/provider rates and their timestamps.
   - Performance baseline: trade/dashboard polling is visibility-aware, delayed until after initial content, and non-overlapping; hidden tabs now stop their polling timer entirely and overlapping dashboard reloads share one request. Local development uses the current Next.js default Turbopack compiler, with an explicit Webpack fallback script. Duplicate mount fetches and the nested serverless SSE polling loop were removed. Database initialization now uses a persisted schema-version fast path after the first migration check.
 

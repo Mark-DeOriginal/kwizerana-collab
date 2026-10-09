@@ -105,6 +105,8 @@ Admin resolution screens must include evidence, chat, transaction/event facts, a
 - Optimistic UI may not represent financial settlement.
 - A transaction progresses through wallet-requested, submitted, confirming, confirmed, and reconciled states.
 - Background updates retain user context and announce material state changes accessibly.
+- Returning to a browser tab must not remount or replace a loaded workspace merely because the authentication session refreshed; refresh only the data that actually needs it.
+- Initial loading states preserve the shape of each admin workspace with accessible skeletons instead of replacing the content area with a generic spinner.
 
 ## Implementation order
 
@@ -126,4 +128,3 @@ Admin resolution screens must include evidence, chat, transaction/event facts, a
 - Admin exceptions have ownership and audit history.
 - Core screens meet the `DESIGN.md` accessibility baseline.
 - Dashboard code no longer depends on a single multi-workflow page component.
-
